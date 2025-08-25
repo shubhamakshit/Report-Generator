@@ -3,56 +3,256 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Upload Images</title>
+    <title>DocuPDF - Upload</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <style>
+        #preview-grid .preview-card {
+            position: relative;
+            border: 2px dashed #495057;
+            border-radius: .5rem;
+            overflow: hidden;
+            aspect-ratio: 1 / 1;
+        }
+        #preview-grid .preview-img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        #preview-grid .preview-overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 0.5rem;
+            font-size: 0.8rem;
+            text-align: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        #preview-grid .remove-btn {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: rgba(0, 0, 0, 0.6);
+            color: white;
+            border: none;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+            z-index: 2;
+        }
+        /* Drag and Drop Styling */
+        .preview-card.dragging {
+            opacity: 0.5;
+            transform: scale(0.95);
+        }
+        .preview-card.drag-over {
+            border-color: #0d6efd;
+            background-color: rgba(13, 110, 253, 0.1);
+        }
+    </style>
 </head>
 <body>
-<div class="container mt-5">
-    <div class="card bg-dark text-white">
-        <div class="card-header">
-            <h1>Step 1: Upload Your Questions</h1>
-        </div>
-        <div class="card-body">
-            <form id="upload-form" action="/upload" method="post" enctype="multipart/form-data">
-                <div class="mb-3">
-                    <label for="images" class="form-label">Select images (or use your camera)</label>
-                    <input class="form-control" type="file" id="images" name="images" multiple accept="image/*" capture="environment">
+    <div class="container mt-5">
+        <div class="card bg-dark text-white">
+            <div class="card-header">
+                <h1>Step 1: Select Your Questions</h1>
+            </div>
+            <div class="card-body">
+                <!-- Hidden file input that does all the work -->
+                <input type="file" id="image-input" multiple accept="image/*" class="d-none">
+
+                <!-- Action Buttons -->
+                <div class="d-grid gap-3 d-sm-flex mb-4">
+                    <button type="button" id="choose-files-btn" class="btn btn-primary btn-lg flex-grow-1">
+                        <i class="bi bi-folder2-open me-2"></i> Choose Files
+                    </button>
+                    <button type="button" id="take-photo-btn" class="btn btn-secondary btn-lg flex-grow-1">
+                        <i class="bi bi-camera-fill me-2"></i> Take a Photo
+                    </button>
                 </div>
-                <button type="submit" class="btn btn-primary w-100">Upload and Start Processing</button>
-            </form>
-            <div id="upload-status" class="mt-3"></div>
+
+                <!-- Preview Area -->
+                <div id="preview-container" class="d-none">
+                    <h5 class="text-white-50 border-bottom border-secondary pb-2 mb-3">Preview & Order <small>(Drag to reorder)</small></h5>
+                    <div id="preview-grid" class="row g-3">
+                        <!-- Preview cards will be injected here by JavaScript -->
+                    </div>
+                </div>
+
+                <!-- Upload Button -->
+                <button id="upload-btn" class="btn btn-success w-100 mt-4 py-3 fs-5" disabled>
+                    <i class="bi bi-cloud-upload me-2"></i> Upload and Start Processing
+                </button>
+                <div id="upload-status" class="mt-3"></div>
+            </div>
         </div>
     </div>
-</div>
 
-<script>
-    document.getElementById('upload-form').addEventListener('submit', async function(e) {
-        e.preventDefault();
+    <script>
+        const imageInput = document.getElementById('image-input');
+        const chooseFilesBtn = document.getElementById('choose-files-btn');
+        const takePhotoBtn = document.getElementById('take-photo-btn');
+        const previewContainer = document.getElementById('preview-container');
+        const previewGrid = document.getElementById('preview-grid');
+        const uploadBtn = document.getElementById('upload-btn');
+        const uploadStatus = document.getElementById('upload-status');
 
-        const formData = new FormData(this);
-        const statusDiv = document.getElementById('upload-status');
-        statusDiv.innerHTML = '<div class="alert alert-info">Uploading...</div>';
+        let fileList = []; // This array will hold our File objects in the correct order
 
-        try {
-            const response = await fetch('/upload', {
-                method: 'POST',
-                body: formData
-            });
+        // --- Event Listeners for Buttons ---
+        chooseFilesBtn.addEventListener('click', () => {
+            imageInput.removeAttribute('capture');
+            imageInput.click();
+        });
 
-            const result = await response.json();
+        takePhotoBtn.addEventListener('click', () => {
+            imageInput.setAttribute('capture', 'environment');
+            imageInput.click();
+        });
 
-            if (result.error) {
-                statusDiv.innerHTML = `<div class="alert alert-danger">${result.error}</div>`;
-            } else {
-                statusDiv.innerHTML = `<div class="alert alert-success">Upload successful! Redirecting...</div>`;
-                // Redirect to the first image's crop page
-                window.location.href = `/crop/${result.session_id}/0`;
-            }
-        } catch (error) {
-            statusDiv.innerHTML = `<div class="alert alert-danger">An error occurred: ${error}</div>`;
+        imageInput.addEventListener('change', (e) => {
+            const newFiles = Array.from(e.target.files);
+            fileList = [...fileList, ...newFiles];
+            intelligentSortFiles(fileList);
+            renderPreviews();
+            e.target.value = ''; // Clear the input so the change event fires again
+        });
+
+        // --- File Handling and Sorting ---
+        function intelligentSortFiles(files) {
+            const extractNumber = (filename) => {
+                const numbers = filename.match(/\d+/g);
+                return numbers ? parseInt(numbers.join('')) : 0;
+            };
+            files.sort((a, b) => extractNumber(a.name) - extractNumber(b.name));
         }
-    });
-</script>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+        
+        // --- Rendering Previews ---
+        function renderPreviews() {
+            previewGrid.innerHTML = '';
+            if (fileList.length > 0) {
+                previewContainer.classList.remove('d-none');
+                uploadBtn.disabled = false;
+            } else {
+                previewContainer.classList.add('d-none');
+                uploadBtn.disabled = true;
+            }
+
+            fileList.forEach((file, index) => {
+                const col = document.createElement('div');
+                col.className = 'col-6 col-md-4 col-lg-3';
+                
+                const card = document.createElement('div');
+                card.className = 'preview-card';
+                card.setAttribute('draggable', 'true');
+                card.dataset.index = index;
+
+                const img = document.createElement('img');
+                img.src = URL.createObjectURL(file);
+                img.className = 'preview-img';
+                
+                const overlay = document.createElement('div');
+                overlay.className = 'preview-overlay';
+                overlay.textContent = file.name;
+
+                const removeBtn = document.createElement('button');
+                removeBtn.className = 'remove-btn';
+                removeBtn.innerHTML = '&times;';
+                removeBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    fileList.splice(index, 1);
+                    renderPreviews();
+                };
+
+                card.appendChild(img);
+                card.appendChild(overlay);
+                card.appendChild(removeBtn);
+                col.appendChild(card);
+                previewGrid.appendChild(col);
+            });
+            
+            addDragAndDropListeners();
+        }
+
+        // --- Drag and Drop Logic ---
+        let draggedIndex = null;
+
+        function addDragAndDropListeners() {
+            const cards = document.querySelectorAll('.preview-card');
+            cards.forEach(card => {
+                card.addEventListener('dragstart', (e) => {
+                    draggedIndex = parseInt(e.target.dataset.index);
+                    e.target.classList.add('dragging');
+                });
+
+                card.addEventListener('dragend', (e) => {
+                    e.target.classList.remove('dragging');
+                    draggedIndex = null;
+                });
+
+                card.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    if (e.target !== card) card.classList.add('drag-over');
+                });
+                
+                card.addEventListener('dragleave', (e) => {
+                     card.classList.remove('drag-over');
+                });
+
+                card.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    card.classList.remove('drag-over');
+                    const droppedOnIndex = parseInt(e.currentTarget.dataset.index);
+                    
+                    if (draggedIndex !== droppedOnIndex) {
+                        const draggedItem = fileList.splice(draggedIndex, 1)[0];
+                        fileList.splice(droppedOnIndex, 0, draggedItem);
+                        renderPreviews();
+                    }
+                });
+            });
+        }
+        
+        // --- Upload Logic ---
+        uploadBtn.addEventListener('click', async () => {
+            if (fileList.length === 0) return;
+
+            uploadStatus.innerHTML = `<div class="alert alert-info">Uploading ${fileList.length} images...</div>`;
+            uploadBtn.disabled = true;
+
+            const formData = new FormData();
+            fileList.forEach(file => {
+                formData.append('images', file);
+            });
+            
+            try {
+                const response = await fetch('/upload', { method: 'POST', body: formData });
+                const result = await response.json();
+
+                if (result.error) {
+                    uploadStatus.innerHTML = `<div class="alert alert-danger">${result.error}</div>`;
+                } else {
+                    uploadStatus.innerHTML = `<div class="alert alert-success">Upload successful! Redirecting...</div>`;
+                    window.location.href = `/crop/${result.session_id}/0`;
+                }
+            } catch (error) {
+                uploadStatus.innerHTML = `<div class="alert alert-danger">An error occurred: ${error}</div>`;
+            } finally {
+                uploadBtn.disabled = false;
+            }
+        });
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

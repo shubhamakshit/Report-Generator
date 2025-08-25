@@ -2,318 +2,345 @@
 <html lang="en" data-bs-theme="dark">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Adjust Image</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+    <title>Adjust & Enhance</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <style>
-        body {
-            background-color: #212529;
-            overscroll-behavior: contain; /* Prevents page scroll while dragging on touch devices */
+        :root {
+            --header-height: 56px;
+            --point-size: 28px;
+            --loupe-size: 100px;
         }
-        .card {
-            border: 1px solid #495057;
+        html, body { height: 100%; overflow: hidden; }
+        .main-container { display: flex; flex-direction: column; height: 100vh; }
+        .app-header { height: var(--header-height); flex-shrink: 0; display: flex; align-items: center; padding: 0 1rem; background: #2c3034; border-bottom: 1px solid #495057; }
+        .content-wrapper { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+        .image-pane { flex: 1; min-height: 0; position: relative; background: #181a1c; display: flex; align-items: center; justify-content: center; padding: 0.5rem; }
+        .controls-pane { flex-shrink: 0; background: #212529; border-top: 1px solid #495057; display: flex; flex-direction: column; overflow: hidden; }
+        .controls-content { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 1rem; }
+        .action-buttons { padding: 1rem; border-top: 1px solid #495057; flex-shrink: 0; }
+        
+        #crop-area { position: relative; touch-action: none; line-height: 0; }
+        #main-image { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+        #boundary-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
+
+        .control-point { position: absolute; width: var(--point-size); height: var(--point-size); transform: translate(-50%, -50%); cursor: pointer; z-index: 10; }
+        .corner-point { background: #0d6efd; border: 3px solid white; border-radius: 50%; box-shadow: 0 0 15px rgba(13, 110, 253, 0.7); }
+        .edge-point { background: white; border: 3px solid #0d6efd; border-radius: 6px; }
+        
+        .magnifier { display: none; position: fixed; width: var(--loupe-size); height: var(--loupe-size); border-radius: 50%; border: 3px solid #0d6efd; overflow: hidden; pointer-events: none; z-index: 1000; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6); }
+        .magnifier-image { position: absolute; transform-origin: top left; }
+        
+        .magnifier-crosshair { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        .magnifier-crosshair::before, .magnifier-crosshair::after { content: ''; position: absolute; background: #ffc107; }
+        .magnifier-crosshair::before { left: 50%; width: 2px; height: 100%; transform: translateX(-50%); }
+        .magnifier-crosshair::after { top: 50%; height: 2px; width: 100%; transform: translateY(-50%); }
+        
+        .presets-scroll { display: flex; gap: 0.75rem; overflow-x: auto; padding-bottom: 10px; }
+        .preset-item { flex-shrink: 0; text-align: center; cursor: pointer; }
+        .preset-image { width: 60px; height: 60px; object-fit: cover; border-radius: 8px; border: 2px solid #495057; }
+        .preset-label { font-size: 0.75rem; margin-top: 0.25rem; color: #adb5bd; }
+        .preset-item.active .preset-image { border-color: #0d6efd; }
+        .preset-item.active .preset-label { color: #0d6efd; font-weight: 600; }
+
+        .control-label { font-size: 0.875rem; margin-bottom: 0.5rem; }
+        .btn-mobile { height: 48px; font-weight: 500; border-radius: 8px; }
+        .status-message { position: fixed; top: var(--header-height); left: 1rem; right: 1rem; z-index: 1050; }
+
+        @media (max-height: 700px) { .controls-pane { height: 280px; } }
+        @media (min-height: 701px) { .controls-pane { height: 40vh; } }
+        
+        @media (min-width: 992px) {
+            :root { --point-size: 24px; --loupe-size: 120px; }
+            .content-wrapper { flex-direction: row; }
+            .image-pane { flex: 1; min-width: 0; }
+            .controls-pane { width: 320px; height: auto; border-top: none; border-left: 1px solid #495057; }
         }
-        #crop-wrapper {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            background-color: #181a1c;
-            padding: 1rem;
-            border-radius: .5rem;
-            overflow: hidden;
-            touch-action: none; /* Important for touch events */
-        }
-        #crop-container {
-            position: relative;
-            max-width: 100%;
-            line-height: 0;
-        }
-        #crop-image {
-            max-width: 100%;
-            height: auto;
-            display: block;
-        }
-        #boundary-canvas {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-        }
-        .crop-point {
-            position: absolute;
-            transform: translate(-50%, -50%);
-            cursor: move;
-            z-index: 10;
-        }
-        .corner-point {
-            width: 28px; /* Slightly larger for easier touch */
-            height: 28px;
-            background-color: #0d6efd;
-            border: 3px solid white;
-            border-radius: 50%;
-            box-shadow: 0 0 15px rgba(13, 110, 253, 0.7);
-        }
-        .edge-point {
-            width: 22px; /* Slightly larger for easier touch */
-            height: 22px;
-            background-color: white;
-            border: 2px solid #0d6efd;
-            border-radius: 4px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
-        }
-        /* Magnifying Loupe */
-        #loupe {
-            display: none;
-            position: absolute;
-            width: 120px;
-            height: 120px;
-            border-radius: 50%;
-            border: 4px solid #0d6efd;
-            overflow: hidden;
-            pointer-events: none;
-            z-index: 20;
-            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.5);
-        }
-        #loupe-img {
-            position: absolute;
-            width: 0;
-            height: 0;
-        }
-        #loupe-crosshair {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 100%;
-            height: 100%;
-            transform: translate(-50%, -50%);
-            background-image:
-                    linear-gradient(rgba(255, 255, 255, 0.3) 1px, transparent 1px),
-                    linear-gradient(90deg, rgba(255, 255, 255, 0.3) 1px, transparent 1px);
-            background-size: 20px 20px;
-        }
-        #loupe-crosshair::before, #loupe-crosshair::after {
-            content: '';
-            position: absolute;
-            background-color: #ffc107;
-        }
-        #loupe-crosshair::before { left: 50%; width: 2px; height: 100%; transform: translateX(-50%); }
-        #loupe-crosshair::after { top: 50%; height: 2px; width: 100%; transform: translateY(-50%); }
     </style>
 </head>
 <body>
-<div class="container-fluid my-4">
-    <div class="card bg-dark text-white">
-        <div class="card-header">
-            <h2 class="mb-0">Step 2: Adjust Image Boundaries</h2>
-            <p class="text-white-50 mb-0">Drag the corner (●) and edge (■) points to precisely select the document.</p>
-        </div>
-        <div class="card-body">
-            <div class="row">
-                <div class="col-lg-9">
-                    <div id="crop-wrapper">
-                        <div id="crop-container">
-                            <img id="crop-image" src="/image/upload/{{ image_info.filename }}" alt="Image to crop">
-                            <canvas id="boundary-canvas"></canvas>
-                            <div id="loupe"><img id="loupe-img" src="/image/upload/{{ image_info.filename }}"><div id="loupe-crosshair"></div></div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-lg-3 mt-4 mt-lg-0">
-                    <h4>Image Enhancement</h4>
-                    <div class="mb-3">
-                        <label for="brightness" class="form-label">Brightness</label>
-                        <input type="range" class="form-range" min="-100" max="100" value="0" id="brightness">
-                    </div>
-                    <div class="mb-3">
-                        <label for="contrast" class="form-label">Contrast</label>
-                        <input type="range" class="form-range" min="0.5" max="2.0" step="0.05" value="1.0" id="contrast">
-                    </div>
-                    <div class="mb-3">
-                        <label for="gamma" class="form-label">Gamma</label>
-                        <input type="range" class="form-range" min="0.2" max="2.2" step="0.1" value="1.0" id="gamma">
-                    </div>
-                    <hr>
-                    <button id="process-btn" class="btn btn-primary w-100 mb-2">Save and Next</button>
-                    <button id="skip-btn" class="btn btn-secondary w-100">Skip to Next</button>
+    <div class="main-container">
+        <header class="app-header"><h5 class="mb-0 text-white"><i class="bi bi-crop me-2"></i>Adjust & Enhance</h5></header>
+        <div class="content-wrapper">
+            <div class="image-pane" id="imagePane">
+                <div id="crop-area">
+                    <img id="main-image" src="/image/upload/{{ image_info.filename }}" alt="Image to adjust">
+                    <canvas id="boundary-canvas"></canvas>
                 </div>
             </div>
-            <div id="status" class="mt-3"></div>
+            <div class="controls-pane">
+                <div class="controls-content">
+                    <h6 class="text-white mb-2">Quick Presets</h6>
+                    <div class="presets-scroll" id="presetsContainer"></div>
+                    <hr class="my-3">
+                    <h6 class="text-white mb-3">Manual Adjustments</h6>
+                    <div class="mb-3"><label for="brightness" class="control-label">Brightness <span id="brightnessValue">0</span></label><input type="range" class="form-range" id="brightness" min="-100" max="100" value="0" step="5"></div>
+                    <div class="mb-3"><label for="contrast" class="control-label">Contrast <span id="contrastValue">1.0</span></label><input type="range" class="form-range" id="contrast" min="0.5" max="2.5" value="1.0" step="0.05"></div>
+                    <div class="mb-3"><label for="gamma" class="control-label">Gamma <span id="gammaValue">1.0</span></label><input type="range" class="form-range" id="gamma" min="0.2" max="2.2" value="1.0" step="0.1"></div>
+                </div>
+                <div class="action-buttons">
+                    <button id="processBtn" class="btn btn-primary w-100 btn-mobile mb-2"><i class="bi bi-check-lg me-2"></i>Save and Continue</button>
+                    <button id="skipBtn" class="btn btn-outline-secondary w-100 btn-mobile"><i class="bi bi-skip-forward me-2"></i>Skip This Image</button>
+                </div>
+            </div>
         </div>
+        <div class="magnifier" id="magnifier"><img class="magnifier-image" id="magnifier-image" src="/image/upload/{{ image_info.filename }}"><div class="magnifier-crosshair"></div></div>
+        <div id="statusContainer"></div>
     </div>
-</div>
 
-<script>
-    // --- DOM Elements & State ---
-    const container = document.getElementById('crop-container');
-    const image = document.getElementById('crop-image');
-    const canvas = document.getElementById('boundary-canvas');
-    const ctx = canvas.getContext('2d');
-    const loupe = document.getElementById('loupe');
-    const loupeImg = document.getElementById('loupe-img');
-    const sessionId = '{{ session_id }}';
-    const imageIndex = parseInt('{{ image_index }}');
-    const points = [];
-    const LOUPE_ZOOM = 2.5;
+    <script>
+        // --- DOM ELEMENT REFERENCES ---
+        const image = document.getElementById('main-image');
+        const imagePane = document.getElementById('imagePane');
+        const cropArea = document.getElementById('crop-area');
+        const canvas = document.getElementById('boundary-canvas');
+        const ctx = canvas.getContext('2d');
+        const magnifier = document.getElementById('magnifier');
+        const magnifierImage = document.getElementById('magnifier-image');
+        const brightnessSlider = document.getElementById('brightness');
+        const contrastSlider = document.getElementById('contrast');
+        const gammaSlider = document.getElementById('gamma');
+        
+        // --- GLOBAL STATE ---
+        const sessionId = '{{ session_id }}';
+        const imageIndex = parseInt('{{ image_index }}');
+        const points = {};
+        let activePoint = null;
+        let isInitialized = false;
 
-    // --- Drawing and UI Functions ---
-    function drawBoundary() {
-        if (points.length !== 8) return;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.strokeStyle = 'rgba(13, 110, 253, 0.9)';
-        ctx.fillStyle = 'rgba(13, 110, 253, 0.15)';
-        ctx.lineWidth = 3;
-        const [tl, tm, tr, ml, mr, bl, bm, br] = points.map(p => ({ x: p.x * image.width, y: p.y * image.height }));
-        ctx.beginPath();
-        ctx.moveTo(tl.x, tl.y);
-        ctx.lineTo(tm.x, tm.y);
-        ctx.lineTo(tr.x, tr.y);
-        ctx.lineTo(mr.x, mr.y);
-        ctx.lineTo(br.x, br.y);
-        ctx.lineTo(bm.x, bm.y);
-        ctx.lineTo(bl.x, bl.y);
-        ctx.lineTo(ml.x, ml.y);
-        ctx.closePath();
-        ctx.stroke();
-        ctx.fill();
-    }
+        const PRESETS = [ { name: 'Original', settings: { brightness: 0, contrast: 1.0, gamma: 1.0 }, filter: 'none' }, { name: 'Document', settings: { brightness: 10, contrast: 1.5, gamma: 0.8 }, filter: 'contrast(1.4) brightness(1.1)' }, { name: 'Grayscale', settings: { brightness: 0, contrast: 1.2, gamma: 1.0 }, filter: 'grayscale(100%) contrast(1.2)' }, { name: 'High Contrast', settings: { brightness: 5, contrast: 2.0, gamma: 0.7 }, filter: 'contrast(1.8) brightness(1.05)' }, { name: 'Vivid', settings: { brightness: 0, contrast: 1.2, gamma: 1.0 }, filter: 'saturate(1.5) contrast(1.1)' }];
 
-    function updateLoupe(clientX, clientY) {
-        const rect = container.getBoundingClientRect();
-        const mouseX = clientX - rect.left;
-        const mouseY = clientY - rect.top;
-        loupe.style.left = `${mouseX - 60}px`;
-        loupe.style.top = `${mouseY - 150}px`;
-        const imgX = (mouseX / image.width) * loupeImg.width;
-        const imgY = (mouseY / image.height) * loupeImg.height;
-        loupeImg.style.left = `-${imgX - loupe.clientWidth / 2}px`;
-        loupeImg.style.top = `-${imgY - loupe.clientHeight / 2}px`;
-    }
+        // --- CORE INITIALIZATION (THE FIX) ---
+        function initializeApp() {
+            if (!image.naturalWidth) return; // Wait for the image to have dimensions
+            
+            // This function runs whenever the container is resized or the image loads.
+            // It sets up the workspace dimensions.
+            const setupWorkspace = () => {
+                const paneAspectRatio = imagePane.clientWidth / imagePane.clientHeight;
+                const imageAspectRatio = image.naturalWidth / image.naturalHeight;
+                let width, height;
+                if (imageAspectRatio > paneAspectRatio) {
+                    width = imagePane.clientWidth;
+                    height = width / imageAspectRatio;
+                } else {
+                    height = imagePane.clientHeight;
+                    width = height * imageAspectRatio;
+                }
+                cropArea.style.width = `${width}px`;
+                cropArea.style.height = `${height}px`;
+                canvas.width = width;
+                canvas.height = height;
+                updateAllPoints();
+            };
+            
+            // Run it once to set initial size
+            setupWorkspace();
 
-    // --- Drag Handling (for both Mouse and Touch) ---
-    function startDrag(pointObj) {
-        loupe.style.display = 'block';
-
-        function onDragMove(e) {
-            e.preventDefault(); // Prevent scrolling on touch
-            const { clientX, clientY } = e.touches ? e.touches[0] : e;
-            const rect = container.getBoundingClientRect();
-            let newX = clientX - rect.left;
-            let newY = clientY - rect.top;
-            pointObj.x = Math.max(0, Math.min(newX / image.width, 1));
-            pointObj.y = Math.max(0, Math.min(newY / image.height, 1));
-            pointObj.el.style.left = `${pointObj.x * 100}%`;
-            pointObj.el.style.top = `${pointObj.y * 100}%`;
-            drawBoundary();
-            updateLoupe(clientX, clientY);
-        }
-
-        function onDragEnd() {
-            loupe.style.display = 'none';
-            document.removeEventListener('mousemove', onDragMove);
-            document.removeEventListener('mouseup', onDragEnd);
-            document.removeEventListener('touchmove', onDragMove);
-            document.removeEventListener('touchend', onDragEnd);
-        }
-
-        document.addEventListener('mousemove', onDragMove);
-        document.addEventListener('mouseup', onDragEnd);
-        document.addEventListener('touchmove', onDragMove, { passive: false });
-        document.addEventListener('touchend', onDragEnd);
-    }
-
-    // --- Setup ---
-    function setupPoints() {
-        container.querySelectorAll('.crop-point').forEach(p => p.remove());
-        points.length = 0;
-        canvas.width = image.clientWidth;
-        canvas.height = image.clientHeight;
-        loupeImg.style.width = `${image.clientWidth * LOUPE_ZOOM}px`;
-        loupeImg.style.height = `${image.clientHeight * LOUPE_ZOOM}px`;
-
-        const initialLayout = [
-            { x: 0.1, y: 0.1, type: 'corner' }, { x: 0.5, y: 0.1, type: 'edge' }, { x: 0.9, y: 0.1, type: 'corner' },
-            { x: 0.1, y: 0.5, type: 'edge' },   { x: 0.9, y: 0.5, type: 'edge' },
-            { x: 0.1, y: 0.9, type: 'corner' }, { x: 0.5, y: 0.9, type: 'edge' }, { x: 0.9, y: 0.9, type: 'corner' }
-        ];
-
-        initialLayout.forEach(pos => {
-            const pointEl = document.createElement('div');
-            pointEl.className = `crop-point ${pos.type}-point`;
-            container.appendChild(pointEl);
-
-            const pointObj = { el: pointEl, x: pos.x, y: pos.y, type: pos.type };
-            points.push(pointObj);
-
-            pointEl.addEventListener('mousedown', (e) => { e.preventDefault(); startDrag(pointObj); });
-            pointEl.addEventListener('touchstart', (e) => { e.preventDefault(); startDrag(pointObj); });
-        });
-        updateAllPointPositions();
-    }
-
-    function updateAllPointPositions() {
-        points.forEach(p => {
-            p.el.style.left = `${p.x * 100}%`;
-            p.el.style.top = `${p.y * 100}%`;
-        });
-        drawBoundary();
-    }
-
-    image.onload = setupPoints;
-    if (image.complete) setupPoints();
-    window.addEventListener('resize', () => {
-        setTimeout(() => {
-            if (!image.complete) return;
-            canvas.width = image.clientWidth;
-            canvas.height = image.clientHeight;
-            loupeImg.style.width = `${image.clientWidth * LOUPE_ZOOM}px`;
-            loupeImg.style.height = `${image.clientHeight * LOUPE_ZOOM}px`;
-            updateAllPointPositions();
-        }, 100);
-    });
-
-    // --- Form Submission ---
-    document.getElementById('process-btn').addEventListener('click', async () => {
-        const statusDiv = document.getElementById('status');
-        statusDiv.innerHTML = `<div class="alert alert-info">Processing...</div>`;
-        const corners = points.filter(p => p.type === 'corner').map(p => ({ x: p.x, y: p.y }));
-        const edges = points.filter(p => p.type === 'edge').map(p => ({ x: p.x, y: p.y }));
-        const pointsToSend = [...corners, ...edges];
-
-        const adjustments = {
-            brightness: parseFloat(document.getElementById('brightness').value),
-            contrast: parseFloat(document.getElementById('contrast').value),
-            gamma: parseFloat(document.getElementById('gamma').value)
-        };
-
-        try {
-            const response = await fetch('/process_crop', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ session_id: sessionId, image_index: imageIndex, points: pointsToSend, adjustments: adjustments })
-            });
-            const result = await response.json();
-
-            if (result.error) {
-                statusDiv.innerHTML = `<div class="alert alert-danger">${result.error}</div>`;
-            } else {
-                statusDiv.innerHTML = `<div class="alert alert-success">Image processed!</div>`;
-                fetch(`/crop/${sessionId}/${imageIndex + 1}`).then(res => {
-                    window.location.href = res.ok ? `/crop/${sessionId}/${imageIndex + 1}` : `/question_entry/${sessionId}`;
-                });
+            // The first time this runs, create everything
+            if (!isInitialized) {
+                createPoints();
+                setupPresets();
+                loadSettings();
+                setupActionListeners();
+                isInitialized = true;
             }
-        } catch (error) {
-            statusDiv.innerHTML = `<div class="alert alert-danger">An error occurred: ${error}</div>`;
+            
+            // Listen for future resizes
+            new ResizeObserver(setupWorkspace).observe(imagePane);
         }
-    });
 
-    document.getElementById('skip-btn').addEventListener('click', () => {
-        fetch(`/crop/${sessionId}/${imageIndex + 1}`).then(res => {
-            window.location.href = res.ok ? `/crop/${sessionId}/${imageIndex + 1}` : `/question_entry/${sessionId}`;
-        });
-    });
-</script>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+        // --- POINT CREATION AND DRAGGING ---
+        function createPoints() {
+            const pointDefs = {
+                tl: { x: 0.1, y: 0.1, type: 'corner' },
+                tm: { x: 0.5, y: 0.1, type: 'edge', axis: 'horizontal', neighbors: ['tl', 'tr'] },
+                tr: { x: 0.9, y: 0.1, type: 'corner' },
+                ml: { x: 0.1, y: 0.5, type: 'edge', axis: 'vertical', neighbors: ['tl', 'bl'] },
+                mr: { x: 0.9, y: 0.5, type: 'edge', axis: 'vertical', neighbors: ['tr', 'br'] },
+                bl: { x: 0.1, y: 0.9, type: 'corner' },
+                bm: { x: 0.5, y: 0.9, type: 'edge', axis: 'horizontal', neighbors: ['bl', 'br'] },
+                br: { x: 0.9, y: 0.9, type: 'corner' }
+            };
+            Object.entries(pointDefs).forEach(([name, def]) => {
+                const pointEl = document.createElement('div');
+                pointEl.className = `control-point ${def.type}-point`;
+                cropArea.appendChild(pointEl);
+                points[name] = { ...def, element: pointEl };
+                pointEl.addEventListener('mousedown', (e) => startDrag(e, name));
+                pointEl.addEventListener('touchstart', (e) => startDrag(e, name));
+            });
+        }
+
+        function startDrag(e, pointName) {
+            e.preventDefault(); e.stopPropagation();
+            activePoint = pointName;
+            magnifier.style.display = 'block';
+            const dragStartPositions = Object.entries(points).reduce((acc, [name, data]) => {
+                acc[name] = { x: data.x, y: data.y }; return acc;
+            }, {});
+            
+            const handleDrag = (e) => {
+                if (!activePoint) return;
+                e.preventDefault();
+                const touch = e.touches ? e.touches[0] : e;
+                const rect = cropArea.getBoundingClientRect();
+                const normalizedX = (touch.clientX - rect.left) / rect.width;
+                const normalizedY = (touch.clientY - rect.top) / rect.height;
+                const point = points[activePoint];
+                const startPos = dragStartPositions[activePoint];
+                let dx = normalizedX - startPos.x;
+                let dy = normalizedY - startPos.y;
+                if (point.type === 'edge') {
+                    if (point.axis === 'horizontal') dx = 0;
+                    if (point.axis === 'vertical') dy = 0;
+                    point.neighbors.forEach(name => {
+                        const neighborStart = dragStartPositions[name];
+                        points[name].x = neighborStart.x + dx;
+                        points[name].y = neighborStart.y + dy;
+                    });
+                } else if (point.type === 'corner') {
+                    point.x = normalizedX;
+                    point.y = normalizedY;
+                }
+                recalculateEdgePoints();
+                updateAllPoints();
+                updateMagnifier(touch.clientX, touch.clientY);
+            };
+
+            const endDrag = () => {
+                activePoint = null; magnifier.style.display = 'none';
+                document.removeEventListener('mousemove', handleDrag);
+                document.removeEventListener('touchmove', handleDrag);
+                document.removeEventListener('mouseup', endDrag);
+                document.removeEventListener('touchend', endDrag);
+            };
+
+            document.addEventListener('mousemove', handleDrag);
+            document.addEventListener('touchmove', handleDrag, { passive: false });
+            document.addEventListener('mouseup', endDrag);
+            document.addEventListener('touchend', endDrag);
+        }
+
+        function recalculateEdgePoints() {
+            const { tl, tr, bl, br, tm, bm, ml, mr } = points;
+            tm.x = (tl.x + tr.x) / 2; tm.y = (tl.y + tr.y) / 2;
+            bm.x = (bl.x + br.x) / 2; bm.y = (bl.y + br.y) / 2;
+            ml.x = (tl.x + bl.x) / 2; ml.y = (tl.y + bl.y) / 2;
+            mr.x = (tr.x + br.x) / 2; mr.y = (tr.y + br.y) / 2;
+        }
+
+        // --- VISUALS ---
+        function updateAllPoints() {
+            if (Object.keys(points).length === 0) return;
+            Object.values(points).forEach(point => {
+                point.element.style.left = `${point.x * 100}%`;
+                point.element.style.top = `${point.y * 100}%`;
+            });
+            drawBoundary();
+        }
+
+        function drawBoundary() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.strokeStyle = 'rgba(13, 110, 253, 0.9)';
+            ctx.fillStyle = 'rgba(13, 110, 253, 0.15)';
+            ctx.lineWidth = 2;
+            const p = (pt) => ({ x: pt.x * canvas.width, y: pt.y * canvas.height });
+            const { tl, tm, tr, mr, br, bm, bl, ml } = points;
+            ctx.beginPath();
+            ctx.moveTo(p(tl).x, p(tl).y); ctx.lineTo(p(tm).x, p(tm).y); ctx.lineTo(p(tr).x, p(tr).y); ctx.lineTo(p(mr).x, p(mr).y);
+            ctx.lineTo(p(br).x, p(br).y); ctx.lineTo(p(bm).x, p(bm).y); ctx.lineTo(p(bl).x, p(bl).y); ctx.lineTo(p(ml).x, p(ml).y);
+            ctx.closePath(); ctx.fill(); ctx.stroke();
+        }
+
+        function updateMagnifier(clientX, clientY) {
+            const loupeSize = magnifier.clientWidth;
+            magnifier.style.left = `${clientX - (loupeSize / 2)}px`;
+            magnifier.style.top = `${clientY - loupeSize - 20}px`;
+            const rect = cropArea.getBoundingClientRect();
+            const normalizedX = (clientX - rect.left) / rect.width;
+            const normalizedY = (clientY - rect.top) / rect.height;
+            magnifierImage.style.transform = `scale(${2.5})`;
+            magnifierImage.style.left = `${-normalizedX * rect.width * 2.5 + (loupeSize / 2)}px`;
+            magnifierImage.style.top = `${-normalizedY * rect.height * 2.5 + (loupeSize / 2)}px`;
+        }
+        
+        // --- SETTINGS AND PRESETS ---
+        function setupActionListeners() {
+            [brightnessSlider, contrastSlider, gammaSlider].forEach(slider => slider.addEventListener('input', updateImageFilters));
+            document.getElementById('processBtn').addEventListener('click', processImage);
+            document.getElementById('skipBtn').addEventListener('click', skipImage);
+            brightnessSlider.addEventListener('input', (e) => { document.getElementById('brightnessValue').textContent = e.target.value; });
+            contrastSlider.addEventListener('input', (e) => { document.getElementById('contrastValue').textContent = parseFloat(e.target.value).toFixed(1); });
+            gammaSlider.addEventListener('input', (e) => { document.getElementById('gammaValue').textContent = parseFloat(e.target.value).toFixed(1); });
+        }
+        
+        function setupPresets() {
+            const presetsContainer = document.getElementById('presetsContainer');
+            presetsContainer.innerHTML = '';
+            PRESETS.forEach(preset => {
+                const presetEl = document.createElement('div');
+                presetEl.className = 'preset-item';
+                presetEl.dataset.name = preset.name;
+                presetEl.innerHTML = `<img class="preset-image" src="${image.src}" style="filter: ${preset.filter};" alt="${preset.name}"><span class="preset-label">${preset.name}</span>`;
+                presetEl.addEventListener('click', () => applyPreset(preset, presetEl));
+                presetsContainer.appendChild(presetEl);
+            });
+        }
+        
+        function applyPreset(preset, element) {
+            brightnessSlider.value = preset.settings.brightness;
+            contrastSlider.value = preset.settings.contrast;
+            gammaSlider.value = preset.settings.gamma;
+            document.getElementById('brightnessValue').textContent = preset.settings.brightness;
+            document.getElementById('contrastValue').textContent = preset.settings.contrast.toFixed(1);
+            document.getElementById('gammaValue').textContent = preset.settings.gamma.toFixed(1);
+            image.style.filter = preset.filter;
+            document.querySelectorAll('.preset-item').forEach(el => el.classList.remove('active'));
+            if (element) element.classList.add('active');
+        }
+        
+        function updateImageFilters() {
+            const brightness = 1 + parseFloat(brightnessSlider.value) / 100;
+            const contrast = parseFloat(contrastSlider.value);
+            image.style.filter = `brightness(${brightness}) contrast(${contrast})`;
+            const matchingPreset = PRESETS.find(p => p.settings.brightness == brightnessSlider.value && p.settings.contrast == contrastSlider.value && p.settings.gamma == gammaSlider.value);
+            document.querySelectorAll('.preset-item').forEach(el => el.classList.remove('active'));
+            if (matchingPreset) { const presetEl = document.querySelector(`[data-name="${matchingPreset.name}"]`); if (presetEl) presetEl.classList.add('active'); }
+        }
+
+        function saveSettings() { const settings = { brightness: parseFloat(brightnessSlider.value), contrast: parseFloat(contrastSlider.value), gamma: parseFloat(gammaSlider.value), activePreset: document.querySelector('.preset-item.active')?.dataset.name || 'Custom' }; try { localStorage.setItem('cropToolSettings', JSON.stringify(settings)); } catch (e) { console.warn('Could not save settings:', e); } }
+        function loadSettings() { try { const savedSettings = JSON.parse(localStorage.getItem('cropToolSettings') || '{}'); if (savedSettings.brightness !== undefined) { brightnessSlider.value = savedSettings.brightness; document.getElementById('brightnessValue').textContent = savedSettings.brightness; } if (savedSettings.contrast !== undefined) { contrastSlider.value = savedSettings.contrast; document.getElementById('contrastValue').textContent = savedSettings.contrast.toFixed(1); } if (savedSettings.gamma !== undefined) { gammaSlider.value = savedSettings.gamma; document.getElementById('gammaValue').textContent = savedSettings.gamma.toFixed(1); } updateImageFilters(); if (savedSettings.activePreset && savedSettings.activePreset !== 'Custom') { const presetEl = document.querySelector(`[data-name="${savedSettings.activePreset}"]`); if (presetEl) presetEl.classList.add('active'); } } catch (e) { console.warn('Could not load settings:', e); } }
+        
+        // --- SERVER COMMUNICATION ---
+        function showStatus(message, type = 'info') { const statusContainer = document.getElementById('statusContainer'); statusContainer.innerHTML = `<div class="alert alert-${type} alert-dismissible fade show status-message" role="alert">${message}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`; if (type !== 'info') { setTimeout(() => { const alert = statusContainer.querySelector('.alert'); if(alert) alert.classList.remove('show'); }, 3000); } }
+        
+        async function processImage() {
+            try {
+                showStatus('<i class="bi bi-hourglass-split me-2"></i>Processing image...', 'info');
+                saveSettings();
+                const { tl, tr, br, bl } = points;
+                const pointsToSend = [tl, tr, br, bl].map(p => ({ x: p.x, y: p.y }));
+                const adjustments = { brightness: parseFloat(brightnessSlider.value), contrast: parseFloat(contrastSlider.value), gamma: parseFloat(gammaSlider.value) };
+                const response = await fetch('/process_crop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session_id: sessionId, image_index: imageIndex, points: pointsToSend, adjustments: adjustments }) });
+                const result = await response.json();
+                if (result.error) throw new Error(result.error);
+                showStatus('<i class="bi bi-check-circle me-2"></i>Image processed!', 'success');
+                setTimeout(navigateNext, 1000);
+            } catch (error) { showStatus(`<i class="bi bi-exclamation-triangle me-2"></i>Error: ${error.message}`, 'danger'); }
+        }
+        
+        async function navigateNext() { try { const nextUrl = `/crop/${sessionId}/${imageIndex + 1}`; const res = await fetch(nextUrl); window.location.href = res.ok ? nextUrl : `/question_entry/${sessionId}`; } catch (error) { window.location.href = `/question_entry/${sessionId}`; } }
+        function skipImage() { showStatus('<i class="bi bi-skip-forward me-2"></i>Skipping...', 'info'); setTimeout(navigateNext, 500); }
+
+        // --- GLOBAL EVENT LISTENERS ---
+        if (image.complete) {
+            initializeApp();
+        } else {
+            image.addEventListener('load', initializeApp);
+        }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
