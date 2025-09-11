@@ -127,6 +127,27 @@ IGNORE_WHEN_COPYING_END
 Open in Browser
 Navigate to http://127.0.0.1:5000 in your web browser to start using DocuPDF.
 
+Environment Variables (Optional)
+
+To enable the automatic question number extraction feature, you need to set the NVIDIA_API_KEY environment variable:
+
+bash
+download
+content_copy
+expand_less
+IGNORE_WHEN_COPYING_START
+IGNORE_WHEN_COPYING_END
+# On Linux/macOS:
+export NVIDIA_API_KEY="your-api-key-here"
+
+# On Windows:
+set NVIDIA_API_KEY=your-api-key-here
+
+# Or create a .env file with:
+NVIDIA_API_KEY=your-api-key-here
+
+If you don't set this variable, the application will still work but the automatic question number extraction feature will be disabled.
+
 📖 How to Use
 
 The application workflow is designed to be simple and linear.

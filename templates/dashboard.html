@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - DocuPDF{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1>Dashboard</h1>
+        <a href="/" class="btn btn-primary">New Upload</a>
+    </div>
+    
+    <div class="card bg-dark text-white mb-4">
+        <div class="card-header">
+            <h2 class="h4 mb-0">Sessions</h2>
+        </div>
+        <div class="card-body">
+            {% if sessions %}
+            <div class="table-responsive">
+                <table class="table table-dark table-striped">
+                    <thead>
+                        <tr>
+                            <th>File Name</th>
+                            <th>Created At</th>
+                            <th>Pages/Images</th>
+                            <th>Questions</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for session in sessions %}
+                        <tr>
+                            <td>{{ session.pdf_name }}</td>
+                            <td>{{ session.created_at }}</td>
+                            <td>{{ session.page_count }}</td>
+                            <td>{{ session.question_count }}</td>
+                            <td>
+                                <div class="btn-group" role="group">
+                                    {% if session.page_count > 0 %}
+                                    <a href="/cropv2/{{ session.id }}/0" class="btn btn-sm btn-outline-primary">Edit Files</a>
+                                    {% endif %}
+                                    {% if session.question_count > 0 %}
+                                    <a href="/question_entry_v2/{{ session.id }}" class="btn btn-sm btn-outline-success">Edit Questions</a>
+                                    {% endif %}
+                                    <button class="btn btn-sm btn-outline-danger" onclick="deleteSession('{{ session.id }}')">Delete</button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="text-center">No sessions found.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    async function deleteSession(sessionId) {
+        if (confirm('Are you sure you want to delete this session? This action cannot be undone.')) {
+            try {
+                const response = await fetch(`/delete_session/${sessionId}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    location.reload();
+                } else {
+                    alert('Failed to delete session.');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('An error occurred while deleting the session.');
+            }
+        }
+    }
+</script>
+{% endblock %}

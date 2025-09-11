@@ -1,0 +1,9 @@
+<header class="app-header">
+    <h1 class="header-title">
+        <i class="bi {{ icon | default('bi-app') }} me-2"></i>
+        {{ title | default('DocuPDF') }}
+    </h1>
+    <div class="header-actions">
+        {% block header_actions %}{% endblock %}
+    </div>
+</header>
