@@ -42,6 +42,9 @@
                                     <a href="/question_entry_v2/{{ session.id }}" class="btn btn-sm btn-outline-success">Edit Questions</a>
                                     {% endif %}
                                     <button class="btn btn-sm btn-outline-danger" onclick="deleteSession('{{ session.id }}')">Delete</button>
+                                    <button class="btn btn-sm {% if session.persist %}btn-success{% else %}btn-outline-secondary{% endif %}" onclick="togglePersist('{{ session.id }}')">
+                                        {% if session.persist %}Persisted{% else %}Persist{% endif %}
+                                    </button>
                                 </div>
                             </td>
                         </tr>
@@ -75,6 +78,23 @@
                 console.error('Error:', error);
                 alert('An error occurred while deleting the session.');
             }
+        }
+    }
+
+    async function togglePersist(sessionId) {
+        try {
+            const response = await fetch(`/toggle_persist/${sessionId}`, {
+                method: 'POST'
+            });
+            
+            if (response.ok) {
+                location.reload();
+            } else {
+                alert('Failed to toggle persistence.');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('An error occurred while toggling persistence.');
         }
     }
 </script>

@@ -124,13 +124,45 @@
                     <legend class="h4">Generate PDF</legend>
                     <div class="row">
                         <div class="col-md-4 mb-3"><label class="form-label" for="pdf_name">PDF Name</label><input type="text" id="pdf_name" class="form-control" value="My-Test-Analysis"></div>
-                        <div class="col-md-4 mb-3"><label class="form-label" for="images_per_page">Images per Page</label><select id="images_per_page" class="form-select"><option value="4" selected>4</option><option value="6">6</option><option value="8">8</option></select></div>
-                        <div class="col-md-4 mb-3"><label class="form-label" for="filter_type">Filter Questions</label><select id="filter_type" class="form-select"><option value="all">All</option><option value="wrong">Wrong Only</option><option value="unattempted">Unattempted Only</option></select></div>
+                        <div class="col-md-2 mb-3"><label class="form-label" for="images_per_page">Images per Page</label><input type="number" id="images_per_page" class="form-control" value="4" min="1" max="20"></div>
+                        <div class="col-md-2 mb-3"><label class="form-label" for="grid_rows">Grid Rows</label><input type="number" id="grid_rows" class="form-control" value="4" min="1"></div>
+                        <div class="col-md-2 mb-3"><label class="form-label" for="grid_cols">Grid Cols</label><input type="number" id="grid_cols" class="form-control" value="1" min="1"></div>
+                        <div class="col-md-3 mb-3"><label class="form-label" for="orientation">Orientation</label><select id="orientation" class="form-select"><option value="portrait" selected>Portrait</option><option value="landscape">Landscape</option></select></div>
+                        <div class="col-md-3 mb-3"><label class="form-label" for="filter_type">Filter Questions</label><select id="filter_type" class="form-select"><option value="all">All</option><option value="wrong">Wrong Only</option><option value="unattempted">Unattempted Only</option></select></div>
                     </div>
                 </fieldset>
                 
                 <button type="submit" class="btn btn-primary w-100 mt-3">Generate PDF</button>
             </form>
+
+            <div class="accordion mt-4" id="misc-accordion">
+                <div class="accordion-item bg-dark">
+                    <h2 class="accordion-header" id="headingOne">
+                        <button class="accordion-button bg-secondary text-white collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseMisc" aria-expanded="false" aria-controls="collapseMisc">
+                            Add Miscellaneous Questions (Temporary)
+                        </button>
+                    </h2>
+                    <div id="collapseMisc" class="accordion-collapse collapse" aria-labelledby="headingOne" data-bs-parent="#misc-accordion">
+                        <div class="accordion-body">
+                            <form id="misc-question-form">
+                                <div class="row">
+                                    <div class="col-md-6 mb-3"><label class="form-label">Question Number</label><input type="text" id="misc_question_number" class="form-control"></div>
+                                    <div class="col-md-6 mb-3"><label class="form-label">Subject</label><input type="text" id="misc_subject" class="form-control"></div>
+                                    <div class="col-md-6 mb-3"><label class="form-label">Your Answer</label><input type="text" id="misc_marked_solution" class="form-control"></div>
+                                    <div class="col-md-6 mb-3"><label class="form-label">Correct Answer</label><input type="text" id="misc_actual_solution" class="form-control"></div>
+                                    <div class="col-md-6 mb-3"><label class="form-label">Status</label><select id="misc_status" class="form-select"><option value="correct">Correct</option><option value="wrong">Wrong</option><option value="unattempted" selected>Unattempted</option></select></div>
+                                    <div class="col-md-6 mb-3"><label class="form-label">Image (Optional)</label><input type="file" id="misc_image" class="form-control" accept="image/*"></div>
+                                </div>
+                                <button type="button" id="add-misc-question" class="btn btn-info">Add Miscellaneous Question</button>
+                            </form>
+                            <hr class="my-4">
+                            <h4 class="h5">Added Miscellaneous Questions:</h4>
+                            <div id="misc-questions-list"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div id="status" class="mt-3"></div>
         </div>
     </div>
@@ -142,9 +174,58 @@
     const numImages = {{ images|length }};
     const sessionId = '{{ session_id }}';
     let answerKeyData = new Map();
+    let miscellaneousQuestions = [];
+
+    function saveSettings() {
+        const settings = {
+            pdf_name: document.getElementById('pdf_name').value,
+            images_per_page: document.getElementById('images_per_page').value,
+            orientation: document.getElementById('orientation').value,
+            grid_rows: document.getElementById('grid_rows').value,
+            grid_cols: document.getElementById('grid_cols').value,
+            filter_type: document.getElementById('filter_type').value
+        };
+        localStorage.setItem('pdfGeneratorSettings', JSON.stringify(settings));
+    }
+
+    function loadSettings() {
+        const settings = JSON.parse(localStorage.getItem('pdfGeneratorSettings'));
+        if (settings) {
+            document.getElementById('pdf_name').value = settings.pdf_name || 'My-Test-Analysis';
+            document.getElementById('images_per_page').value = settings.images_per_page || 4;
+            document.getElementById('orientation').value = settings.orientation || 'portrait';
+            document.getElementById('grid_rows').value = settings.grid_rows || 4;
+            document.getElementById('grid_cols').value = settings.grid_cols || 1;
+            document.getElementById('filter_type').value = settings.filter_type || 'all';
+        }
+    }
+
+    function updateGridDefaults() {
+        const imagesPerPage = parseInt(document.getElementById('images_per_page').value, 10);
+        const orientation = document.getElementById('orientation').value;
+        const rowsInput = document.getElementById('grid_rows');
+        const colsInput = document.getElementById('grid_cols');
+
+        if (imagesPerPage === 4) {
+            if (orientation === 'portrait') {
+                rowsInput.value = 4;
+                colsInput.value = 1;
+            } else { // landscape
+                rowsInput.value = 2;
+                colsInput.value = 2;
+            }
+        } else {
+            const cols = Math.ceil(Math.sqrt(imagesPerPage));
+            const rows = Math.ceil(imagesPerPage / cols);
+            rowsInput.value = rows;
+            colsInput.value = cols;
+        }
+    }
 
     function setupEventListeners() {
         document.getElementById('json-upload').addEventListener('change', handleJsonUpload);
+        document.getElementById('images_per_page').addEventListener('change', updateGridDefaults);
+        document.getElementById('orientation').addEventListener('change', updateGridDefaults);
         document.querySelectorAll('input[id^="question_number_"]').forEach(input => {
             input.addEventListener('change', handleQuestionNumberChange);
         });
@@ -152,6 +233,8 @@
         document.querySelectorAll('.status-buttons').forEach(setupStatusButtons);
         document.getElementById('questions-form').addEventListener('submit', handleFormSubmit);
         document.getElementById('same-subject-toggle').addEventListener('change', handleSameSubjectToggle);
+        
+        document.getElementById('add-misc-question').addEventListener('click', handleAddMiscQuestion);
         
         // Add event listeners for auto-extract buttons if NVIDIA NIM is available
         {% if nvidia_nim_available %}
@@ -272,6 +355,7 @@
 
     async function handleFormSubmit(e) {
         e.preventDefault();
+        saveSettings(); // Save settings on submit
         const statusDiv = document.getElementById('status');
         showStatus('Saving questions and generating PDF...', 'info');
         
@@ -304,7 +388,11 @@
                     session_id: sessionId,
                     pdf_name: document.getElementById('pdf_name').value,
                     images_per_page: parseInt(document.getElementById('images_per_page').value, 10),
-                    filter_type: document.getElementById('filter_type').value
+                    filter_type: document.getElementById('filter_type').value,
+                    orientation: document.getElementById('orientation').value,
+                    grid_rows: parseInt(document.getElementById('grid_rows').value, 10),
+                    grid_cols: parseInt(document.getElementById('grid_cols').value, 10),
+                    miscellaneous_questions: miscellaneousQuestions
                 })
             });
             const result = await pdfResponse.json();
@@ -324,6 +412,60 @@
             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>`;
         statusContainer.innerHTML = alert;
+    }
+
+    function handleAddMiscQuestion() {
+        const imageInput = document.getElementById('misc_image');
+        const file = imageInput.files[0];
+
+        const question = {
+            id: `misc_${Date.now()}`,
+            question_number: document.getElementById('misc_question_number').value,
+            subject: document.getElementById('misc_subject').value,
+            status: document.getElementById('misc_status').value,
+            marked_solution: document.getElementById('misc_marked_solution').value,
+            actual_solution: document.getElementById('misc_actual_solution').value,
+            image_data: null
+        };
+
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                question.image_data = e.target.result;
+                miscellaneousQuestions.push(question);
+                renderMiscellaneousQuestions();
+                document.getElementById('misc-question-form').reset();
+            };
+            reader.readAsDataURL(file);
+        } else {
+            miscellaneousQuestions.push(question);
+            renderMiscellaneousQuestions();
+            document.getElementById('misc-question-form').reset();
+        }
+    }
+
+    function renderMiscellaneousQuestions() {
+        const listDiv = document.getElementById('misc-questions-list');
+        listDiv.innerHTML = '';
+        miscellaneousQuestions.forEach((q, index) => {
+            const item = document.createElement('div');
+            item.className = 'alert alert-secondary';
+            item.innerHTML = `
+                <strong>Q: ${q.question_number}</strong> - ${q.subject} 
+                <button type="button" class="btn-close float-end" data-index="${index}"></button>
+            `;
+            listDiv.appendChild(item);
+        });
+
+        document.querySelectorAll('#misc-questions-list .btn-close').forEach(button => {
+            button.addEventListener('click', handleRemoveMiscQuestion);
+        });
+    }
+
+    function handleRemoveMiscQuestion(event) {
+        const index = event.target.dataset.index;
+        miscellaneousQuestions.splice(index, 1);
+        renderMiscellaneousQuestions();
     }
 
     // Auto-extract question number function
@@ -465,7 +607,10 @@
         }
     }
 
-    document.addEventListener('DOMContentLoaded', setupEventListeners);
+    document.addEventListener('DOMContentLoaded', () => {
+        loadSettings();
+        setupEventListeners();
+    });
 
 </script>
 {% endblock %}

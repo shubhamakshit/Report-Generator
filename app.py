@@ -88,6 +88,13 @@ def setup_database():
         print("Migrating database: Adding 'original_filename' column to 'sessions' table.")
         cursor.execute("ALTER TABLE sessions ADD COLUMN original_filename TEXT")
 
+    # Add persist column to sessions table if it doesn't exist (for migration)
+    try:
+        cursor.execute("SELECT persist FROM sessions LIMIT 1")
+    except sqlite3.OperationalError:
+        print("Migrating database: Adding 'persist' column to 'sessions' table.")
+        cursor.execute("ALTER TABLE sessions ADD COLUMN persist INTEGER DEFAULT 0")
+
     # Create questions table (dropping if exists to ensure schema is correct)
     cursor.execute("DROP TABLE IF EXISTS questions")
     cursor.execute("""
@@ -110,13 +117,13 @@ def setup_database():
     conn.close()
 
 def cleanup_old_data():
-    """Removes sessions, files, and PDFs older than 1 day."""
+    """Removes sessions, files, and PDFs older than 1 day, unless persisted."""
     print("Running cleanup of old data...")
     conn = get_db_connection()
     cutoff = datetime.now() - timedelta(days=1)
     
-    # Find old sessions
-    old_sessions = conn.execute('SELECT id FROM sessions WHERE created_at < ?', (cutoff,)).fetchall()
+    # Find old, non-persisted sessions
+    old_sessions = conn.execute('SELECT id FROM sessions WHERE created_at < ? AND persist = 0', (cutoff,)).fetchall()
     
     for session in old_sessions:
         session_id = session['id']
@@ -297,35 +304,38 @@ def crop_image_perspective(image_path, points):
     matrix = cv2.getPerspectiveTransform(src_points, dst_points)
     return cv2.warpPerspective(img, matrix, (max_width, max_height))
 
-def create_a4_pdf_from_images(image_info, base_folder, output_filename, images_per_page):
+def create_a4_pdf_from_images(image_info, base_folder, output_filename, images_per_page, orientation='portrait', grid_rows=None, grid_cols=None):
     if not image_info: return False
     A4_WIDTH_PX, A4_HEIGHT_PX = 4960, 7016
     font_large, font_small = get_or_download_font(font_size=60), get_or_download_font(font_size=45)
     pages, info_chunks = [], [image_info[i:i + images_per_page] for i in range(0, len(image_info), images_per_page)]
     for chunk in info_chunks:
-        total_width = total_height = valid_images = 0
-        for info in chunk:
-            img_path = os.path.join(base_folder, info['processed_filename'] or info['filename'])
-            try:
-                with Image.open(img_path) as img:
-                    total_width += img.width
-                    total_height += img.height
-                    valid_images += 1
-            except IOError: pass
-        if valid_images == 0: continue
-        avg_aspect = (total_width / valid_images) / (total_height / valid_images)
-        use_landscape = avg_aspect > 1.2
-        page_width, page_height = (A4_HEIGHT_PX, A4_WIDTH_PX) if use_landscape else (A4_WIDTH_PX, A4_HEIGHT_PX)
+        page_width, page_height = (A4_HEIGHT_PX, A4_WIDTH_PX) if orientation == 'landscape' else (A4_WIDTH_PX, A4_HEIGHT_PX)
         page = Image.new('RGB', (page_width, page_height), 'white')
         draw = ImageDraw.Draw(page)
-        cols, rows = int(math.ceil(math.sqrt(len(chunk)))), int(math.ceil(len(chunk) / int(math.ceil(math.sqrt(len(chunk))))))
+        
+        if grid_rows and grid_cols:
+            rows, cols = grid_rows, grid_cols
+        else:
+            cols, rows = int(math.ceil(math.sqrt(len(chunk)))), int(math.ceil(len(chunk) / int(math.ceil(math.sqrt(len(chunk))))))
+        
         cell_width, cell_height = (page_width - 400) // cols, (page_height - 400) // rows
         for i, info in enumerate(chunk):
             col, row = i % cols, i // cols
             cell_x, cell_y = 200 + col * cell_width, 200 + row * cell_height
             try:
-                img_path = os.path.join(base_folder, info['processed_filename'] or info['filename'])
-                with Image.open(img_path).convert("RGB") as img:
+                img = None
+                if info.get('image_data'):
+                    # Handle base64 encoded image data
+                    header, encoded = info['image_data'].split(",", 1)
+                    image_data = base64.b64decode(encoded)
+                    img = Image.open(io.BytesIO(image_data)).convert("RGB")
+                elif info.get('processed_filename') or info.get('filename'):
+                    # Handle image from file path
+                    img_path = os.path.join(base_folder, info.get('processed_filename') or info.get('filename'))
+                    img = Image.open(img_path).convert("RGB")
+
+                if img:
                     target_w, target_h = cell_width - 40, cell_height - 170
                     
                     # Calculate new dimensions while maintaining aspect ratio
@@ -345,6 +355,7 @@ def create_a4_pdf_from_images(image_info, base_folder, output_filename, images_p
                     img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
                     
                     page.paste(img, (cell_x + 20, cell_y + 150))
+
                 draw.text((cell_x + 20, cell_y + 20), f"Q: {info['question_number']}", fill="black", font=font_large)
                 info_text = f"Status: {info['status']} | Marked: {info['marked_solution']} | Correct: {info['actual_solution']}"
                 draw.text((cell_x + 20, cell_y + 90), info_text, fill="darkgray", font=font_small)
@@ -616,12 +627,12 @@ def dashboard():
     
     # Get all sessions with their creation dates and original filenames
     sessions = conn.execute("""
-        SELECT s.id, s.created_at, s.original_filename,
+        SELECT s.id, s.created_at, s.original_filename, s.persist,
                COUNT(CASE WHEN i.image_type = 'original' THEN 1 END) as page_count,
                COUNT(CASE WHEN i.image_type = 'cropped' THEN 1 END) as question_count
         FROM sessions s
         LEFT JOIN images i ON s.id = i.session_id
-        GROUP BY s.id, s.created_at, s.original_filename
+        GROUP BY s.id, s.created_at, s.original_filename, s.persist
         ORDER BY s.created_at DESC
     """).fetchall()
     
@@ -663,6 +674,31 @@ def delete_session(session_id):
         conn.close()
         
         return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/toggle_persist/<session_id>', methods=[METHOD_POST])
+def toggle_persist(session_id):
+    """Toggles the persistence status of a session."""
+    try:
+        conn = get_db_connection()
+        
+        # Get current persist status
+        current_status = conn.execute('SELECT persist FROM sessions WHERE id = ?', (session_id,)).fetchone()
+        
+        if not current_status:
+            conn.close()
+            return jsonify({'error': 'Session not found'}), 404
+            
+        # Toggle the status (0 becomes 1, 1 becomes 0)
+        new_status = 1 - current_status['persist']
+        
+        conn.execute('UPDATE sessions SET persist = ? WHERE id = ?', (new_status, session_id))
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'success': True, 'status': 'persisted' if new_status == 1 else 'not_persisted'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -883,6 +919,10 @@ def generate_pdf():
     all_questions = [dict(row) for row in conn.execute(query, (session_id,)).fetchall()]
     conn.close()
 
+    # Add miscellaneous questions from the request
+    miscellaneous_questions = data.get('miscellaneous_questions', [])
+    all_questions.extend(miscellaneous_questions)
+
     filter_type = data.get('filter_type', 'all')
     filtered_questions = [
         q for q in all_questions if filter_type == 'all' or q['status'] == filter_type
@@ -892,8 +932,11 @@ def generate_pdf():
     
     pdf_filename = f"{secure_filename(data.get('pdf_name', 'analysis'))}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
     images_per_page = int(data.get('images_per_page', 4))
+    orientation = data.get('orientation', 'portrait') # default to portrait
+    grid_rows = data.get('grid_rows')
+    grid_cols = data.get('grid_cols')
 
-    if create_a4_pdf_from_images(filtered_questions, app.config['PROCESSED_FOLDER'], pdf_filename, images_per_page):
+    if create_a4_pdf_from_images(filtered_questions, app.config['PROCESSED_FOLDER'], pdf_filename, images_per_page, orientation, grid_rows, grid_cols):
         return jsonify({'success': True, 'pdf_filename': pdf_filename})
     else:
         return jsonify({'error': 'PDF generation failed'}), 500
