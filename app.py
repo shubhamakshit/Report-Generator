@@ -13,6 +13,7 @@ import fitz
 import requests
 import json
 import io
+import zipfile
 
 # Import route strings and constants
 from strings import *
@@ -112,7 +113,100 @@ def setup_database():
         FOREIGN KEY (image_id) REFERENCES images (id)
     );
     """)
+
+    # Create folders table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS folders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        parent_id INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (parent_id) REFERENCES folders (id) ON DELETE CASCADE
+    );
+    """)
+
+    # Create generated_pdfs table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS generated_pdfs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL,
+        filename TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        tags TEXT,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        source_filename TEXT,
+        folder_id INTEGER,
+        FOREIGN KEY (session_id) REFERENCES sessions (id),
+        FOREIGN KEY (folder_id) REFERENCES folders (id) ON DELETE SET NULL
+    );
+    """)
+
+    # --- Migrations for generated_pdfs table ---
     
+    # Add persist column
+    try:
+        cursor.execute("SELECT persist FROM generated_pdfs LIMIT 1")
+    except sqlite3.OperationalError:
+        print("Migrating database: Adding 'persist' column to 'generated_pdfs' table.")
+        cursor.execute("ALTER TABLE generated_pdfs ADD COLUMN persist INTEGER DEFAULT 0")
+
+    # Add folder_id column if it doesn't exist
+    try:
+        cursor.execute("SELECT folder_id FROM generated_pdfs LIMIT 1")
+    except sqlite3.OperationalError:
+        print("Migrating database: Adding 'folder_id' column to 'generated_pdfs' table.")
+        cursor.execute("ALTER TABLE generated_pdfs ADD COLUMN folder_id INTEGER REFERENCES folders(id) ON DELETE SET NULL")
+
+    # Migrate from group_name to folders
+    try:
+        cursor.execute("SELECT group_name FROM generated_pdfs LIMIT 1")
+        
+        # If group_name exists, migrate data
+        print("Migrating data from 'group_name' to 'folders' table.")
+        
+        # Get all unique group names
+        groups = cursor.execute("SELECT DISTINCT group_name FROM generated_pdfs WHERE group_name IS NOT NULL AND group_name != ''").fetchall()
+        
+        folder_map = {} # Maps group_name to folder_id
+
+        for group in groups:
+            group_name = group['group_name']
+            parts = group_name.split('/')
+            parent_id = None
+            current_path = ""
+            
+            for part in parts:
+                current_path = f"{current_path}/{part}" if current_path else part
+                
+                if current_path not in folder_map:
+                    # Check if folder already exists
+                    res = cursor.execute("SELECT id FROM folders WHERE name = ? AND parent_id IS ?", (part, parent_id)).fetchone()
+                    if res:
+                        folder_id = res['id']
+                    else:
+                        # Insert folder and get its ID
+                        cursor.execute("INSERT INTO folders (name, parent_id) VALUES (?, ?)", (part, parent_id))
+                        folder_id = cursor.lastrowid
+                    
+                    folder_map[current_path] = folder_id
+                    parent_id = folder_id
+                else:
+                    parent_id = folder_map[current_path]
+
+            # Update PDFs with the final folder_id for the group_name
+            cursor.execute("UPDATE generated_pdfs SET folder_id = ? WHERE group_name = ?", (parent_id, group_name))
+
+        # Once migration is done, we can drop the group_name column
+        # Note: Dropping columns in SQLite is tricky. A common way is to recreate the table.
+        # For simplicity here, we'll just leave the old column. A more robust migration script would handle this better.
+        # A 'manual' step might be to run: ALTER TABLE generated_pdfs DROP COLUMN group_name;
+        # But this is not supported in all SQLite versions.
+        
+    except sqlite3.OperationalError:
+        # group_name column doesn't exist, so no migration needed.
+        pass
+
     conn.commit()
     conn.close()
 
@@ -143,6 +237,17 @@ def cleanup_old_data():
         conn.execute('DELETE FROM questions WHERE session_id = ?', (session_id,))
         conn.execute('DELETE FROM images WHERE session_id = ?', (session_id,))
         conn.execute('DELETE FROM sessions WHERE id = ?', (session_id,))
+
+    # Cleanup old, non-persisted generated PDFs
+    old_pdfs = conn.execute('SELECT id, filename FROM generated_pdfs WHERE created_at < ? AND persist = 0', (cutoff,)).fetchall()
+    for pdf in old_pdfs:
+        pdf_id, pdf_filename = pdf['id'], pdf['filename']
+        print(f"Deleting old generated PDF: {pdf_filename}")
+        try:
+            os.remove(os.path.join(app.config['OUTPUT_FOLDER'], pdf_filename))
+        except OSError:
+            pass
+        conn.execute('DELETE FROM generated_pdfs WHERE id = ?', (pdf_id,))
 
     # Cleanup old PDF files in the output folder
     for filename in os.listdir(app.config['OUTPUT_FOLDER']):
@@ -758,7 +863,7 @@ def save_questions():
             session_id, 
             q['image_id'], 
             q['question_number'], 
-            q['subject'], 
+            "", 
             q['status'], 
             q['marked_solution'], 
             q['actual_solution'], 
@@ -937,6 +1042,16 @@ def generate_pdf():
     grid_cols = data.get('grid_cols')
 
     if create_a4_pdf_from_images(filtered_questions, app.config['PROCESSED_FOLDER'], pdf_filename, images_per_page, orientation, grid_rows, grid_cols):
+        conn = get_db_connection()
+        session_info = conn.execute('SELECT original_filename FROM sessions WHERE id = ?', (session_id,)).fetchone()
+        source_filename = session_info['original_filename'] if session_info else 'Unknown'
+        
+        conn.execute(
+            'INSERT INTO generated_pdfs (session_id, filename, subject, tags, notes, source_filename) VALUES (?, ?, ?, ?, ?, ?)',
+            (session_id, pdf_filename, data.get('subject'), data.get('tags'), data.get('notes'), source_filename)
+        )
+        conn.commit()
+        conn.close()
         return jsonify({'success': True, 'pdf_filename': pdf_filename})
     else:
         return jsonify({'error': 'PDF generation failed'}), 500
@@ -944,6 +1059,10 @@ def generate_pdf():
 @app.route('/download/<filename>')
 def download_file(filename):
     return send_file(os.path.join(app.config['OUTPUT_FOLDER'], filename), as_attachment=True)
+
+@app.route('/view_pdf/<filename>')
+def view_pdf(filename):
+    return send_file(os.path.join(app.config['OUTPUT_FOLDER'], filename), as_attachment=False)
 
 @app.route('/image/<folder>/<filename>')
 def serve_image(folder, filename):
@@ -956,6 +1075,327 @@ def serve_image(folder, filename):
 def index():
     """Renders the main page with options for PDF or image upload."""
     return render_template('main.html')
+
+def get_folder_tree():
+    conn = get_db_connection()
+    folders = conn.execute('SELECT id, name, parent_id FROM folders ORDER BY name').fetchall()
+    conn.close()
+    
+    folder_map = {f['id']: dict(f) for f in folders}
+    tree = []
+    
+    for folder_id, folder in folder_map.items():
+        if folder['parent_id']:
+            parent = folder_map.get(folder['parent_id'])
+            if parent:
+                if 'children' not in parent:
+                    parent['children'] = []
+                parent['children'].append(folder)
+        else:
+            tree.append(folder)
+            
+    return tree
+
+@app.route('/pdf_manager')
+@app.route('/pdf_manager/browse/<path:folder_path>')
+def pdf_manager(folder_path=''):
+    """Renders the PDF manager with a hierarchical folder structure."""
+    conn = get_db_connection()
+    view_mode = request.args.get('view', 'default')
+
+    if view_mode == 'all':
+        pdfs = conn.execute('SELECT * FROM generated_pdfs ORDER BY created_at DESC').fetchall()
+        subfolders = []
+        breadcrumbs = []
+        current_path = ''
+        all_view = True
+        folder_id = None
+    else:
+        all_view = False
+        folder_id = None
+        breadcrumbs = []
+        if folder_path:
+            parts = folder_path.split('/')
+            parent_id = None
+            for i, part in enumerate(parts):
+                res = conn.execute("SELECT id FROM folders WHERE name = ? AND (parent_id = ? OR (? IS NULL AND parent_id IS NULL))", (part, parent_id, parent_id)).fetchone()
+                if not res:
+                    # Folder not found, maybe redirect to home of pdf_manager
+                    return redirect('/pdf_manager')
+                parent_id = res['id']
+                breadcrumbs.append({'name': part, 'path': '/'.join(parts[:i+1])})
+            folder_id = parent_id
+
+        # Get PDFs in the current folder
+        if folder_id:
+            pdfs = conn.execute('SELECT * FROM generated_pdfs WHERE folder_id = ? ORDER BY created_at DESC', (folder_id,)).fetchall()
+        else:
+            pdfs = conn.execute('SELECT * FROM generated_pdfs WHERE folder_id IS NULL ORDER BY created_at DESC').fetchall()
+        
+        # Get subfolders of the current folder
+        if folder_id:
+            subfolders = conn.execute('SELECT * FROM folders WHERE parent_id = ? ORDER BY name', (folder_id,)).fetchall()
+        else:
+            subfolders = conn.execute('SELECT * FROM folders WHERE parent_id IS NULL ORDER BY name').fetchall()
+
+    folder_tree = get_folder_tree()
+    conn.close()
+    
+    return render_template('pdf_manager.html', 
+                           pdfs=[dict(row) for row in pdfs],
+                           subfolders=[dict(row) for row in subfolders],
+                           current_folder_id=folder_id,
+                           breadcrumbs=breadcrumbs,
+                           all_view=all_view,
+                           folder_tree=folder_tree)
+
+
+@app.route('/get_pdf_details/<int:pdf_id>')
+def get_pdf_details(pdf_id):
+    """Fetches details for a specific PDF."""
+    conn = get_db_connection()
+    pdf = conn.execute('SELECT * FROM generated_pdfs WHERE id = ?', (pdf_id,)).fetchone()
+    conn.close()
+    if pdf:
+        return jsonify(dict(pdf))
+    return jsonify({'error': 'PDF not found'}), 404
+
+
+@app.route('/update_pdf_details/<int:pdf_id>', methods=[METHOD_POST])
+def update_pdf_details(pdf_id):
+    """Updates the details of a specific PDF."""
+    data = request.json
+    try:
+        conn = get_db_connection()
+        conn.execute(
+            'UPDATE generated_pdfs SET subject = ?, tags = ?, notes = ? WHERE id = ?',
+            (data.get('subject'), data.get('tags'), data.get('notes'), pdf_id)
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/rename_item', methods=[METHOD_POST])
+def rename_item():
+    data = request.json
+    item_type = data.get('item_type')
+    item_id = data.get('item_id')
+    new_name = data.get('new_name')
+
+    if not all([item_type, item_id, new_name]):
+        return jsonify({'error': 'Missing parameters'}), 400
+
+    conn = get_db_connection()
+    if item_type == 'folder':
+        conn.execute('UPDATE folders SET name = ? WHERE id = ?', (new_name, item_id))
+    elif item_type == 'pdf':
+        conn.execute('UPDATE generated_pdfs SET subject = ? WHERE id = ?', (new_name, item_id))
+    else:
+        conn.close()
+        return jsonify({'error': 'Invalid item type'}), 400
+
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+@app.route('/delete_folder/<int:folder_id>', methods=[METHOD_DELETE])
+def delete_folder(folder_id):
+    conn = get_db_connection()
+    
+    def get_all_child_folders(f_id):
+        children = conn.execute('SELECT id FROM folders WHERE parent_id = ?', (f_id,)).fetchall()
+        folder_ids = [f['id'] for f in children]
+        for child_id in folder_ids:
+            folder_ids.extend(get_all_child_folders(child_id))
+        return folder_ids
+
+    folder_ids_to_delete = [folder_id] + get_all_child_folders(folder_id)
+    placeholders = ', '.join('?' * len(folder_ids_to_delete))
+    
+    pdfs_to_delete = conn.execute(f'SELECT id, filename FROM generated_pdfs WHERE folder_id IN ({placeholders})', folder_ids_to_delete).fetchall()
+    
+    for pdf in pdfs_to_delete:
+        try:
+            os.remove(os.path.join(app.config['OUTPUT_FOLDER'], pdf['filename']))
+        except OSError:
+            pass
+    
+    conn.execute(f'DELETE FROM generated_pdfs WHERE folder_id IN ({placeholders})', folder_ids_to_delete)
+    conn.execute(f'DELETE FROM folders WHERE id IN ({placeholders})', folder_ids_to_delete)
+    
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+@app.route('/delete_generated_pdf/<int:pdf_id>', methods=[METHOD_DELETE])
+def delete_generated_pdf(pdf_id):
+    """Deletes a generated PDF and its record."""
+    try:
+        conn = get_db_connection()
+        pdf_info = conn.execute('SELECT filename FROM generated_pdfs WHERE id = ?', (pdf_id,)).fetchone()
+        if pdf_info:
+            try:
+                os.remove(os.path.join(app.config['OUTPUT_FOLDER'], pdf_info['filename']))
+            except OSError:
+                pass
+            conn.execute('DELETE FROM generated_pdfs WHERE id = ?', (pdf_id,))
+            conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/toggle_persist_generated_pdf/<int:pdf_id>', methods=[METHOD_POST])
+def toggle_persist_generated_pdf(pdf_id):
+    """Toggles the persistence status of a generated PDF."""
+    try:
+        conn = get_db_connection()
+        current_status = conn.execute('SELECT persist FROM generated_pdfs WHERE id = ?', (pdf_id,)).fetchone()
+        if not current_status:
+            conn.close()
+            return jsonify({'error': 'PDF not found'}), 404
+        new_status = 1 - current_status['persist']
+        conn.execute('UPDATE generated_pdfs SET persist = ? WHERE id = ?', (new_status, pdf_id))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'status': 'persisted' if new_status == 1 else 'not_persisted'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/bulk_delete_pdfs', methods=[METHOD_POST])
+def bulk_delete_pdfs():
+    """Deletes multiple PDFs at once."""
+    data = request.json
+    pdf_ids = data.get('ids', [])
+    if not pdf_ids:
+        return jsonify({'error': 'No PDF IDs provided'}), 400
+    try:
+        conn = get_db_connection()
+        for pdf_id in pdf_ids:
+            pdf_info = conn.execute('SELECT filename FROM generated_pdfs WHERE id = ?', (pdf_id,)).fetchone()
+            if pdf_info:
+                try:
+                    os.remove(os.path.join(app.config['OUTPUT_FOLDER'], pdf_info['filename']))
+                except OSError:
+                    pass
+                conn.execute('DELETE FROM generated_pdfs WHERE id = ?', (pdf_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/bulk_toggle_persist', methods=[METHOD_POST])
+def bulk_toggle_persist():
+    """Toggles the persistence status for multiple PDFs."""
+    data = request.json
+    pdf_ids = data.get('ids', [])
+    if not pdf_ids:
+        return jsonify({'error': 'No PDF IDs provided'}), 400
+    try:
+        conn = get_db_connection()
+        for pdf_id in pdf_ids:
+            current_status = conn.execute('SELECT persist FROM generated_pdfs WHERE id = ?', (pdf_id,)).fetchone()
+            if current_status:
+                new_status = 1 - current_status['persist']
+                conn.execute('UPDATE generated_pdfs SET persist = ? WHERE id = ?', (new_status, pdf_id))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/create_folder', methods=[METHOD_POST])
+def create_folder():
+    """Creates a new folder in the database."""
+    data = request.json
+    name = data.get('new_folder_name')
+    parent_id = data.get('parent_id')
+    
+    # Basic validation
+    if not name:
+        return jsonify({'error': 'Folder name is required'}), 400
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO folders (name, parent_id) VALUES (?, ?)", (name, parent_id))
+        new_folder_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'success': True, 'id': new_folder_id, 'name': name, 'parent_id': parent_id})
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/bulk_move_pdfs', methods=[METHOD_POST])
+def bulk_move_pdfs():
+    """Moves multiple PDFs to a specified folder path."""
+    data = request.json
+    pdf_ids = data.get('ids', [])
+    target_folder_id = data.get('target_folder_id')
+
+    if not pdf_ids:
+        return jsonify({'error': 'No PDF IDs provided'}), 400
+
+    try:
+        conn = get_db_connection()
+        placeholders = ', '.join('?' * len(pdf_ids))
+        conn.execute(
+            f'UPDATE generated_pdfs SET folder_id = ? WHERE id IN ({placeholders})',
+            (target_folder_id, *pdf_ids)
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/upload_final_pdf')
+def upload_final_pdf():
+    return render_template('upload_final_pdf.html')
+
+@app.route('/handle_final_pdf_upload', methods=[METHOD_POST])
+def handle_final_pdf_upload():
+    if 'pdf' not in request.files:
+        return 'No PDF file part', 400
+    file = request.files['pdf']
+    if file.filename == '':
+        return 'No selected file', 400
+
+    subject = request.form.get('subject')
+    if not subject:
+        return 'Subject is required', 400
+
+    if file and file.filename.lower().endswith('.pdf'):
+        session_id = str(uuid.uuid4())
+        original_filename = secure_filename(file.filename)
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('INSERT INTO sessions (id, original_filename) VALUES (?, ?)',
+                       (session_id, original_filename))
+        
+        output_filename = f"{session_id}_{original_filename}"
+        output_path = os.path.join(app.config['OUTPUT_FOLDER'], output_filename)
+        file.save(output_path)
+
+        tags = request.form.get('tags')
+        notes = request.form.get('notes')
+
+        cursor.execute(
+            'INSERT INTO generated_pdfs (session_id, filename, subject, tags, notes, source_filename) VALUES (?, ?, ?, ?, ?, ?)',
+            (session_id, output_filename, subject, tags, notes, original_filename)
+        )
+        conn.commit()
+        conn.close()
+        return redirect('/pdf_manager')
+    else:
+        return 'Invalid file type', 400
 
 if __name__ == '__main__':
     setup_database()

@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+    <title>Adjust & Enhance</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <style>
+        :root {
+            --header-height: 56px;
+            --point-size: 28px;
+            --loupe-size: 100px;
+        }
+        html, body { height: 100%; overflow: hidden; }
+        .main-container { display: flex; flex-direction: column; height: 100vh; }
+        .app-header { height: var(--header-height); flex-shrink: 0; display: flex; align-items: center; padding: 0 1rem; background: #2c3034; border-bottom: 1px solid #495057; }
+        .content-wrapper { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+        .image-pane { flex: 1; min-height: 0; position: relative; background: #181a1c; display: flex; align-items: center; justify-content: center; padding: 0.5rem; }
+        .controls-pane { flex-shrink: 0; background: #212529; border-top: 1px solid #495057; display: flex; flex-direction: column; overflow: hidden; }
+        .controls-content { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 1rem; }
+        .action-buttons { padding: 1rem; border-top: 1px solid #495057; flex-shrink: 0; }
+        
+        #crop-area { position: relative; touch-action: none; line-height: 0; }
+        #main-image { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+        #boundary-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
+
+        .control-point { position: absolute; width: var(--point-size); height: var(--point-size); transform: translate(-50%, -50%); cursor: pointer; z-index: 10; }
+        .corner-point { background: #0d6efd; border: 3px solid white; border-radius: 50%; box-shadow: 0 0 15px rgba(13, 110, 253, 0.7); }
+        .edge-point { background: white; border: 3px solid #0d6efd; border-radius: 6px; }
+        
+        .magnifier { display: none; position: fixed; width: var(--loupe-size); height: var(--loupe-size); border-radius: 50%; border: 3px solid #0d6efd; overflow: hidden; pointer-events: none; z-index: 1000; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6); }
+        .magnifier-image { position: absolute; transform-origin: top left; }
+        
+        .magnifier-crosshair { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        .magnifier-crosshair::before, .magnifier-crosshair::after { content: ''; position: absolute; background: #ffc107; }
+        .magnifier-crosshair::before { left: 50%; width: 2px; height: 100%; transform: translateX(-50%); }
+        .magnifier-crosshair::after { top: 50%; height: 2px; width: 100%; transform: translateY(-50%); }
+        
+        .presets-scroll { display: flex; gap: 0.75rem; overflow-x: auto; padding-bottom: 10px; }
+        .preset-item { flex-shrink: 0; text-align: center; cursor: pointer; }
+        .preset-image { width: 60px; height: 60px; object-fit: cover; border-radius: 8px; border: 2px solid #495057; }
+        .preset-label { font-size: 0.75rem; margin-top: 0.25rem; color: #adb5bd; }
+        .preset-item.active .preset-image { border-color: #0d6efd; }
+        .preset-item.active .preset-label { color: #0d6efd; font-weight: 600; }
+
+        .control-label { font-size: 0.875rem; margin-bottom: 0.5rem; }
+        .btn-mobile { height: 48px; font-weight: 500; border-radius: 8px; }
+        .status-message { position: fixed; top: var(--header-height); left: 1rem; right: 1rem; z-index: 1050; }
+
+        @media (max-height: 700px) { .controls-pane { height: 280px; } }
+        @media (min-height: 701px) { .controls-pane { height: 40vh; } }
+        
+        @media (min-width: 992px) {
+            :root { --point-size: 24px; --loupe-size: 120px; }
+            .content-wrapper { flex-direction: row; }
+            .image-pane { flex: 1; min-width: 0; }
+            .controls-pane { width: 320px; height: auto; border-top: none; border-left: 1px solid #495057; }
+        }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <header class="app-header"><h5 class="mb-0 text-white"><i class="bi bi-crop me-2"></i>Adjust & Enhance</h5></header>
+        <div class="content-wrapper">
+            <div class="image-pane" id="imagePane">
+                <div id="crop-area">
+                    <img id="main-image" src="/image/upload/{{ image_info.filename }}" alt="Image to adjust">
+                    <canvas id="boundary-canvas"></canvas>
+                </div>
+            </div>
+            <div class="controls-pane">
+                <div class="controls-content">
+                    <h6 class="text-white mb-2">Quick Presets</h6>
+                    <div class="presets-scroll" id="presetsContainer"></div>
+                    <hr class="my-3">
+                    <h6 class="text-white mb-3">Manual Adjustments</h6>
+                    <div class="mb-3"><label for="brightness" class="control-label">Brightness <span id="brightnessValue">0</span></label><input type="range" class="form-range" id="brightness" min="-100" max="100" value="0" step="5"></div>
+                    <div class="mb-3"><label for="contrast" class="control-label">Contrast <span id="contrastValue">1.0</span></label><input type="range" class="form-range" id="contrast" min="0.5" max="2.5" value="1.0" step="0.05"></div>
+                    <div class="mb-3"><label for="gamma" class="control-label">Gamma <span id="gammaValue">1.0</span></label><input type="range" class="form-range" id="gamma" min="0.2" max="2.2" value="1.0" step="0.1"></div>
+                </div>
+                <div class="action-buttons">
+                    <button id="processBtn" class="btn btn-primary w-100 btn-mobile mb-2"><i class="bi bi-check-lg me-2"></i>Save and Continue</button>
+                    <button id="skipBtn" class="btn btn-outline-secondary w-100 btn-mobile"><i class="bi bi-skip-forward me-2"></i>Skip This Image</button>
+                </div>
+            </div>
+        </div>
+        <div class="magnifier" id="magnifier"><img class="magnifier-image" id="magnifier-image" src="/image/upload/{{ image_info.filename }}"><div class="magnifier-crosshair"></div></div>
+        <div id="statusContainer"></div>
+    </div>
+
+    <script>
+        // --- DOM ELEMENT REFERENCES ---
+        const image = document.getElementById('main-image');
+        const imagePane = document.getElementById('imagePane');
+        const cropArea = document.getElementById('crop-area');
+        const canvas = document.getElementById('boundary-canvas');
+        const ctx = canvas.getContext('2d');
+        const magnifier = document.getElementById('magnifier');
+        const magnifierImage = document.getElementById('magnifier-image');
+        const brightnessSlider = document.getElementById('brightness');
+        const contrastSlider = document.getElementById('contrast');
+        const gammaSlider = document.getElementById('gamma');
+        
+        // --- GLOBAL STATE ---
+        const sessionId = '{{ session_id }}';
+        const imageIndex = parseInt('{{ image_index }}');
+        const points = {};
+        let activePoint = null;
+        let isInitialized = false;
+
+        const PRESETS = [ { name: 'Original', settings: { brightness: 0, contrast: 1.0, gamma: 1.0 }, filter: 'none' }, { name: 'Document', settings: { brightness: 10, contrast: 1.5, gamma: 0.8 }, filter: 'contrast(1.4) brightness(1.1)' }, { name: 'Grayscale', settings: { brightness: 0, contrast: 1.2, gamma: 1.0 }, filter: 'grayscale(100%) contrast(1.2)' }, { name: 'High Contrast', settings: { brightness: 5, contrast: 2.0, gamma: 0.7 }, filter: 'contrast(1.8) brightness(1.05)' }, { name: 'Vivid', settings: { brightness: 0, contrast: 1.2, gamma: 1.0 }, filter: 'saturate(1.5) contrast(1.1)' }];
+
+        // --- CORE INITIALIZATION (THE FIX) ---
+        function initializeApp() {
+            if (!image.naturalWidth) return; // Wait for the image to have dimensions
+            
+            // This function runs whenever the container is resized or the image loads.
+            // It sets up the workspace dimensions.
+            const setupWorkspace = () => {
+                const paneAspectRatio = imagePane.clientWidth / imagePane.clientHeight;
+                const imageAspectRatio = image.naturalWidth / image.naturalHeight;
+                let width, height;
+                if (imageAspectRatio > paneAspectRatio) {
+                    width = imagePane.clientWidth;
+                    height = width / imageAspectRatio;
+                } else {
+                    height = imagePane.clientHeight;
+                    width = height * imageAspectRatio;
+                }
+                cropArea.style.width = `${width}px`;
+                cropArea.style.height = `${height}px`;
+                canvas.width = width;
+                canvas.height = height;
+                updateAllPoints();
+            };
+            
+            // Run it once to set initial size
+            setupWorkspace();
+
+            // The first time this runs, create everything
+            if (!isInitialized) {
+                createPoints();
+                setupPresets();
+                loadSettings();
+                setupActionListeners();
+                isInitialized = true;
+            }
+            
+            // Listen for future resizes
+            new ResizeObserver(setupWorkspace).observe(imagePane);
+        }
+
+        // --- POINT CREATION AND DRAGGING ---
+        function createPoints() {
+            const pointDefs = {
+                tl: { x: 0.1, y: 0.1, type: 'corner' },
+                tm: { x: 0.5, y: 0.1, type: 'edge', axis: 'horizontal', neighbors: ['tl', 'tr'] },
+                tr: { x: 0.9, y: 0.1, type: 'corner' },
+                ml: { x: 0.1, y: 0.5, type: 'edge', axis: 'vertical', neighbors: ['tl', 'bl'] },
+                mr: { x: 0.9, y: 0.5, type: 'edge', axis: 'vertical', neighbors: ['tr', 'br'] },
+                bl: { x: 0.1, y: 0.9, type: 'corner' },
+                bm: { x: 0.5, y: 0.9, type: 'edge', axis: 'horizontal', neighbors: ['bl', 'br'] },
+                br: { x: 0.9, y: 0.9, type: 'corner' }
+            };
+            Object.entries(pointDefs).forEach(([name, def]) => {
+                const pointEl = document.createElement('div');
+                pointEl.className = `control-point ${def.type}-point`;
+                cropArea.appendChild(pointEl);
+                points[name] = { ...def, element: pointEl };
+                pointEl.addEventListener('mousedown', (e) => startDrag(e, name));
+                pointEl.addEventListener('touchstart', (e) => startDrag(e, name));
+            });
+        }
+
+        function startDrag(e, pointName) {
+            e.preventDefault(); e.stopPropagation();
+            activePoint = pointName;
+            magnifier.style.display = 'block';
+            const dragStartPositions = Object.entries(points).reduce((acc, [name, data]) => {
+                acc[name] = { x: data.x, y: data.y }; return acc;
+            }, {});
+            
+            const handleDrag = (e) => {
+                if (!activePoint) return;
+                e.preventDefault();
+                const touch = e.touches ? e.touches[0] : e;
+                const rect = cropArea.getBoundingClientRect();
+                const normalizedX = (touch.clientX - rect.left) / rect.width;
+                const normalizedY = (touch.clientY - rect.top) / rect.height;
+                const point = points[activePoint];
+                const startPos = dragStartPositions[activePoint];
+                let dx = normalizedX - startPos.x;
+                let dy = normalizedY - startPos.y;
+                if (point.type === 'edge') {
+                    if (point.axis === 'horizontal') dx = 0;
+                    if (point.axis === 'vertical') dy = 0;
+                    point.neighbors.forEach(name => {
+                        const neighborStart = dragStartPositions[name];
+                        points[name].x = neighborStart.x + dx;
+                        points[name].y = neighborStart.y + dy;
+                    });
+                } else if (point.type === 'corner') {
+                    point.x = normalizedX;
+                    point.y = normalizedY;
+                }
+                recalculateEdgePoints();
+                updateAllPoints();
+                updateMagnifier(touch.clientX, touch.clientY);
+            };
+
+            const endDrag = () => {
+                activePoint = null; magnifier.style.display = 'none';
+                document.removeEventListener('mousemove', handleDrag);
+                document.removeEventListener('touchmove', handleDrag);
+                document.removeEventListener('mouseup', endDrag);
+                document.removeEventListener('touchend', endDrag);
+            };
+
+            document.addEventListener('mousemove', handleDrag);
+            document.addEventListener('touchmove', handleDrag, { passive: false });
+            document.addEventListener('mouseup', endDrag);
+            document.addEventListener('touchend', endDrag);
+        }
+
+        function recalculateEdgePoints() {
+            const { tl, tr, bl, br, tm, bm, ml, mr } = points;
+            tm.x = (tl.x + tr.x) / 2; tm.y = (tl.y + tr.y) / 2;
+            bm.x = (bl.x + br.x) / 2; bm.y = (bl.y + br.y) / 2;
+            ml.x = (tl.x + bl.x) / 2; ml.y = (tl.y + bl.y) / 2;
+            mr.x = (tr.x + br.x) / 2; mr.y = (tr.y + br.y) / 2;
+        }
+
+        // --- VISUALS ---
+        function updateAllPoints() {
+            if (Object.keys(points).length === 0) return;
+            Object.values(points).forEach(point => {
+                point.element.style.left = `${point.x * 100}%`;
+                point.element.style.top = `${point.y * 100}%`;
+            });
+            drawBoundary();
+        }
+
+        function drawBoundary() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.strokeStyle = 'rgba(13, 110, 253, 0.9)';
+            ctx.fillStyle = 'rgba(13, 110, 253, 0.15)';
+            ctx.lineWidth = 2;
+            const p = (pt) => ({ x: pt.x * canvas.width, y: pt.y * canvas.height });
+            const { tl, tm, tr, mr, br, bm, bl, ml } = points;
+            ctx.beginPath();
+            ctx.moveTo(p(tl).x, p(tl).y); ctx.lineTo(p(tm).x, p(tm).y); ctx.lineTo(p(tr).x, p(tr).y); ctx.lineTo(p(mr).x, p(mr).y);
+            ctx.lineTo(p(br).x, p(br).y); ctx.lineTo(p(bm).x, p(bm).y); ctx.lineTo(p(bl).x, p(bl).y); ctx.lineTo(p(ml).x, p(ml).y);
+            ctx.closePath(); ctx.fill(); ctx.stroke();
+        }
+
+        function updateMagnifier(clientX, clientY) {
+            const loupeSize = magnifier.clientWidth;
+            magnifier.style.left = `${clientX - (loupeSize / 2)}px`;
+            magnifier.style.top = `${clientY - loupeSize - 20}px`;
+            const rect = cropArea.getBoundingClientRect();
+            const normalizedX = (clientX - rect.left) / rect.width;
+            const normalizedY = (clientY - rect.top) / rect.height;
+            magnifierImage.style.transform = `scale(${2.5})`;
+            magnifierImage.style.left = `${-normalizedX * rect.width * 2.5 + (loupeSize / 2)}px`;
+            magnifierImage.style.top = `${-normalizedY * rect.height * 2.5 + (loupeSize / 2)}px`;
+        }
+        
+        // --- SETTINGS AND PRESETS ---
+        function setupActionListeners() {
+            [brightnessSlider, contrastSlider, gammaSlider].forEach(slider => slider.addEventListener('input', updateImageFilters));
+            document.getElementById('processBtn').addEventListener('click', processImage);
+            document.getElementById('skipBtn').addEventListener('click', skipImage);
+            brightnessSlider.addEventListener('input', (e) => { document.getElementById('brightnessValue').textContent = e.target.value; });
+            contrastSlider.addEventListener('input', (e) => { document.getElementById('contrastValue').textContent = parseFloat(e.target.value).toFixed(1); });
+            gammaSlider.addEventListener('input', (e) => { document.getElementById('gammaValue').textContent = parseFloat(e.target.value).toFixed(1); });
+        }
+        
+        function setupPresets() {
+            const presetsContainer = document.getElementById('presetsContainer');
+            presetsContainer.innerHTML = '';
+            PRESETS.forEach(preset => {
+                const presetEl = document.createElement('div');
+                presetEl.className = 'preset-item';
+                presetEl.dataset.name = preset.name;
+                presetEl.innerHTML = `<img class="preset-image" src="${image.src}" style="filter: ${preset.filter};" alt="${preset.name}"><span class="preset-label">${preset.name}</span>`;
+                presetEl.addEventListener('click', () => applyPreset(preset, presetEl));
+                presetsContainer.appendChild(presetEl);
+            });
+        }
+        
+        function applyPreset(preset, element) {
+            brightnessSlider.value = preset.settings.brightness;
+            contrastSlider.value = preset.settings.contrast;
+            gammaSlider.value = preset.settings.gamma;
+            document.getElementById('brightnessValue').textContent = preset.settings.brightness;
+            document.getElementById('contrastValue').textContent = preset.settings.contrast.toFixed(1);
+            document.getElementById('gammaValue').textContent = preset.settings.gamma.toFixed(1);
+            image.style.filter = preset.filter;
+            document.querySelectorAll('.preset-item').forEach(el => el.classList.remove('active'));
+            if (element) element.classList.add('active');
+        }
+        
+        function updateImageFilters() {
+            const brightness = 1 + parseFloat(brightnessSlider.value) / 100;
+            const contrast = parseFloat(contrastSlider.value);
+            image.style.filter = `brightness(${brightness}) contrast(${contrast})`;
+            const matchingPreset = PRESETS.find(p => p.settings.brightness == brightnessSlider.value && p.settings.contrast == contrastSlider.value && p.settings.gamma == gammaSlider.value);
+            document.querySelectorAll('.preset-item').forEach(el => el.classList.remove('active'));
+            if (matchingPreset) { const presetEl = document.querySelector(`[data-name="${matchingPreset.name}"]`); if (presetEl) presetEl.classList.add('active'); }
+        }
+
+        function saveSettings() { const settings = { brightness: parseFloat(brightnessSlider.value), contrast: parseFloat(contrastSlider.value), gamma: parseFloat(gammaSlider.value), activePreset: document.querySelector('.preset-item.active')?.dataset.name || 'Custom' }; try { localStorage.setItem('cropToolSettings', JSON.stringify(settings)); } catch (e) { console.warn('Could not save settings:', e); } }
+        function loadSettings() { try { const savedSettings = JSON.parse(localStorage.getItem('cropToolSettings') || '{}'); if (savedSettings.brightness !== undefined) { brightnessSlider.value = savedSettings.brightness; document.getElementById('brightnessValue').textContent = savedSettings.brightness; } if (savedSettings.contrast !== undefined) { contrastSlider.value = savedSettings.contrast; document.getElementById('contrastValue').textContent = savedSettings.contrast.toFixed(1); } if (savedSettings.gamma !== undefined) { gammaSlider.value = savedSettings.gamma; document.getElementById('gammaValue').textContent = savedSettings.gamma.toFixed(1); } updateImageFilters(); if (savedSettings.activePreset && savedSettings.activePreset !== 'Custom') { const presetEl = document.querySelector(`[data-name="${savedSettings.activePreset}"]`); if (presetEl) presetEl.classList.add('active'); } } catch (e) { console.warn('Could not load settings:', e); } }
+        
+        // --- SERVER COMMUNICATION ---
+        function showStatus(message, type = 'info') { const statusContainer = document.getElementById('statusContainer'); statusContainer.innerHTML = `<div class="alert alert-${type} alert-dismissible fade show status-message" role="alert">${message}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`; if (type !== 'info') { setTimeout(() => { const alert = statusContainer.querySelector('.alert'); if(alert) alert.classList.remove('show'); }, 3000); } }
+        
+        async function processImage() {
+            try {
+                showStatus('<i class="bi bi-hourglass-split me-2"></i>Processing image...', 'info');
+                saveSettings();
+                const { tl, tr, br, bl } = points;
+                const pointsToSend = [tl, tr, br, bl].map(p => ({ x: p.x, y: p.y }));
+                const adjustments = { brightness: parseFloat(brightnessSlider.value), contrast: parseFloat(contrastSlider.value), gamma: parseFloat(gammaSlider.value) };
+                const response = await fetch('/process_crop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session_id: sessionId, image_index: imageIndex, points: pointsToSend, adjustments: adjustments }) });
+                const result = await response.json();
+                if (result.error) throw new Error(result.error);
+                showStatus('<i class="bi bi-check-circle me-2"></i>Image processed!', 'success');
+                setTimeout(navigateNext, 1000);
+            } catch (error) { showStatus(`<i class="bi bi-exclamation-triangle me-2"></i>Error: ${error.message}`, 'danger'); }
+        }
+        
+        async function navigateNext() { try { const nextUrl = `/crop/${sessionId}/${imageIndex + 1}`; const res = await fetch(nextUrl); window.location.href = res.ok ? nextUrl : `/question_entry/${sessionId}`; } catch (error) { window.location.href = `/question_entry/${sessionId}`; } }
+        function skipImage() { showStatus('<i class="bi bi-skip-forward me-2"></i>Skipping...', 'info'); setTimeout(navigateNext, 500); }
+
+        // --- GLOBAL EVENT LISTENERS ---
+        if (image.complete) {
+            initializeApp();
+        } else {
+            image.addEventListener('load', initializeApp);
+        }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

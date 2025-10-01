@@ -1,0 +1,786 @@
+
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+    <title>Adjust & Enhance</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <style>
+        :root {
+            --header-height: 56px;
+            --point-size: 28px;
+            --loupe-size: 100px;
+        }
+        html, body { height: 100%; overflow: hidden; }
+
+        /* --- LAYOUT --- */
+        .main-container { display: flex; flex-direction: column; height: 100vh; }
+        
+        .app-header { 
+            height: var(--header-height); 
+            flex-shrink: 0; 
+            display: flex; 
+            align-items: center; 
+            justify-content: space-between;
+            padding: 0 0.75rem; 
+            background: #2c3034; 
+            border-bottom: 1px solid #495057; 
+        }
+        
+        .header-title {
+            display: flex;
+            align-items: center;
+            font-size: 1.1rem;
+            font-weight: 500;
+            margin: 0;
+        }
+        
+        .header-actions {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+        
+        .btn-header {
+            padding: 0.375rem 0.75rem;
+            font-size: 0.875rem;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            gap: 0.375rem;
+        }
+        
+        .content-wrapper { 
+            flex: 1; 
+            min-height: 0; 
+            display: flex; 
+            flex-direction: column; 
+        }
+        
+        .image-pane { 
+            flex-grow: 1; 
+            min-height: 0; 
+            position: relative; 
+            background: #181a1c; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            padding: 0.5rem; 
+        }
+        
+        .controls-pane { 
+            flex-shrink: 0; 
+            background: #212529; 
+            border-top: 1px solid #495057; 
+            height: 280px;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        
+        .controls-content { 
+            padding: 1rem;
+        }
+        
+        @media (min-width: 992px) {
+            .content-wrapper { flex-direction: row; }
+            .image-pane { flex: 1; min-width: 0; }
+            .controls-pane { 
+                width: 320px; 
+                height: 100%; 
+                border-top: none; 
+                border-left: 1px solid #495057; 
+            }
+            .btn-header span { display: inline !important; }
+        }
+        
+        @media (max-width: 576px) {
+            .header-title { font-size: 1rem; }
+            .header-title .bi { display: none; }
+            .btn-header { padding: 0.375rem 0.5rem; font-size: 0.8rem; }
+            .btn-header .bi { font-size: 1rem; }
+        }
+        
+        /* --- IMAGE & CROP STYLES --- */
+        #crop-area { 
+            position: relative; 
+            touch-action: none; 
+            line-height: 0; 
+            cursor: move; /* Default cursor for center drag */
+        }
+        
+        #main-image { 
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            width: 100%; 
+            height: 100%; 
+            pointer-events: none; 
+            transition: filter 0.1s linear; 
+        }
+        
+        #boundary-canvas, #grid-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        #grid-overlay { z-index: 3; }
+        #boundary-canvas { z-index: 5; }
+
+        
+        .control-point { 
+            position: absolute; 
+            width: var(--point-size); 
+            height: var(--point-size); 
+            transform: translate(-50%, -50%); 
+            pointer-events: none; /* Let crop-area handle events */
+            z-index: 10; 
+        }
+        
+        .corner-point { 
+            background: #0d6efd; 
+            border: 3px solid white; 
+            border-radius: 50%; 
+            box-shadow: 0 0 15px rgba(13, 110, 253, 0.7); 
+        }
+        
+        .edge-point { 
+            background: white; 
+            border: 3px solid #0d6efd; 
+            border-radius: 6px; 
+        }
+        
+        /* --- MAGNIFIER --- */
+        .magnifier { 
+            display: none; 
+            position: fixed; 
+            width: var(--loupe-size); 
+            height: var(--loupe-size); 
+            border-radius: 50%; 
+            border: 3px solid #0d6efd; 
+            overflow: hidden; 
+            pointer-events: none; 
+            z-index: 1000; 
+        }
+        
+        .magnifier-image { 
+            position: absolute; 
+            transform-origin: top left; 
+        }
+        
+        .magnifier-crosshair { 
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            width: 100%; 
+            height: 100%; 
+        }
+        
+        .magnifier-crosshair::before, 
+        .magnifier-crosshair::after { 
+            content: ''; 
+            position: absolute; 
+            background: #ffc107; 
+        }
+        
+        .magnifier-crosshair::before { 
+            left: 50%; 
+            width: 2px; 
+            height: 100%; 
+            transform: translateX(-50%); 
+        }
+        
+        .magnifier-crosshair::after { 
+            top: 50%; 
+            height: 2px; 
+            width: 100%; 
+            transform: translateY(-50%); 
+        }
+        
+        /* --- PRESETS --- */
+        .presets-scroll { 
+            display: flex; 
+            gap: 0.75rem; 
+            overflow-x: auto; 
+            padding-bottom: 10px; 
+        }
+        
+        .preset-item { 
+            flex-shrink: 0; 
+            text-align: center; 
+            cursor: pointer; 
+        }
+        
+        .preset-image { 
+            width: 60px; 
+            height: 60px; 
+            object-fit: cover; 
+            border-radius: 8px; 
+            border: 2px solid #495057; 
+        }
+        
+        .preset-label { 
+            font-size: 0.75rem; 
+            margin-top: 0.25rem; 
+            color: #adb5bd; 
+        }
+        
+        .preset-item.active .preset-image { 
+            border-color: #0d6efd; 
+        }
+        
+        .preset-item.active .preset-label { 
+            color: #0d6efd; 
+            font-weight: 600; 
+        }
+        
+        /* --- CONTROLS --- */
+        .control-label { 
+            font-size: 0.875rem; 
+            margin-bottom: 0.5rem; 
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .control-value {
+            font-weight: 600;
+            color: #0d6efd;
+        }
+        
+        /* --- STATUS --- */
+        .status-message { 
+            position: fixed; 
+            top: calc(var(--header-height) + 0.5rem); 
+            left: 50%;
+            transform: translateX(-50%);
+            max-width: 90%;
+            z-index: 1050; 
+        }
+
+        .grid-help {
+            background: rgba(0, 0, 0, 0.8);
+            color: #fff;
+            padding: 0.5rem;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            margin-bottom: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <header class="app-header">
+            <h1 class="header-title">
+                <i class="bi bi-crop me-2"></i>
+                Adjust & Enhance
+            </h1>
+            <div class="header-actions">
+                <button id="toggleGridBtn" class="btn btn-outline-info btn-header" title="Toggle Grid">
+                    <i class="bi bi-grid-3x3"></i>
+                    <span class="d-none d-sm-inline">Grid</span>
+                </button>
+                <button id="resetCropBtn" class="btn btn-outline-light btn-header" title="Reset Crop">
+                    <i class="bi bi-arrow-counterclockwise"></i>
+                    <span class="d-none d-sm-inline">Reset</span>
+                </button>
+                <button id="skipBtn" class="btn btn-warning btn-header" title="Skip Image">
+                    <i class="bi bi-skip-forward"></i>
+                    <span class="d-none d-sm-inline">Skip</span>
+                </button>
+                <button id="processBtn" class="btn btn-success btn-header" title="Save and Continue">
+                    <i class="bi bi-check-lg"></i>
+                    <span>Save</span>
+                </button>
+            </div>
+        </header>
+        
+        <div class="content-wrapper">
+            <div class="image-pane" id="imagePane">
+                <div id="crop-area">
+                    <img id="main-image" src="/image/upload/{{ image_info.filename }}" alt="Image to adjust" crossorigin="anonymous">
+                    <canvas id="grid-overlay"></canvas>
+                    <canvas id="boundary-canvas"></canvas>
+                </div>
+            </div>
+            
+            <div class="controls-pane">
+                <div class="controls-content">
+                    <div class="grid-help">
+                        <i class="bi bi-lightbulb me-2"></i>
+                        <strong>Quick Crop:</strong> Press number keys (1-99) to snap points. Drag sections to adjust crop.
+                    </div>
+
+                    <h6 class="text-white mb-3">Quick Presets</h6>
+                    <div class="presets-scroll" id="presetsContainer"></div>
+                    
+                    <hr class="my-3">
+                    
+                    <h6 class="text-white mb-3">Manual Adjustments</h6>
+                    
+                    <div class="mb-3">
+                        <label for="brightness" class="control-label">
+                            Brightness
+                            <span class="control-value" id="brightnessValue">0</span>
+                        </label>
+                        <input type="range" class="form-range" id="brightness" min="-100" max="100" value="0" step="5">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="contrast" class="control-label">
+                            Contrast
+                            <span class="control-value" id="contrastValue">1.0</span>
+                        </label>
+                        <input type="range" class="form-range" id="contrast" min="0.5" max="2.5" value="1.0" step="0.05">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="gamma" class="control-label">
+                            Gamma
+                            <span class="control-value" id="gammaValue">1.0</span>
+                        </label>
+                        <input type="range" class="form-range" id="gamma" min="0.2" max="2.2" value="1.0" step="0.1">
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="magnifier" id="magnifier">
+            <img class="magnifier-image" id="magnifier-image" src="/image/upload/{{ image_info.filename }}" crossorigin="anonymous">
+            <div class="magnifier-crosshair"></div>
+        </div>
+        
+        <div id="statusContainer"></div>
+    </div>
+
+<script>
+    // --- DOM ELEMENT REFERENCES ---
+    const image = document.getElementById('main-image');
+    const imagePane = document.getElementById('imagePane');
+    const cropArea = document.getElementById('crop-area');
+    const canvas = document.getElementById('boundary-canvas');
+    const ctx = canvas.getContext('2d');
+    const gridCanvas = document.getElementById('grid-overlay');
+    const gridCtx = gridCanvas.getContext('2d');
+    const magnifier = document.getElementById('magnifier');
+    const magnifierImage = document.getElementById('magnifier-image');
+    const brightnessSlider = document.getElementById('brightness');
+    const contrastSlider = document.getElementById('contrast');
+    const gammaSlider = document.getElementById('gamma');
+    
+    // --- GLOBAL STATE ---
+    const sessionId = '{{ session_id }}';
+    const imageIndex = parseInt('{{ image_index }}');
+    const points = {};
+    let activePoint = null;
+    let isInitialized = false;
+    let gridVisible = true;
+    let gridNumbers = [];
+    let currentNumberInput = '';
+    let numberInputTimeout = null;
+    let dragStartPositions = {};
+
+    const PRESETS = [
+        { name: 'Original', settings: { brightness: 0, contrast: 1.0, gamma: 1.0 } },
+        { name: 'Document', settings: { brightness: 10, contrast: 1.5, gamma: 0.8 } },
+        { name: 'Grayscale', settings: { brightness: 0, contrast: 1.2, gamma: 1.0 } },
+        { name: 'High Contrast', settings: { brightness: 5, contrast: 2.0, gamma: 0.7 } },
+        { name: 'Vivid', settings: { brightness: 0, contrast: 1.2, gamma: 1.0 } }
+    ];
+
+    function generateCssFilter(settings) {
+        const brightness = 1.0 + (settings.brightness / 100.0);
+        const contrast = settings.contrast;
+        if (settings.name === 'Grayscale') return `grayscale(100%) contrast(${contrast}) brightness(${brightness})`;
+        if (settings.name === 'Vivid') return `saturate(1.5) contrast(${contrast}) brightness(${brightness})`;
+        return `brightness(${brightness}) contrast(${contrast})`;
+    }
+
+    function initializeApp() {
+        if (!image.naturalWidth) return;
+        const setupWorkspace = () => {
+            const paneAspectRatio = imagePane.clientWidth / imagePane.clientHeight;
+            const imageAspectRatio = image.naturalWidth / image.naturalHeight;
+            let width, height;
+            if (imageAspectRatio > paneAspectRatio) {
+                width = imagePane.clientWidth;
+                height = width / imageAspectRatio;
+            } else {
+                height = imagePane.clientHeight;
+                width = height * imageAspectRatio;
+            }
+            cropArea.style.width = `${width}px`;
+            cropArea.style.height = `${height}px`;
+            canvas.width = gridCanvas.width = width;
+            canvas.height = gridCanvas.height = height;
+            if (gridVisible) drawGrid();
+            updateAllPoints();
+        };
+        setupWorkspace();
+        if (!isInitialized) {
+            createPoints();
+            setupPresets();
+            loadSettings();
+            setupActionListeners();
+            setupKeyboardListeners();
+            isInitialized = true;
+        }
+        new ResizeObserver(setupWorkspace).observe(imagePane);
+    }
+
+    function createPoints() {
+        const pointDefs = {
+            tl: { x: 0, y: 0, type: 'corner' }, tr: { x: 1, y: 0, type: 'corner' },
+            bl: { x: 0, y: 1, type: 'corner' }, br: { x: 1, y: 1, type: 'corner' },
+            tm: { x: 0.5, y: 0, type: 'edge' }, bm: { x: 0.5, y: 1, type: 'edge' },
+            ml: { x: 0, y: 0.5, type: 'edge' }, mr: { x: 1, y: 0.5, type: 'edge' }
+        };
+        Object.entries(pointDefs).forEach(([name, def]) => {
+            const pointEl = document.createElement('div');
+            pointEl.className = `control-point ${def.type}-point`;
+            cropArea.appendChild(pointEl);
+            points[name] = { ...def, element: pointEl };
+        });
+        updateAllPoints();
+    }
+    
+    function drawGrid() {
+        if (!gridVisible) {
+            gridCtx.clearRect(0, 0, gridCanvas.width, gridCanvas.height);
+            return;
+        }
+        gridCtx.clearRect(0, 0, gridCanvas.width, gridCanvas.height);
+        gridNumbers = [];
+        const gridSize = 10;
+        const cellWidth = gridCanvas.width / gridSize;
+        const cellHeight = gridCanvas.height / gridSize;
+        gridCtx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+        gridCtx.lineWidth = 1;
+        for (let i = 1; i < gridSize; i++) {
+            gridCtx.beginPath(); gridCtx.moveTo(i * cellWidth, 0); gridCtx.lineTo(i * cellWidth, gridCanvas.height); gridCtx.stroke();
+            gridCtx.beginPath(); gridCtx.moveTo(0, i * cellHeight); gridCtx.lineTo(gridCanvas.width, i * cellHeight); gridCtx.stroke();
+        }
+        gridCtx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        gridCtx.font = `${Math.min(cellWidth, cellHeight) * 0.5}px Arial`;
+        gridCtx.textAlign = 'center';
+        gridCtx.textBaseline = 'middle';
+        let number = 1;
+        for (let row = 0; row < gridSize; row++) {
+            for (let col = 0; col < gridSize; col++) {
+                const x = col * cellWidth + cellWidth / 2;
+                const y = row * cellHeight + cellHeight / 2;
+                gridNumbers.push({ number, x: x / gridCanvas.width, y: y / gridCanvas.height });
+                gridCtx.fillText(number.toString(), x, y);
+                number++;
+            }
+        }
+    }
+
+    function getDragRegion(x, y) {
+        const third = 1/3;
+        const twoThirds = 2/3;
+        if (x < third && y < third) return 'tl';
+        if (x >= third && x < twoThirds && y < third) return 'tm';
+        if (x >= twoThirds && y < third) return 'tr';
+        if (x < third && y >= third && y < twoThirds) return 'ml';
+        if (x >= twoThirds && y >= third && y < twoThirds) return 'mr';
+        if (x < third && y >= twoThirds) return 'bl';
+        if (x >= third && x < twoThirds && y >= twoThirds) return 'bm';
+        if (x >= twoThirds && y >= twoThirds) return 'br';
+        return 'move'; // Center region
+    }
+
+    function startDrag(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const rect = cropArea.getBoundingClientRect();
+        const touch = e.touches ? e.touches[0] : e;
+        const normalizedX = (touch.clientX - rect.left) / rect.width;
+        const normalizedY = (touch.clientY - rect.top) / rect.height;
+
+        activePoint = getDragRegion(normalizedX, normalizedY);
+        magnifier.style.display = 'block';
+
+        dragStartPositions = Object.entries(points).reduce((acc, [name, data]) => {
+            acc[name] = { x: data.x, y: data.y };
+            return acc;
+        }, { startX: normalizedX, startY: normalizedY });
+        
+        document.addEventListener('mousemove', handleDrag);
+        document.addEventListener('touchmove', handleDrag, { passive: false });
+        document.addEventListener('mouseup', endDrag);
+        document.addEventListener('touchend', endDrag);
+    }
+
+    const handleDrag = (e) => {
+        if (!activePoint) return;
+        e.preventDefault();
+
+        const rect = cropArea.getBoundingClientRect();
+        const touch = e.touches ? e.touches[0] : e;
+        const nX = Math.max(0, Math.min(1, (touch.clientX - rect.left) / rect.width));
+        const nY = Math.max(0, Math.min(1, (touch.clientY - rect.top) / rect.height));
+        const dx = nX - dragStartPositions.startX;
+        const dy = nY - dragStartPositions.startY;
+
+        switch(activePoint) {
+            case 'move':
+                ['tl', 'tr', 'bl', 'br'].forEach(p => {
+                    points[p].x = dragStartPositions[p].x + dx;
+                    points[p].y = dragStartPositions[p].y + dy;
+                });
+                break;
+            case 'tl': case 'tr': case 'bl': case 'br':
+                points[activePoint].x = nX;
+                points[activePoint].y = nY;
+                break;
+            case 'tm':
+                points.tl.y = dragStartPositions.tl.y + dy;
+                points.tr.y = dragStartPositions.tr.y + dy;
+                break;
+            case 'bm':
+                points.bl.y = dragStartPositions.bl.y + dy;
+                points.br.y = dragStartPositions.br.y + dy;
+                break;
+            case 'ml':
+                points.tl.x = dragStartPositions.tl.x + dx;
+                points.bl.x = dragStartPositions.bl.x + dx;
+                break;
+            case 'mr':
+                points.tr.x = dragStartPositions.tr.x + dx;
+                points.br.x = dragStartPositions.br.x + dx;
+                break;
+        }
+
+        recalculateEdgePoints();
+        updateAllPoints();
+        updateMagnifier(touch.clientX, touch.clientY);
+    };
+
+    const endDrag = () => {
+        activePoint = null;
+        magnifier.style.display = 'none';
+        document.removeEventListener('mousemove', handleDrag);
+        document.removeEventListener('touchmove', handleDrag);
+        document.removeEventListener('mouseup', endDrag);
+        document.removeEventListener('touchend', endDrag);
+    };
+
+    function resetCropPoints() {
+        Object.assign(points.tl, { x: 0, y: 0 }); Object.assign(points.tr, { x: 1, y: 0 });
+        Object.assign(points.bl, { x: 0, y: 1 }); Object.assign(points.br, { x: 1, y: 1 });
+        recalculateEdgePoints();
+        updateAllPoints();
+    }
+
+    function recalculateEdgePoints() {
+        points.tm.x = (points.tl.x + points.tr.x) / 2; points.tm.y = (points.tl.y + points.tr.y) / 2;
+        points.bm.x = (points.bl.x + points.br.x) / 2; points.bm.y = (points.bl.y + points.br.y) / 2;
+        points.ml.x = (points.tl.x + points.bl.x) / 2; points.ml.y = (points.tl.y + points.bl.y) / 2;
+        points.mr.x = (points.tr.x + points.br.x) / 2; points.mr.y = (points.tr.y + points.br.y) / 2;
+    }
+
+    function updateAllPoints() {
+        if (Object.keys(points).length === 0) return;
+        Object.values(points).forEach(point => {
+            point.element.style.left = `${point.x * 100}%`;
+            point.element.style.top = `${point.y * 100}%`;
+        });
+        drawBoundary();
+    }
+
+    function drawBoundary() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.strokeStyle = 'rgba(13, 110, 253, 0.9)';
+        ctx.fillStyle = 'rgba(13, 110, 253, 0.15)';
+        ctx.lineWidth = 2;
+        const p = (pt) => ({ x: pt.x * canvas.width, y: pt.y * canvas.height });
+        ctx.beginPath();
+        ctx.moveTo(p(points.tl).x, p(points.tl).y);
+        ctx.lineTo(p(points.tr).x, p(points.tr).y);
+        ctx.lineTo(p(points.br).x, p(points.br).y);
+        ctx.lineTo(p(points.bl).x, p(points.bl).y);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+    }
+
+    function updateMagnifier(clientX, clientY) {
+        const loupeSize = magnifier.clientWidth;
+        magnifier.style.left = `${clientX - loupeSize / 2}px`;
+        magnifier.style.top = `${clientY - loupeSize - 20}px`;
+        const rect = cropArea.getBoundingClientRect();
+        const normX = (clientX - rect.left) / rect.width;
+        const normY = (clientY - rect.top) / rect.height;
+        magnifierImage.style.transform = 'scale(2.5)';
+        magnifierImage.style.left = `${-normX * rect.width * 2.5 + loupeSize / 2}px`;
+        magnifierImage.style.top = `${-normY * rect.height * 2.5 + loupeSize / 2}px`;
+    }
+    
+    function setupKeyboardListeners() {
+        document.addEventListener('keydown', (e) => {
+            if (e.key >= '0' && e.key <= '9') {
+                e.preventDefault();
+                currentNumberInput += e.key;
+                clearTimeout(numberInputTimeout);
+                numberInputTimeout = setTimeout(() => {
+                    if (currentNumberInput) {
+                        moveToGridPosition(parseInt(currentNumberInput, 10));
+                        currentNumberInput = '';
+                    }
+                }, 500);
+            }
+            if (e.shiftKey && e.key.toLowerCase() === 'q') {
+                e.preventDefault();
+                skipImage();
+            }
+        });
+    }
+
+    function moveToGridPosition(number) {
+        const target = gridNumbers.find(g => g.number === number);
+        if (!target) return;
+        const corners = ['tl', 'tr', 'bl', 'br'];
+        let nearest = corners.reduce((prev, curr) => {
+            const dPrev = Math.hypot(points[prev].x - target.x, points[prev].y - target.y);
+            const dCurr = Math.hypot(points[curr].x - target.x, points[curr].y - target.y);
+            return dPrev < dCurr ? prev : curr;
+        });
+        points[nearest].x = target.x;
+        points[nearest].y = target.y;
+        recalculateEdgePoints();
+        updateAllPoints();
+    }
+    
+    function setupActionListeners() {
+        cropArea.addEventListener('mousedown', startDrag);
+        cropArea.addEventListener('touchstart', startDrag, { passive: false });
+        [brightnessSlider, contrastSlider, gammaSlider].forEach(s => s.addEventListener('input', updateImageFilters));
+        document.getElementById('processBtn').addEventListener('click', processImage);
+        document.getElementById('skipBtn').addEventListener('click', skipImage);
+        document.getElementById('resetCropBtn').addEventListener('click', resetCropPoints);
+        document.getElementById('toggleGridBtn').addEventListener('click', toggleGrid);
+    }
+    
+    function setupPresets() {
+        const container = document.getElementById('presetsContainer');
+        container.innerHTML = '';
+        PRESETS.forEach(p => {
+            const el = document.createElement('div');
+            el.className = 'preset-item';
+            el.dataset.name = p.name;
+            el.innerHTML = `<img class="preset-image" src="${image.src}" style="filter: ${generateCssFilter(p.settings)};" alt="${p.name}"><div class="preset-label">${p.name}</div>`;
+            el.addEventListener('click', () => applyPreset(p));
+            container.appendChild(el);
+        });
+    }
+
+    function applyPreset(preset) {
+        brightnessSlider.value = preset.settings.brightness;
+        contrastSlider.value = preset.settings.contrast;
+        gammaSlider.value = preset.settings.gamma;
+        updateImageFilters();
+    }
+    
+    function updateImageFilters() {
+        const settings = {
+            brightness: parseFloat(brightnessSlider.value),
+            contrast: parseFloat(contrastSlider.value),
+            gamma: parseFloat(gammaSlider.value)
+        };
+        image.style.filter = `brightness(${1 + settings.brightness / 100}) contrast(${settings.contrast})`
+        document.getElementById('brightnessValue').textContent = settings.brightness;
+        document.getElementById('contrastValue').textContent = settings.contrast.toFixed(1);
+        document.getElementById('gammaValue').textContent = settings.gamma.toFixed(1);
+        saveSettings();
+    }
+    
+    function saveSettings() {
+        const settings = {
+            brightness: brightnessSlider.value,
+            contrast: contrastSlider.value,
+            gamma: gammaSlider.value,
+        };
+        try { localStorage.setItem('docuPdfFilters', JSON.stringify(settings)); }
+        catch(e) { console.warn("Could not save settings", e); }
+    }
+    
+    function loadSettings() {
+        try {
+            const saved = JSON.parse(localStorage.getItem('docuPdfFilters'));
+            if (saved) {
+                brightnessSlider.value = saved.brightness || 0;
+                contrastSlider.value = saved.contrast || 1.0;
+                gammaSlider.value = saved.gamma || 1.0;
+                updateImageFilters();
+            }
+        } catch(e) { console.warn("Could not load settings", e); }
+    }
+    
+    function showStatus(message, type = 'info') {
+        const statusContainer = document.getElementById('statusContainer');
+        const alertClass = `alert-${type}`;
+        statusContainer.innerHTML = `<div class="alert ${alertClass} status-message">${message}</div>`;
+        setTimeout(() => { statusContainer.innerHTML = ''; }, 3000);
+    }
+    
+    async function processImage() {
+        showStatus('Processing...', 'info');
+        const imageDataUrl = (() => {
+            const canvas = document.createElement('canvas');
+            canvas.width = image.naturalWidth;
+            canvas.height = image.naturalHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.filter = image.style.filter;
+            ctx.drawImage(image, 0, 0);
+            return canvas.toDataURL('image/jpeg', 0.95);
+        })();
+        
+        try {
+            const response = await fetch('/process_crop', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    session_id: sessionId, image_index: imageIndex,
+                    points: ['tl', 'tr', 'br', 'bl'].map(p => ({ x: points[p].x, y: points[p].y })),
+                    imageData: imageDataUrl
+                })
+            });
+            if (!response.ok) throw new Error('Server responded with an error');
+            showStatus('Processed successfully!', 'success');
+            setTimeout(navigateNext, 1000);
+        } catch (error) {
+            showStatus(`Error: ${error.message}`, 'danger');
+        }
+    }
+    
+    async function navigateNext() {
+        try {
+            const nextUrl = `/crop/${sessionId}/${imageIndex + 1}`;
+            const res = await fetch(nextUrl, { method: 'HEAD' });
+            window.location.href = res.ok ? nextUrl : `/question_entry/${sessionId}`;
+        } catch (e) {
+            window.location.href = `/question_entry/${sessionId}`;
+        }
+    }
+    
+    function skipImage() { navigateNext(); }
+    function toggleGrid() { gridVisible = !gridVisible; drawGrid(); }
+
+    image.addEventListener('load', initializeApp);
+    if (image.complete) initializeApp();
+
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
+
+</body>
+</html>
+
+

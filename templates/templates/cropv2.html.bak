@@ -1,80 +1,116 @@
-<!doctype html>
-<html lang="en" data-bs-theme="dark">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-    <title>Step 2: Draw Boxes ({{ image_index + 1 }} / {{ total_pages }})</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-    <style>
-        :root { --header-height: 56px; }
-        html, body { height: 100%; overflow: hidden; }
-        .main-container { display: flex; flex-direction: column; height: 100vh; }
-        .app-header { height: var(--header-height); flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 0.75rem; background: #2c3034; border-bottom: 1px solid #495057; }
-        .header-title { font-size: 1.1rem; font-weight: 500; margin: 0; }
-        .header-actions { display: flex; gap: 0.5rem; }
-        .btn-header { padding: 0.375rem 0.75rem; font-size: 0.875rem; }
-        .content-wrapper { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-        @media (min-width: 992px) { .content-wrapper { flex-direction: row; } }
-        .image-pane { flex-grow: 1; min-height: 0; position: relative; background: #181a1c; display: flex; align-items: center; justify-content: center; padding: 0.5rem; }
-        .controls-pane { flex-shrink: 0; background: #212529; border-top: 1px solid #495057; height: 280px; overflow-y: auto; }
-        @media (min-width: 992px) { .controls-pane { width: 320px; height: 100%; border-top: none; border-left: 1px solid #495057; } }
-        .controls-content { padding: 1rem; }
-        #crop-area { position: relative; touch-action: none; line-height: 0; cursor: crosshair; }
-        #main-image { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; transition: filter 0.1s linear; }
-        .control-label { font-size: 0.875rem; margin-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center; }
-        .control-value { font-weight: 600; color: #0d6efd; }
-        .status-message { position: fixed; top: calc(var(--header-height) + 0.5rem); left: 50%; transform: translateX(-50%); z-index: 1050; }
-        #box-toolbar { position: absolute; background: rgba(44, 48, 52, 0.9); border: 1px solid #495057; border-radius: 8px; padding: 4px; display: none; z-index: 20; backdrop-filter: blur(5px); }
-        #box-toolbar button { background: transparent; border: none; color: #adb5bd; padding: 6px 8px; font-size: 1.1rem; line-height: 1; }
-        #box-toolbar button:hover { color: #fff; background: rgba(255, 255, 255, 0.1); }
-        #loader-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 9999; display: none; align-items: center; justify-content: center; }
-    </style>
-</head>
-<body>
-    {% include '_navbar.html' %}
-    <div id="loader-overlay">
-        <div class="spinner-border text-light" role="status">
-            <span class="visually-hidden">Loading...</span>
-        </div>
+{% extends "base.html" %}
+
+{% block title %}Step 2: Draw Boxes ({{ image_index + 1 }} / {{ total_pages }}){% endblock %}
+
+{% block head %}
+<style>
+    :root { --header-height: 56px; }
+    html, body { height: 100%; overflow: hidden; }
+    .main-container { display: flex; flex-direction: column; height: 100vh; }
+    .app-header { height: var(--header-height); flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 0.75rem; background: #2c3034; border-bottom: 1px solid #495057; }
+    .header-title { font-size: 1.1rem; font-weight: 500; margin: 0; }
+    .header-actions { display: flex; gap: 0.5rem; }
+    .btn-header { padding: 0.375rem 0.75rem; font-size: 0.875rem; }
+    .content-wrapper { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    @media (min-width: 992px) { .content-wrapper { flex-direction: row; } }
+    .image-pane { flex-grow: 1; min-height: 0; position: relative; background: #181a1c; display: flex; align-items: center; justify-content: center; padding: 0.5rem; }
+    .controls-pane { flex-shrink: 0; background: #212529; border-top: 1px solid #495057; height: 280px; overflow-y: auto; }
+    @media (min-width: 992px) { .controls-pane { width: 320px; height: 100%; border-top: none; border-left: 1px solid #495057; } }
+    .controls-content { padding: 1rem; }
+    #crop-area { position: relative; touch-action: none; line-height: 0; cursor: crosshair; }
+    #main-image { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; transition: filter 0.1s linear; }
+    .control-label { font-size: 0.875rem; margin-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center; }
+    .control-value { font-weight: 600; color: #0d6efd; }
+    .status-message { position: fixed; top: calc(var(--header-height) + 0.5rem); left: 50%; transform: translateX(-50%); z-index: 1050; }
+    #box-toolbar { position: absolute; background: rgba(44, 48, 52, 0.9); border: 1px solid #495057; border-radius: 8px; padding: 4px; display: none; z-index: 20; backdrop-filter: blur(5px); }
+    #box-toolbar button { background: transparent; border: none; color: #adb5bd; padding: 6px 8px; font-size: 1.1rem; line-height: 1; }
+    #box-toolbar button:hover { color: #fff; background: rgba(255, 255, 255, 0.1); }
+    #loader-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 9999; display: none; align-items: center; justify-content: center; }
+    .page-skipper-container { flex-shrink: 0; background: #2c3034; padding: 0.5rem; border-top: 1px solid #495057; overflow-x: auto; }
+    .page-skipper { display: flex; gap: 0.5rem; justify-content: center; }
+    .dropdown-menu { max-height: 200px; overflow-y: auto; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="loader-overlay">
+    <div class="spinner-border text-light" role="status">
+        <span class="visually-hidden">Loading...</span>
     </div>
-    <div class="main-container">
-        <header class="app-header">
-             <h1 class="header-title"><i class="bi bi-bounding-box me-2"></i>Page {{ image_index + 1 }} of {{ total_pages }}</h1>
-             <div class="header-actions">
-                <button id="backBtn" class="btn btn-secondary btn-header" title="Previous Page"><i class="bi bi-arrow-left"></i><span class="d-none d-sm-inline"> Back</span></button>
-                <button id="clearBtn" class="btn btn-info btn-header" title="Clear All Boxes"><i class="bi bi-eraser"></i><span class="d-none d-sm-inline"> Clear</span></button>
-                <button id="processBtn" class="btn btn-success btn-header" title="Process Boxes & Next Page">
-                    <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
-                    <i class="bi bi-check-lg"></i>
-                    <span>Process & Next</span>
+</div>
+<div class="main-container">
+    <header class="app-header">
+        <div class="d-flex align-items-center">
+            <h1 class="header-title me-3"><i class="bi bi-bounding-box me-2"></i>Page {{ image_index + 1 }} of {{ total_pages }}</h1>
+            <div class="dropdown">
+                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="pageDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                    Go to Page
                 </button>
+                <ul class="dropdown-menu" aria-labelledby="pageDropdown">
+                    {% for i in range(total_pages) %}
+                    <li><a class="dropdown-item {{ 'active' if i == image_index else '' }}" href="/cropv2/{{ session_id }}/{{ i }}">Page {{ i + 1 }}</a></li>
+                    {% endfor %}
+                </ul>
             </div>
-        </header>
-        <div class="content-wrapper">
-            <div class="image-pane" id="imagePane">
-                <div id="crop-area">
-                    <img id="main-image" src="/image/upload/{{ image_info.filename }}" alt="PDF Page" crossorigin="anonymous">
-                    <canvas id="draw-canvas" style="position: absolute; top: 0; left: 0; z-index: 10;"></canvas>
-                    <div id="box-toolbar">
-                        <button id="move-up-btn" title="Move Up"><i class="bi bi-arrow-up-circle"></i></button>
-                        <button id="move-down-btn" title="Move Down"><i class="bi bi-arrow-down-circle"></i></button>
-                        <button id="delete-btn" title="Delete Box"><i class="bi bi-trash"></i></button>
-                    </div>
-                </div>
-            </div>
-            <div class="controls-pane">
-                 <div class="controls-content">
-                    <div class="alert alert-info small p-2"><i class="bi bi-info-circle me-2"></i>Click and drag to draw boxes. Click a box to select it. Drag corners to resize.</div><hr>
-                    <h6 class="text-white mb-3">Page Adjustments</h6>
-                    <div class="mb-3"><label for="brightness" class="control-label">Brightness<span class="control-value" id="brightnessValue">0</span></label><input type="range" class="form-range" id="brightness" min="-100" max="100" value="0" step="5"></div>
-                    <div class="mb-3"><label for="contrast" class="control-label">Contrast<span class="control-value" id="contrastValue">1.0</span></label><input type="range" class="form-range" id="contrast" min="0.5" max="2.5" value="1.0" step="0.05"></div>
-                    <div class="mb-3"><label for="gamma" class="control-label">Gamma<span class="control-value" id="gammaValue">1.0</span></label><input type="range" class="form-range" id="gamma" min="0.2" max="2.2" value="1.0" step="0.1"></div>
+        </div>
+        <div class="header-actions">
+            <button id="backBtn" class="btn btn-secondary btn-header" title="Previous Page"><i class="bi bi-arrow-left"></i><span class="d-none d-sm-inline"> Back</span></button>
+            <button id="clearBtn" class="btn btn-info btn-header" title="Clear All Boxes"><i class="bi bi-eraser"></i><span class="d-none d-sm-inline"> Clear</span></button>
+            <button id="saveBtn" class="btn btn-warning btn-header" title="Save Boxes">
+                <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                <i class="bi bi-save"></i>
+                <span>Save</span>
+            </button>
+            <button id="processBtn" class="btn btn-success btn-header" title="Process Boxes & Next Page">
+                <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                <i class="bi bi-check-lg"></i>
+                <span>Process & Next</span>
+            </button>
+        </div>
+    </header>
+    <div class="progress-container mt-2 mb-3 px-3">
+        <div class="d-flex justify-content-between">
+            <span>Progress: <span id="progress-text">{{ image_index + 1 }} of {{ total_pages }} pages</span></span>
+            <span id="pages-left">{{ total_pages - image_index - 1 }} pages left</span>
+        </div>
+        <div class="progress" style="height: 10px;">
+            <div id="progress-bar" class="progress-bar" role="progressbar" style="width: {{ ((image_index + 1) / total_pages * 100)|int }}%" aria-valuenow="{{ ((image_index + 1) / total_pages * 100)|int }}" aria-valuemin="0" aria-valuemax="100"></div>
+        </div>
+    </div>
+    <div class="content-wrapper">
+        <div class="image-pane" id="imagePane">
+            <div id="crop-area">
+                <img id="main-image" src="/image/upload/{{ image_info.filename }}" alt="PDF Page" crossorigin="anonymous" style="position: absolute; top: 0; left: 0; z-index: 5;">
+                <canvas id="draw-canvas" style="position: absolute; top: 0; left: 0; z-index: 10; pointer-events: none;"></canvas>
+                <div id="box-toolbar">
+                    <button id="move-up-btn" title="Move Up"><i class="bi bi-arrow-up-circle"></i></button>
+                    <button id="move-down-btn" title="Move Down"><i class="bi bi-arrow-down-circle"></i></button>
+                    <button id="delete-btn" title="Delete Box"><i class="bi bi-trash"></i></button>
                 </div>
             </div>
         </div>
-        <div id="statusContainer"></div>
+        <div class="controls-pane">
+             <div class="controls-content">
+                <div class="alert alert-info small p-2"><i class="bi bi-info-circle me-2"></i>Click and drag to draw boxes. Click a box to select it. Drag corners to resize.</div><hr>
+                <h6 class="text-white mb-3">Page Adjustments</h6>
+                <div class="mb-3"><label for="brightness" class="control-label">Brightness<span class="control-value" id="brightnessValue">0</span></label><input type="range" class="form-range" id="brightness" min="-100" max="100" value="0" step="5"></div>
+                <div class="mb-3"><label for="contrast" class="control-label">Contrast<span class="control-value" id="contrastValue">1.0</span></label><input type="range" class="form-range" id="contrast" min="0.5" max="2.5" value="1.0" step="0.05"></div>
+                <div class="mb-3"><label for="gamma" class="control-label">Gamma<span class="control-value" id="gammaValue">1.0</span></label><input type="range" class="form-range" id="gamma" min="0.2" max="2.2" value="1.0" step="0.1"></div>
+            </div>
+        </div>
     </div>
+    <div id="statusContainer"></div>
+    <div class="page-skipper-container">
+        <div class="page-skipper">
+            {% for i in range(total_pages) %}
+                <a href="/cropv2/{{ session_id }}/{{ i }}" class="btn btn-sm {{ 'btn-primary' if i == image_index else 'btn-outline-secondary' }}">{{ i + 1 }}</a>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
 <script>
     const image = document.getElementById('main-image'), imagePane = document.getElementById('imagePane'), cropArea = document.getElementById('crop-area');
     const drawCanvas = document.getElementById('draw-canvas'), drawCtx = drawCanvas.getContext('2d');
@@ -236,6 +272,7 @@
         drawCanvas.addEventListener('mousedown', startInteraction);
         drawCanvas.addEventListener('touchstart', startInteraction, { passive: false });
         document.getElementById('clearBtn').addEventListener('click', () => { boxes = []; selectBox(-1); saveBoxes(); });
+        document.getElementById('saveBtn').addEventListener('click', saveBoxesOnly);
         processBtn.addEventListener('click', processAndContinue);
         document.getElementById('backBtn').addEventListener('click', navigateBack);
         document.getElementById('delete-btn').addEventListener('click', deleteSelectedBox);
@@ -245,13 +282,52 @@
         window.addEventListener('beforeunload', saveBoxes);
     }
 
-    function setLoading(isLoading) {
-        processBtn.disabled = isLoading;
-        const spinner = processBtn.querySelector('.spinner-border');
-        const icon = processBtn.querySelector('.bi-check-lg');
-        spinner.classList.toggle('d-none', !isLoading);
-        icon.classList.toggle('d-none', isLoading);
-        loader.style.display = isLoading ? 'flex' : 'none';
+    function setLoading(isLoading, buttonId = 'processBtn') {
+        const button = document.getElementById(buttonId);
+        if (button) {
+            button.disabled = isLoading;
+            const spinner = button.querySelector('.spinner-border');
+            const icon = button.querySelector('i.bi');
+            if(spinner) spinner.classList.toggle('d-none', !isLoading);
+            if(icon) icon.classList.toggle('d-none', isLoading);
+        }
+        if (buttonId === 'processBtn') {
+            loader.style.display = isLoading ? 'flex' : 'none';
+        }
+    }
+
+    async function saveBoxesOnly() {
+        if (boxes.length === 0) {
+            showStatus("No boxes to save.", "warning");
+            return;
+        }
+        setLoading(true, 'saveBtn');
+        showStatus('Saving boxes...', 'info');
+
+        const finalBoxes = boxes.map(b => {
+            const minX = Math.min(b.tl.x, b.bl.x), minY = Math.min(b.tl.y, b.tr.y);
+            const maxX = Math.max(b.tr.x, b.br.x), maxY = Math.max(b.bl.y, b.br.y);
+            return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+        });
+
+        // Apply filters to image data
+        const imageDataUrl = applyFiltersToImage();
+
+        try {
+            const response = await fetch('/process_crop_v2', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_id: sessionId, image_index: imageIndex, boxes: finalBoxes, imageData: imageDataUrl })
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || 'Server error');
+
+            showStatus(`Saved ${finalBoxes.length} boxes successfully!`, 'success');
+
+        } catch (error) {
+            showStatus(`Error: ${error.message}`, 'danger');
+        } finally {
+            setLoading(false, 'saveBtn');
+        }
     }
 
     async function processAndContinue() {
@@ -260,7 +336,7 @@
             setTimeout(navigateNext, 1500);
             return;
         }
-        setLoading(true);
+        setLoading(true, 'processBtn');
         showStatus('Processing page...', 'info');
         
         const finalBoxes = boxes.map(b => {
@@ -269,11 +345,8 @@
             return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
         });
 
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = image.naturalWidth; tempCanvas.height = image.naturalHeight;
-        const tempCtx = tempCanvas.getContext('2d');
-        tempCtx.filter = image.style.filter; tempCtx.drawImage(image, 0, 0);
-        const imageDataUrl = tempCanvas.toDataURL('image/jpeg', 0.95);
+        // Apply filters to image data
+        const imageDataUrl = applyFiltersToImage();
 
         try {
             const response = await fetch('/process_crop_v2', {
@@ -288,8 +361,72 @@
 
         } catch (error) {
             showStatus(`Error: ${error.message}`, 'danger');
-            setLoading(false);
+            setLoading(false, 'processBtn');
         }
+    }
+    
+    function applyFiltersToImage() {
+        // Get current filter settings
+        const brightness = parseFloat(brightnessSlider.value);
+        const contrast = parseFloat(contrastSlider.value);
+        const gamma = parseFloat(gammaSlider.value);
+        
+        // Create a temporary canvas to apply filters
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = image.naturalWidth;
+        tempCanvas.height = image.naturalHeight;
+        const tempCtx = tempCanvas.getContext('2d');
+        
+        // Draw the original image
+        tempCtx.drawImage(image, 0, 0);
+        
+        // If no filters are applied, return the original image data
+        if (brightness === 0 && contrast === 1.0 && gamma === 1.0) {
+            return tempCanvas.toDataURL('image/jpeg', 0.95);
+        }
+        
+        // Get image data
+        const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+        const data = imageData.data;
+        
+        // Pre-calculate brightness adjustment
+        const brightnessAdjust = brightness / 100 * 255;
+        
+        // Pre-calculate contrast adjustment
+        const contrastAdjust = (contrast - 1) * 255;
+        const contrastFactor = contrast;
+        
+        // Pre-calculate gamma adjustment
+        const gammaFactor = 1 / gamma;
+        
+        // Apply filters to each pixel
+        for (let i = 0; i < data.length; i += 4) {
+            // Apply brightness
+            let r = data[i] + brightnessAdjust;
+            let g = data[i + 1] + brightnessAdjust;
+            let b = data[i + 2] + brightnessAdjust;
+            
+            // Apply contrast
+            r = (r - 128) * contrastFactor + 128 + contrastAdjust;
+            g = (g - 128) * contrastFactor + 128 + contrastAdjust;
+            b = (b - 128) * contrastFactor + 128 + contrastAdjust;
+            
+            // Apply gamma
+            r = 255 * Math.pow(r / 255, gammaFactor);
+            g = 255 * Math.pow(g / 255, gammaFactor);
+            b = 255 * Math.pow(b / 255, gammaFactor);
+            
+            // Clamp values to valid range
+            data[i] = Math.max(0, Math.min(255, r));
+            data[i + 1] = Math.max(0, Math.min(255, g));
+            data[i + 2] = Math.max(0, Math.min(255, b));
+        }
+        
+        // Put the modified image data back
+        tempCtx.putImageData(imageData, 0, 0);
+        
+        // Return the filtered image as data URL
+        return tempCanvas.toDataURL('image/jpeg', 0.95);
     }
     
     function navigateNext() {
@@ -371,6 +508,4 @@
     image.addEventListener('load', initializeApp);
     if (image.complete) initializeApp();
 </script>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-</body>
-</html>
+{% endblock %}

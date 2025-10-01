@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block title %}Upload Final PDF{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="card bg-dark text-white">
+        <div class="card-header">
+            <h2>Upload Final PDF to Manager</h2>
+        </div>
+        <div class="card-body">
+            <form action="/handle_final_pdf_upload" method="post" enctype="multipart/form-data">
+                <div class="mb-3">
+                    <label for="pdf" class="form-label">PDF File</label>
+                    <input type="file" class="form-control" id="pdf" name="pdf" accept=".pdf" required>
+                </div>
+                <div class="mb-3">
+                    <label for="subject" class="form-label">Subject</label>
+                    <input type="text" class="form-control" id="subject" name="subject" required>
+                </div>
+                <div class="mb-3">
+                    <label for="tags" class="form-label">Tags (comma-separated)</label>
+                    <input type="text" class="form-control" id="tags" name="tags">
+                </div>
+                <div class="mb-3">
+                    <label for="notes" class="form-label">Notes</label>
+                    <textarea class="form-control" id="notes" name="notes" rows="3"></textarea>
+                </div>
+                <button type="submit" class="btn btn-primary">Upload</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

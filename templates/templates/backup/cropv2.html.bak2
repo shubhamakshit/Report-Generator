@@ -32,7 +32,6 @@
     </style>
 </head>
 <body>
-    {% include '_navbar.html' %}
     <div id="loader-overlay">
         <div class="spinner-border text-light" role="status">
             <span class="visually-hidden">Loading...</span>

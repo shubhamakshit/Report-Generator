@@ -1,0 +1,593 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>DocuPDF - Smart Scanner & PDF Generator</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <style>
+        body { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #121212; }
+        .upload-container { max-width: 600px; width: 100%; }
+        .drop-zone { border: 2px dashed #6c757d; border-radius: 0.375rem; padding: 2rem; text-align: center; cursor: pointer; transition: all 0.3s; background: #1e1e1e; }
+        .drop-zone:hover, .drop-zone.dragover { border-color: #0d6efd; background: #252525; }
+        .drop-zone i { font-size: 3rem; color: #6c757d; margin-bottom: 1rem; }
+        .file-list { max-height: 200px; overflow-y: auto; }
+        #status { position: fixed; bottom: 1rem; right: 1rem; z-index: 1000; }
+        .status-message { margin-bottom: 0.5rem; }
+        .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0; }
+        .sr-only-focusable:active, .sr-only-focusable:focus { position: static; width: auto; height: auto; margin: 0; overflow: visible; clip: auto; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/"><i class="bi bi-file-earmark-pdf-fill me-2"></i>DocuPDF</a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="/dashboard"><i class="bi bi-speedometer2 me-1"></i>Dashboard</a>
+            </div>
+        </div>
+    </nav>
+    <div class="container mt-5">
+        <div class="card bg-dark text-white">
+            <div class="card-header">
+                <h1>Step 1: Select Your Questions</h1>
+            </div>
+            <div class="card-body">
+                <!-- Hidden file input for file selection -->
+                <input type="file" id="image-input" multiple accept="image/*" class="d-none">
+
+                <!-- Action Buttons -->
+                <div class="d-grid gap-3 d-sm-flex mb-4">
+                    <button type="button" id="choose-files-btn" class="btn btn-primary btn-lg flex-grow-1">
+                        <i class="bi bi-folder2-open me-2"></i> Choose Files
+                    </button>
+                    <button type="button" id="take-photo-btn" class="btn btn-secondary btn-lg flex-grow-1">
+                        <i class="bi bi-camera-fill me-2"></i> Open Camera
+                    </button>
+                </div>
+
+                <!-- Preview Area -->
+                <div id="preview-container" class="d-none">
+                    <h5 class="text-white-50 border-bottom border-secondary pb-2 mb-3">
+                        Preview & Order <small>(Drag to reorder)</small>
+                        <span class="badge bg-info ms-2" id="image-count">0 images</span>
+                    </h5>
+                    <div id="preview-grid" class="row g-3">
+                        <!-- Preview cards will be injected here by JavaScript -->
+                    </div>
+                </div>
+
+                <!-- Upload Button -->
+                <button id="upload-btn" class="btn btn-success w-100 mt-4 py-3 fs-5" disabled>
+                    <i class="bi bi-cloud-upload me-2"></i> Upload and Start Processing
+                </button>
+                <div id="upload-status" class="mt-3"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Camera Modal -->
+    <div id="camera-modal" class="camera-modal d-none">
+        <div class="camera-header">
+            <div>
+                <h5 class="mb-0">Camera Capture</h5>
+                <small class="text-muted">Position document within the frame</small>
+            </div>
+            <button id="close-camera-btn" class="btn btn-outline-light btn-sm">
+                <i class="bi bi-x-lg"></i> Close
+            </button>
+        </div>
+        
+        <div class="camera-container">
+            <video id="camera-video" autoplay muted playsinline></video>
+            <canvas id="capture-canvas" class="d-none"></canvas>
+            
+            <!-- Camera overlay with frame -->
+            <div class="camera-overlay">
+                <div class="camera-frame"></div>
+            </div>
+            
+            <!-- Flash effect -->
+            <div id="flash-effect" class="flash-effect"></div>
+            
+            <!-- Camera settings -->
+            <div class="camera-settings">
+                <button id="switch-camera-btn" class="camera-setting-btn" title="Switch Camera">
+                    <i class="bi bi-arrow-repeat"></i>
+                </button>
+                <button id="torch-btn" class="camera-setting-btn" title="Toggle Flashlight">
+                    <i class="bi bi-lightbulb"></i>
+                </button>
+                <button id="grid-btn" class="camera-setting-btn" title="Toggle Grid">
+                    <i class="bi bi-grid-3x3"></i>
+                </button>
+            </div>
+            
+            <!-- Thumbnails of captured images -->
+            <div id="camera-thumbnails" class="camera-thumbnails"></div>
+        </div>
+        
+        <div class="camera-controls">
+            <button id="gallery-btn" class="btn btn-outline-light">
+                <i class="bi bi-images me-1"></i> Gallery
+            </button>
+            
+            <button id="capture-btn" class="capture-btn">
+                <div class="captured-count d-none" id="captured-count">0</div>
+            </button>
+            
+            <button id="done-camera-btn" class="btn btn-success">
+                <i class="bi bi-check-lg me-1"></i> Done
+            </button>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+    <script>
+        class CameraCapture {
+            constructor() {
+                this.stream = null;
+                this.video = document.getElementById('camera-video');
+                this.canvas = document.getElementById('capture-canvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.capturedImages = [];
+                this.currentCamera = 'environment'; // 'user' or 'environment'
+                this.torchEnabled = false;
+                this.gridEnabled = false;
+                
+                this.initializeElements();
+                this.bindEvents();
+            }
+            
+            initializeElements() {
+                this.modal = document.getElementById('camera-modal');
+                this.captureBtn = document.getElementById('capture-btn');
+                this.closeCameraBtn = document.getElementById('close-camera-btn');
+                this.doneCameraBtn = document.getElementById('done-camera-btn');
+                this.switchCameraBtn = document.getElementById('switch-camera-btn');
+                this.torchBtn = document.getElementById('torch-btn');
+                this.gridBtn = document.getElementById('grid-btn');
+                this.galleryBtn = document.getElementById('gallery-btn');
+                this.flashEffect = document.getElementById('flash-effect');
+                this.thumbnailsContainer = document.getElementById('camera-thumbnails');
+                this.capturedCount = document.getElementById('captured-count');
+            }
+            
+            bindEvents() {
+                this.captureBtn.addEventListener('click', () => this.captureImage());
+                this.closeCameraBtn.addEventListener('click', () => this.closeCamera());
+                this.doneCameraBtn.addEventListener('click', () => this.finishCapture());
+                this.switchCameraBtn.addEventListener('click', () => this.switchCamera());
+                this.torchBtn.addEventListener('click', () => this.toggleTorch());
+                this.gridBtn.addEventListener('click', () => this.toggleGrid());
+                this.galleryBtn.addEventListener('click', () => this.openGallery());
+                
+                // Keyboard shortcuts
+                document.addEventListener('keydown', (e) => {
+                    if (this.modal.classList.contains('d-none')) return;
+                    
+                    switch(e.code) {
+                        case 'Space':
+                        case 'Enter':
+                            e.preventDefault();
+                            this.captureImage();
+                            break;
+                        case 'Escape':
+                            this.closeCamera();
+                            break;
+                    }
+                });
+            }
+            
+            async openCamera() {
+                try {
+                    this.modal.classList.remove('d-none');
+                    await this.startCamera();
+                } catch (error) {
+                    console.error('Error opening camera:', error);
+                    this.showCameraError('Failed to access camera. Please check permissions.');
+                }
+            }
+            
+            async startCamera() {
+                try {
+                    if (this.stream) {
+                        this.stream.getTracks().forEach(track => track.stop());
+                    }
+                    
+                    const constraints = {
+                        video: {
+                            facingMode: this.currentCamera,
+                            width: { ideal: 1920 },
+                            height: { ideal: 1080 }
+                        }
+                    };
+                    
+                    this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+                    this.video.srcObject = this.stream;
+                    
+                    // Setup canvas dimensions
+                    this.video.addEventListener('loadedmetadata', () => {
+                        this.canvas.width = this.video.videoWidth;
+                        this.canvas.height = this.video.videoHeight;
+                    });
+                    
+                } catch (error) {
+                    throw error;
+                }
+            }
+            
+            captureImage() {
+                if (!this.stream) return;
+                
+                // Flash effect
+                this.flashEffect.classList.add('active');
+                setTimeout(() => {
+                    this.flashEffect.classList.remove('active');
+                }, 200);
+                
+                // Capture the image
+                this.ctx.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
+                
+                // Convert to blob and store
+                this.canvas.toBlob((blob) => {
+                    const timestamp = Date.now();
+                    const fileName = `camera_capture_${timestamp}.jpg`;
+                    
+                    // Create File object
+                    const file = new File([blob], fileName, { type: 'image/jpeg' });
+                    
+                    this.capturedImages.push({
+                        file: file,
+                        url: URL.createObjectURL(blob),
+                        timestamp: timestamp
+                    });
+                    
+                    this.updateThumbnails();
+                    this.updateCaptureCount();
+                }, 'image/jpeg', 0.9);
+            }
+            
+            updateThumbnails() {
+                this.thumbnailsContainer.innerHTML = '';
+                
+                this.capturedImages.forEach((image, index) => {
+                    const thumbnail = document.createElement('img');
+                    thumbnail.src = image.url;
+                    thumbnail.className = 'camera-thumbnail';
+                    thumbnail.addEventListener('click', () => {
+                        this.previewImage(image, index);
+                    });
+                    this.thumbnailsContainer.appendChild(thumbnail);
+                });
+                
+                // Scroll to the latest thumbnail
+                this.thumbnailsContainer.scrollLeft = this.thumbnailsContainer.scrollWidth;
+            }
+            
+            updateCaptureCount() {
+                const count = this.capturedImages.length;
+                this.capturedCount.textContent = count;
+                
+                if (count > 0) {
+                    this.capturedCount.classList.remove('d-none');
+                } else {
+                    this.capturedCount.classList.add('d-none');
+                }
+            }
+            
+            previewImage(image, index) {
+                // Simple preview - you could enhance this with a modal
+                const confirmDelete = confirm(`Delete this image? (${index + 1} of ${this.capturedImages.length})`);
+                if (confirmDelete) {
+                    URL.revokeObjectURL(image.url);
+                    this.capturedImages.splice(index, 1);
+                    this.updateThumbnails();
+                    this.updateCaptureCount();
+                }
+            }
+            
+            async switchCamera() {
+                this.currentCamera = this.currentCamera === 'environment' ? 'user' : 'environment';
+                try {
+                    await this.startCamera();
+                } catch (error) {
+                    console.error('Error switching camera:', error);
+                    // Revert if failed
+                    this.currentCamera = this.currentCamera === 'environment' ? 'user' : 'environment';
+                }
+            }
+            
+            async toggleTorch() {
+                if (!this.currentTrack) return;
+                
+                try {
+                    const capabilities = this.currentTrack.getCapabilities();
+                    
+                    if (capabilities.torch) {
+                        this.torchEnabled = !this.torchEnabled;
+                        await this.currentTrack.applyConstraints({
+                            advanced: [{ torch: this.torchEnabled }]
+                        });
+                        
+                        this.torchBtn.classList.toggle('active', this.torchEnabled);
+                    }
+                } catch (error) {
+                    console.error('Torch not supported:', error);
+                }
+            }
+            
+            toggleGrid() {
+                this.gridEnabled = !this.gridEnabled;
+                this.gridBtn.classList.toggle('active', this.gridEnabled);
+                
+                // Add grid overlay (you can enhance this)
+                const frame = document.querySelector('.camera-frame');
+                if (this.gridEnabled) {
+                    frame.style.backgroundImage = `
+                        linear-gradient(rgba(255,255,255,0.3) 1px, transparent 1px),
+                        linear-gradient(90deg, rgba(255,255,255,0.3) 1px, transparent 1px)
+                    `;
+                    frame.style.backgroundSize = '33.333% 25%';
+                } else {
+                    frame.style.backgroundImage = 'none';
+                }
+            }
+            
+            openGallery() {
+                // Trigger file input for gallery selection
+                imageInput.click();
+            }
+            
+            finishCapture() {
+                // Add captured images to the main file list
+                this.capturedImages.forEach(image => {
+                    fileList.push(image.file);
+                });
+                
+                if (this.capturedImages.length > 0) {
+                    intelligentSortFiles(fileList);
+                    renderPreviews();
+                }
+                
+                this.closeCamera();
+            }
+            
+            closeCamera() {
+                if (this.stream) {
+                    this.stream.getTracks().forEach(track => track.stop());
+                    this.stream = null;
+                }
+                
+                // Clean up captured images URLs
+                this.capturedImages.forEach(image => {
+                    URL.revokeObjectURL(image.url);
+                });
+                this.capturedImages = [];
+                
+                this.modal.classList.add('d-none');
+                this.updateThumbnails();
+                this.updateCaptureCount();
+            }
+            
+            showCameraError(message) {
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'alert alert-danger position-absolute';
+                errorDiv.style.cssText = 'top: 20px; left: 20px; right: 20px; z-index: 10000;';
+                errorDiv.textContent = message;
+                
+                this.modal.appendChild(errorDiv);
+                
+                setTimeout(() => {
+                    errorDiv.remove();
+                }, 5000);
+            }
+        }
+        
+        // Initialize camera capture system
+        const cameraCapture = new CameraCapture();
+        
+        // Existing upload system
+        const imageInput = document.getElementById('image-input');
+        const chooseFilesBtn = document.getElementById('choose-files-btn');
+        const takePhotoBtn = document.getElementById('take-photo-btn');
+        const previewContainer = document.getElementById('preview-container');
+        const previewGrid = document.getElementById('preview-grid');
+        const uploadBtn = document.getElementById('upload-btn');
+        const uploadStatus = document.getElementById('upload-status');
+        const imageCount = document.getElementById('image-count');
+
+        let fileList = [];
+
+        // Event Listeners
+        chooseFilesBtn.addEventListener('click', () => {
+            imageInput.click();
+        });
+
+        takePhotoBtn.addEventListener('click', async () => {
+            // Additional permission check before opening camera
+            try {
+                // Check if camera permission is already granted
+                const permissionStatus = await navigator.permissions.query({ name: 'camera' });
+                
+                if (permissionStatus.state === 'denied') {
+                    alert('Camera access is blocked. Please enable camera permissions in your browser settings and refresh the page.');
+                    return;
+                }
+                
+                cameraCapture.openCamera();
+                
+            } catch (error) {
+                // Fallback if permissions API not supported
+                console.log('Permissions API not supported, proceeding with camera access');
+                cameraCapture.openCamera();
+            }
+        });
+
+        imageInput.addEventListener('change', (e) => {
+            const newFiles = Array.from(e.target.files);
+            fileList = [...fileList, ...newFiles];
+            intelligentSortFiles(fileList);
+            renderPreviews();
+            e.target.value = '';
+        });
+
+        // File handling and sorting
+        function intelligentSortFiles(files) {
+            const extractNumber = (filename) => {
+                const numbers = filename.match(/\d+/g);
+                return numbers ? parseInt(numbers.join('')) : 0;
+            };
+            files.sort((a, b) => extractNumber(a.name) - extractNumber(b.name));
+        }
+        
+        // Rendering previews
+        function renderPreviews() {
+            previewGrid.innerHTML = '';
+            const count = fileList.length;
+            
+            imageCount.textContent = `${count} image${count !== 1 ? 's' : ''}`;
+            
+            if (count > 0) {
+                previewContainer.classList.remove('d-none');
+                uploadBtn.disabled = false;
+            } else {
+                previewContainer.classList.add('d-none');
+                uploadBtn.disabled = true;
+            }
+
+            fileList.forEach((file, index) => {
+                const col = document.createElement('div');
+                col.className = 'col-6 col-md-4 col-lg-3';
+                
+                const card = document.createElement('div');
+                card.className = 'preview-card';
+                card.setAttribute('draggable', 'true');
+                card.dataset.index = index;
+
+                const img = document.createElement('img');
+                img.src = URL.createObjectURL(file);
+                img.className = 'preview-img';
+                img.loading = 'lazy';
+                
+                const overlay = document.createElement('div');
+                overlay.className = 'preview-overlay';
+                overlay.textContent = file.name;
+
+                const removeBtn = document.createElement('button');
+                removeBtn.className = 'remove-btn';
+                removeBtn.innerHTML = '&times;';
+                removeBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    URL.revokeObjectURL(img.src);
+                    fileList.splice(index, 1);
+                    renderPreviews();
+                };
+
+                card.appendChild(img);
+                card.appendChild(overlay);
+                card.appendChild(removeBtn);
+                col.appendChild(card);
+                previewGrid.appendChild(col);
+            });
+            
+            addDragAndDropListeners();
+        }
+
+        // Drag and Drop Logic
+        let draggedIndex = null;
+
+        function addDragAndDropListeners() {
+            const cards = document.querySelectorAll('.preview-card');
+            cards.forEach(card => {
+                card.addEventListener('dragstart', (e) => {
+                    draggedIndex = parseInt(e.target.dataset.index);
+                    e.target.classList.add('dragging');
+                });
+
+                card.addEventListener('dragend', (e) => {
+                    e.target.classList.remove('dragging');
+                    draggedIndex = null;
+                });
+
+                card.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    card.classList.add('drag-over');
+                });
+                
+                card.addEventListener('dragleave', () => {
+                    card.classList.remove('drag-over');
+                });
+
+                card.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    card.classList.remove('drag-over');
+                    const droppedOnIndex = parseInt(e.currentTarget.dataset.index);
+                    
+                    if (draggedIndex !== null && draggedIndex !== droppedOnIndex) {
+                        const draggedItem = fileList.splice(draggedIndex, 1)[0];
+                        fileList.splice(droppedOnIndex, 0, draggedItem);
+                        renderPreviews();
+                    }
+                });
+            });
+        }
+        
+        // Upload Logic
+        uploadBtn.addEventListener('click', async () => {
+            if (fileList.length === 0) return;
+
+            uploadStatus.innerHTML = `
+                <div class="alert alert-info">
+                    <div class="loading-spinner me-2"></div>
+                    Uploading ${fileList.length} images...
+                </div>
+            `;
+            uploadBtn.disabled = true;
+
+            const formData = new FormData();
+            fileList.forEach((file, index) => {
+                formData.append('images', file);
+            });
+            
+            try {
+                const response = await fetch('/upload', { 
+                    method: 'POST', 
+                    body: formData 
+                });
+                const result = await response.json();
+
+                if (result.error) {
+                    uploadStatus.innerHTML = `<div class="alert alert-danger">${result.error}</div>`;
+                } else {
+                    uploadStatus.innerHTML = `
+                        <div class="alert alert-success">
+                            <i class="bi bi-check-circle me-2"></i>
+                            Upload successful! Redirecting...
+                        </div>
+                    `;
+                    setTimeout(() => {
+                        window.location.href = `/crop/${result.session_id}/0`;
+                    }, 1500);
+                }
+            } catch (error) {
+                uploadStatus.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        An error occurred: ${error.message}
+                    </div>
+                `;
+            } finally {
+                uploadBtn.disabled = false;
+            }
+        });
+        
+        // Check for camera support on page load
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            takePhotoBtn.disabled = true;
+            takePhotoBtn.innerHTML = '<i class="bi bi-camera-fill me-2"></i> Camera Not Supported';
+        }
+    </script>
+</body>
+</html>

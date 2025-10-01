@@ -1,0 +1,299 @@
+{% extends "base.html" %}
+
+{% block title %}PDF Manager - DocuPDF{% endblock %}
+
+{% block styles %}
+<style>
+    .filename-col {
+        max-width: 250px;
+        white-space: normal;
+        word-wrap: break-word;
+    }
+    .folder-row, .pdf-row {
+        cursor: pointer;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1>PDF Manager</h1>
+        <div>
+            <a href="/pdf_manager?view=all" class="btn btn-info">Show All PDFs</a>
+            <button class="btn btn-primary" id="create-folder-btn">Create New Folder</button>
+            <a href="/" class="btn btn-primary">New Upload</a>
+        </div>
+    </div>
+
+    {% if not all_view %}
+    <!-- Breadcrumbs -->
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="/pdf_manager">Home</a></li>
+            {% for part in breadcrumbs %}
+            <li class="breadcrumb-item"><a href="/pdf_manager/browse/{{ breadcrumbs[:loop.index]|join('/') }}">{{ part }}</a></li>
+            {% endfor %}
+        </ol>
+    </nav>
+    {% endif %}
+
+    <!-- Bulk Actions -->
+    <div class="d-flex justify-content-end align-items-center mb-3">
+        <button class="btn btn-info me-2" id="bulk-persist-btn" disabled>Toggle Persist</button>
+        <button class="btn btn-success me-2" id="bulk-download-btn" disabled>Download Selected</button>
+        <button class="btn btn-warning me-2" id="bulk-move-btn" disabled>Move Selected</button>
+        <button class="btn btn-danger" id="bulk-delete-btn" disabled>Delete Selected</button>
+    </div>
+
+    <div class="card bg-dark text-white mb-4">
+        <div class="card-header">
+            <h2 class="h4 mb-0">Files</h2>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-dark table-hover" id="file-manager-table">
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" id="select-all-checkbox"></th>
+                            <th>Name</th>
+                            <th>Subject</th>
+                            <th>Tags</th>
+                            <th>Created At</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if not all_view %}
+                        <!-- Folders -->
+                        {% for folder in subfolders %}
+                        <tr class="folder-row" data-path="{{ current_path }}/{{ folder if current_path else folder }}">
+                            <td></td>
+                            <td><i class="bi bi-folder-fill"></i> {{ folder }}</td>
+                            <td></td>
+                            <td></td>
+                            <td></td>
+                        </tr>
+                        {% endfor %}
+                        {% endif %}
+                        
+                        <!-- PDFs -->
+                        {% for pdf in pdfs %}
+                        <tr class="pdf-row">
+                            <td><input type="checkbox" class="pdf-checkbox" value="{{ pdf.id }}"></td>
+                            <td class="filename-col">
+                                {% if pdf.persist %}<i class="bi bi-pin-angle-fill"></i>{% endif %}
+                                <a href="/view_pdf/{{ pdf.filename }}" target="_blank">{{ pdf.filename }}</a>
+                            </td>
+                            <td>{{ pdf.subject }}</td>
+                            <td>{{ pdf.tags }}</td>
+                            <td>{{ pdf.created_at }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create Folder Modal -->
+<div class="modal fade" id="createFolderModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content bg-dark text-white">
+      <div class="modal-header">
+        <h5 class="modal-title">Create New Folder</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <label for="newFolderName" class="form-label">Folder Name</label>
+        <input type="text" class="form-control" id="newFolderName">
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="createNewFolder()">Create</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Move Modal -->
+<div class="modal fade" id="moveModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content bg-dark text-white">
+      <div class="modal-header">
+        <h5 class="modal-title">Move Selected Files</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <label for="targetPath" class="form-label">Destination Path</label>
+        <input type="text" class="form-control" id="targetPath" placeholder="e.g., Exams/Mid-terms">
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="moveSelectedPdfs()">Move</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const currentPath = "{{ current_path }}";
+    const allView = {{ all_view | tojson }};
+
+    // --- Event Listeners ---
+    document.getElementById('create-folder-btn').addEventListener('click', () => {
+        new bootstrap.Modal(document.getElementById('createFolderModal')).show();
+    });
+
+    document.getElementById('bulk-move-btn').addEventListener('click', () => {
+        document.getElementById('targetPath').value = allView ? '' : currentPath;
+        new bootstrap.Modal(document.getElementById('moveModal')).show();
+    });
+
+    document.querySelectorAll('.folder-row').forEach(row => {
+        row.addEventListener('click', (e) => {
+            window.location.href = `/pdf_manager/browse/${row.dataset.path}`;
+        });
+    });
+
+    // --- API Calls ---
+    async function createNewFolder() {
+        const newFolderName = document.getElementById('newFolderName').value;
+        const response = await fetch('/create_folder', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ current_path: currentPath, new_folder_name: newFolderName })
+        });
+        if (response.ok) {
+            const modal = bootstrap.Modal.getInstance(document.getElementById('createFolderModal'));
+            modal.hide();
+            alert(`Folder '${newFolderName}' will be created when you move a file into it.`);
+        } else {
+            alert('Failed to create folder.');
+        }
+    }
+
+    async function moveSelectedPdfs() {
+        const selectedIds = getSelectedPdfIds();
+        const targetPath = document.getElementById('targetPath').value;
+        const response = await fetch('/bulk_move_pdfs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: selectedIds, target_path: targetPath })
+        });
+        if (response.ok) {
+            location.reload();
+        } else {
+            alert('Failed to move files.');
+        }
+    }
+
+    // --- Selection Logic ---
+    const selectAllCheckbox = document.getElementById('select-all-checkbox');
+    const pdfCheckboxes = document.querySelectorAll('.pdf-checkbox');
+    const pdfRows = document.querySelectorAll('.pdf-row');
+    const bulkPersistBtn = document.getElementById('bulk-persist-btn');
+    const bulkDownloadBtn = document.getElementById('bulk-download-btn');
+    const bulkMoveBtn = document.getElementById('bulk-move-btn');
+    const bulkDeleteBtn = document.getElementById('bulk-delete-btn');
+
+    function updateBulkButtons() {
+        const selectedIds = getSelectedPdfIds();
+        const disabled = selectedIds.length === 0;
+        bulkPersistBtn.disabled = disabled;
+        bulkDownloadBtn.disabled = disabled;
+        bulkMoveBtn.disabled = disabled;
+        bulkDeleteBtn.disabled = disabled;
+    }
+
+    function getSelectedPdfIds() {
+        return Array.from(pdfCheckboxes)
+            .filter(cb => cb.checked)
+            .map(cb => cb.value);
+    }
+
+    selectAllCheckbox.addEventListener('change', (e) => {
+        pdfCheckboxes.forEach(checkbox => {
+            checkbox.checked = e.target.checked;
+        });
+        updateBulkButtons();
+    });
+
+    pdfCheckboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', () => {
+            if (!checkbox.checked) {
+                selectAllCheckbox.checked = false;
+            }
+            updateBulkButtons();
+        });
+    });
+
+    pdfRows.forEach(row => {
+        row.addEventListener('click', (e) => {
+            if (e.target.tagName === 'A') return;
+            const checkbox = row.querySelector('.pdf-checkbox');
+            if (e.target !== checkbox) {
+                checkbox.checked = !checkbox.checked;
+                const changeEvent = new Event('change');
+                checkbox.dispatchEvent(changeEvent);
+            }
+        });
+    });
+
+    bulkPersistBtn.addEventListener('click', async () => {
+        const selectedIds = getSelectedPdfIds();
+        const response = await fetch('/bulk_toggle_persist', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: selectedIds })
+        });
+        if (response.ok) {
+            location.reload();
+        } else {
+            alert('Failed to toggle persistence.');
+        }
+    });
+
+    bulkDownloadBtn.addEventListener('click', async () => {
+        const selectedIds = getSelectedPdfIds();
+        const response = await fetch('/bulk_download_pdfs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: selectedIds })
+        });
+        if (response.ok) {
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = 'pdfs.zip';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+        } else {
+            alert('Failed to download PDFs.');
+        }
+    });
+
+    bulkDeleteBtn.addEventListener('click', async () => {
+        const selectedIds = getSelectedPdfIds();
+        if (confirm(`Are you sure you want to delete ${selectedIds.length} selected PDFs?`)) {
+            const response = await fetch('/bulk_delete_pdfs', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: selectedIds })
+            });
+            if (response.ok) {
+                location.reload();
+            } else {
+                alert('Failed to delete PDFs.');
+            }
+        }
+    });
+
+    updateBulkButtons();
+</script>
+{% endblock %}
