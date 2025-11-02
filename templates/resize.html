@@ -1,0 +1,476 @@
+{% extends "base.html" %}
+
+{% block title %}Resize PDF - DocuPDF{% endblock %}
+
+{% block styles %}
+<style>
+    .folder-row, .pdf-row {
+        cursor: pointer;
+    }
+    .table-hover .highlighted-row {
+        background-color: #0d6efd !important;
+    }
+    .color-palette .color-box {
+        width: 30px;
+        height: 30px;
+        border: 2px solid #555;
+        cursor: pointer;
+        transition: transform 0.1s;
+    }
+    .color-palette .color-box.active {
+        border-color: #fff;
+        transform: scale(1.1);
+    }
+    #color-picker-ui .saturation-brightness {
+        width: 256px;
+        height: 256px;
+        background-image: linear-gradient(to right, #fff, hsl(0, 100%, 50%));
+        position: relative;
+    }
+    #color-picker-ui .saturation-brightness .overlay-y {
+        position: absolute;
+        top: 0; right: 0; bottom: 0; left: 0;
+        background-image: linear-gradient(to bottom, transparent, #000);
+    }
+    #color-picker-ui .saturation-brightness .picker-cursor {
+        position: absolute;
+        width: 10px;
+        height: 10px;
+        border: 1px solid #fff;
+        border-radius: 50%;
+        transform: translate(-5px, -5px);
+        box-shadow: 0 0 0 1px #000;
+    }
+    #color-picker-ui .hue-slider {
+        width: 256px;
+        height: 20px;
+        background-image: linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00);
+        position: relative;
+    }
+    #color-picker-ui .hue-slider .slider-cursor {
+        position: absolute;
+        width: 5px;
+        height: 100%;
+        background: #fff;
+        border: 1px solid #000;
+        transform: translateX(-2.5px);
+    }
+    #color-picker-ui .color-preview {
+        width: 50px;
+        height: 50px;
+        border: 1px solid #ccc;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1>Resize PDF for Notes</h1>
+    </div>
+
+    <form action="{{ url_for('main.resize_pdf_route', folder_path=breadcrumbs|map(attribute='path')|join('/')) }}" method="post">
+        <div class="row">
+            <!-- Left Column: File Browser -->
+            <div class="col-md-6">
+                <!-- Search Bar -->
+                <div class="input-group mb-3">
+                    <input type="text" class="form-control" name="search" placeholder="Search PDFs..." value="{{ search_query or '' }}">
+                    <button class="btn btn-primary" type="submit">Search</button>
+                    {% if search_query %}
+                    <a href="{{ url_for('main.resize_pdf_route') }}" class="btn btn-secondary">Clear</a>
+                    {% endif %}
+                </div>
+
+                <!-- Breadcrumbs -->
+                <nav aria-label="breadcrumb">
+                    <ol class="breadcrumb">
+                        <li class="breadcrumb-item"><a href="{{ url_for('main.resize_pdf_route') }}">Root</a></li>
+                        {% for item in breadcrumbs %}
+                        <li class="breadcrumb-item"><a href="{{ url_for('main.resize_pdf_route', folder_path=item.path) }}">{{ item.name }}</a></li>
+                        {% endfor %}
+                    </ol>
+                </nav>
+
+                <!-- File Table -->
+                <div class="card bg-dark text-white mb-4">
+                    <div class="card-body">
+                        <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                            <table class="table table-dark table-hover" id="file-browser-table">
+                                <tbody>
+                                    <!-- Folders -->
+                                    {% for folder in subfolders %}
+                                    <tr class="folder-row" data-path="{{ (breadcrumbs|map(attribute='path')|list)|last if breadcrumbs else '' }}/{{ folder.name }}">
+                                        <td><i class="bi bi-folder-fill"></i> {{ folder.name }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                    
+                                    <!-- PDFs -->
+                                    {% for pdf in pdfs %}
+                                    <tr class="pdf-row" data-filename="{{ pdf.filename }}">
+                                        <td>
+                                            {% if pdf.persist %}<i class="bi bi-pin-angle-fill"></i>{% endif %}
+                                            {{ pdf.filename }}
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <input type="hidden" name="input_pdf" id="input_pdf">
+            </div>
+
+            <!-- Right Column: Options -->
+            <div class="col-md-6">
+                <h5>Options</h5>
+                <div class="mb-3">
+                    <label for="output_pdf" class="form-label">Output Filename</label>
+                    <input type="text" class="form-control" id="output_pdf" name="output_pdf" placeholder="e.g., my_notes.pdf" required>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Processing Mode</label>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="mode" id="mode_notes_only" value="notes_only" checked>
+                        <label class="form-check-label" for="mode_notes_only">Add notes area to full page</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="mode" id="mode_split" value="split">
+                        <label class="form-check-label" for="mode_split">Split page into two separate pages</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="mode" id="mode_stitch" value="stitch">
+                        <label class="form-check-label" for="mode_stitch">Stitch split columns on one page</label>
+                    </div>
+                </div>
+
+                <div id="stitch-options" class="mb-3 ms-4" style="display: none;">
+                    <label class="form-label">Stitch Direction</label>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="stitch_direction" id="stitch_horizontal" value="horizontal" checked>
+                        <label class="form-check-label" for="stitch_horizontal">Horizontal</label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="stitch_direction" id="stitch_vertical" value="vertical">
+                        <label class="form-check-label" for="stitch_vertical">Vertical</label>
+                    </div>
+                </div>
+
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" id="add_space" name="add_space" checked>
+                    <label class="form-check-label" for="add_space">Add space for notes</label>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Background Color</label>
+                    <div class="d-flex align-items-center color-palette">
+                        <div class="color-box me-2" data-color="#FDF5E6" style="background-color: #FDF5E6;"></div> <!-- Cream -->
+                        <div class="color-box me-2" data-color="#FFFFFF" style="background-color: #FFFFFF;"></div> <!-- White -->
+                        <div class="color-box me-2" data-color="#F5F5F5" style="background-color: #F5F5F5;"></div> <!-- Light Gray -->
+                        <div class="color-box me-2" data-color="#E6F7FF" style="background-color: #E6F7FF;"></div> <!-- Light Blue -->
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="custom-color-btn" data-bs-toggle="modal" data-bs-target="#colorPickerModal">Custom</button>
+                    </div>
+                    <input type="hidden" name="bg_color" id="bg_color" value="#FDF5E6">
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Background Pattern</label>
+                    <div>
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="radio" name="pattern" id="pattern_none" value="" checked>
+                            <label class="form-check-label" for="pattern_none">None</label>
+                        </div>
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="radio" name="pattern" id="pattern_grid" value="grid">
+                            <label class="form-check-label" for="pattern_grid">Grid</label>
+                        </div>
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="radio" name="pattern" id="pattern_dots" value="dots">
+                            <label class="form-check-label" for="pattern_dots">Dots</label>
+                        </div>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary w-100">Resize PDF</button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<!-- Color Picker Modal -->
+<div class="modal fade" id="colorPickerModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark text-white">
+            <div class="modal-header">
+                <h5 class="modal-title">Choose Custom Color</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="color-picker-ui"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" id="save-color-btn">Save Color</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const inputPdf = document.getElementById('input_pdf');
+    const outputPdf = document.getElementById('output_pdf');
+    const stitchOptions = document.getElementById('stitch-options');
+    const modeRadios = document.querySelectorAll('input[name="mode"]');
+    const stitchDirectionRadios = document.querySelectorAll('input[name="stitch_direction"]');
+    const addSpaceCheckbox = document.getElementById('add_space');
+    let highlightedRow = null;
+
+    function updateUI() {
+        const selectedMode = document.querySelector('input[name="mode"]:checked').value;
+        stitchOptions.style.display = selectedMode === 'stitch' ? 'block' : 'none';
+        if (inputPdf.value) {
+            updateOutputFilename(inputPdf.value);
+        }
+    }
+
+    function updateOutputFilename(selectedPdf) {
+        const baseName = selectedPdf.substring(0, selectedPdf.lastIndexOf('.'));
+        const mode = document.querySelector('input[name="mode"]:checked').value;
+        const addSpace = addSpaceCheckbox.checked;
+        let suffix = '_' + mode;
+
+        if (mode === 'stitch') {
+            const direction = document.querySelector('input[name="stitch_direction"]:checked').value;
+            suffix += `_${direction.substring(0, 4)}`;
+        }
+        if (addSpace) {
+            suffix += '_notes';
+        }
+        suffix += '.pdf';
+        outputPdf.value = `${baseName}${suffix}`;
+    }
+
+    document.getElementById('file-browser-table').addEventListener('click', e => {
+        const row = e.target.closest('tr');
+        if (!row) return;
+
+        if (row.classList.contains('folder-row')) {
+            const path = row.dataset.path;
+            window.location.href = `/resize/browse/${path}`;
+        } else if (row.classList.contains('pdf-row')) {
+            if (highlightedRow) {
+                highlightedRow.classList.remove('highlighted-row');
+            }
+            highlightedRow = row;
+            highlightedRow.classList.add('highlighted-row');
+
+            const selectedPdf = row.dataset.filename;
+            inputPdf.value = selectedPdf;
+            updateOutputFilename(selectedPdf);
+        }
+    });
+
+    modeRadios.forEach(radio => radio.addEventListener('change', updateUI));
+    stitchDirectionRadios.forEach(radio => radio.addEventListener('change', updateUI));
+    addSpaceCheckbox.addEventListener('change', updateUI);
+
+    // Initial UI setup
+    updateUI();
+
+    // Color Picker Logic (remains the same)
+    const bgColorInput = document.getElementById('bg_color');
+    const colorPalette = document.querySelector('.color-palette');
+    const colorBoxes = colorPalette.querySelectorAll('.color-box');
+    const colorPickerModal = new bootstrap.Modal(document.getElementById('colorPickerModal'));
+
+    class ColorPicker {
+        constructor(target, initialColor = '#ff0000') {
+            this.target = target;
+            this.color = this.hexToHsv(initialColor);
+            this.build();
+            this.update();
+        }
+
+        build() {
+            this.target.innerHTML = `
+                <div class="saturation-brightness"></div>
+                <div class="hue-slider mt-2"></div>
+                <div class="d-flex justify-content-between mt-2">
+                    <div class="color-preview"></div>
+                    <input type="text" class="form-control w-50" id="color-hex-value">
+                </div>
+            `;
+
+            this.sbArea = this.target.querySelector('.saturation-brightness');
+            this.hueSlider = this.target.querySelector('.hue-slider');
+            this.preview = this.target.querySelector('.color-preview');
+            this.hexInput = this.target.querySelector('#color-hex-value');
+
+            this.sbArea.innerHTML = '<div class="overlay-y"></div><div class="picker-cursor"></div>';
+            this.hueSlider.innerHTML = '<div class="slider-cursor"></div>';
+            this.sbCursor = this.sbArea.querySelector('.picker-cursor');
+            this.hueCursor = this.hueSlider.querySelector('.slider-cursor');
+
+            this.addEventListeners();
+        }
+
+        addEventListeners() {
+            let sbDragging = false;
+            const startSB = (e) => { sbDragging = true; this.updateSB(e); e.preventDefault(); };
+            const dragSB = (e) => { if (sbDragging) this.updateSB(e); e.preventDefault(); };
+            const endSB = () => { sbDragging = false; };
+
+            this.sbArea.addEventListener('mousedown', startSB);
+            document.addEventListener('mousemove', dragSB);
+            document.addEventListener('mouseup', endSB);
+            this.sbArea.addEventListener('touchstart', startSB);
+            document.addEventListener('touchmove', dragSB, { passive: false });
+            document.addEventListener('touchend', endSB);
+
+            let hueDragging = false;
+            const startHue = (e) => { hueDragging = true; this.updateHue(e); e.preventDefault(); };
+            const dragHue = (e) => { if (hueDragging) this.updateHue(e); e.preventDefault(); };
+            const endHue = () => { hueDragging = false; };
+
+            this.hueSlider.addEventListener('mousedown', startHue);
+            document.addEventListener('mousemove', dragHue);
+            document.addEventListener('mouseup', endHue);
+            this.hueSlider.addEventListener('touchstart', startHue);
+            document.addEventListener('touchmove', dragHue, { passive: false });
+            document.addEventListener('touchend', endHue);
+            
+            this.hexInput.addEventListener('change', () => {
+                this.color = this.hexToHsv(this.hexInput.value);
+                this.update();
+            });
+        }
+
+        updateSB(e) {
+            const rect = this.sbArea.getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            let x = (clientX - rect.left) / rect.width;
+            let y = (clientY - rect.top) / rect.height;
+            x = Math.max(0, Math.min(1, x));
+            y = Math.max(0, Math.min(1, y));
+            this.color.s = x;
+            this.color.v = 1 - y;
+            this.update();
+        }
+
+        updateHue(e) {
+            const rect = this.hueSlider.getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            let x = (clientX - rect.left) / rect.width;
+            x = Math.max(0, Math.min(1, x));
+            this.color.h = x * 360;
+            this.update();
+        }
+
+        update() {
+            const { h, s, v } = this.color;
+            const rgb = this.hsvToRgb(h, s, v);
+            const hex = this.rgbToHex(rgb.r, rgb.g, rgb.b);
+
+            // Update UI
+            this.sbArea.style.backgroundColor = `hsl(${h}, 100%, 50%)`;
+            this.sbCursor.style.left = `${s * 100}%`;
+            this.sbCursor.style.top = `${(1 - v) * 100}%`;
+            this.hueCursor.style.left = `${(h / 360) * 100}%`;
+            this.preview.style.backgroundColor = hex;
+            this.hexInput.value = hex.toUpperCase();
+        }
+
+        hsvToRgb(h, s, v) {
+            let r, g, b;
+            let i = Math.floor(h / 60);
+            let f = h / 60 - i;
+            let p = v * (1 - s);
+            let q = v * (1 - f * s);
+            let t = v * (1 - (1 - f) * s);
+            i %= 6;
+            if (i == 0) { r = v; g = t; b = p; }
+            if (i == 1) { r = q; g = v; b = p; }
+            if (i == 2) { r = p; g = v; b = t; }
+            if (i == 3) { r = p; g = q; b = v; }
+            if (i == 4) { r = t; g = p; b = v; }
+            if (i == 5) { r = v; g = p; b = q; }
+            return { r: Math.round(r * 255), g: Math.round(g * 255), b: Math.round(b * 255) };
+        }
+
+        rgbToHex(r, g, b) {
+            return "#" + [r, g, b].map(x => {
+                const hex = x.toString(16);
+                return hex.length === 1 ? '0' + hex : hex;
+            }).join('');
+        }
+        
+        hexToHsv(hex) {
+            let { r, g, b } = this.hexToRgb(hex);
+            r /= 255; g /= 255; b /= 255;
+            let max = Math.max(r, g, b), min = Math.min(r, g, b);
+            let h, s, v = max;
+            let d = max - min;
+            s = max == 0 ? 0 : d / max;
+            if (max == min) {
+                h = 0;
+            } else {
+                switch (max) {
+                    case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+                    case g: h = (b - r) / d + 2; break;
+                    case b: h = (r - g) / d + 4; break;
+                }
+                h /= 6;
+            }
+            return { h: h * 360, s: s, v: v };
+        }
+
+        hexToRgb(hex) {
+            let result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? {
+                r: parseInt(result[1], 16),
+                g: parseInt(result[2], 16),
+                b: parseInt(result[3], 16)
+            } : { r: 0, g: 0, b: 0 };
+        }
+    }
+
+    const colorPicker = new ColorPicker(document.getElementById('color-picker-ui'), localStorage.getItem('resizeBgColor') || '#FDF5E6');
+
+    function setActiveColor(color, updatePicker = true) {
+        if (!/^#[0-9A-F]{6}$/i.test(color)) color = '#FDF5E6';
+        
+        bgColorInput.value = color;
+        localStorage.setItem('resizeBgColor', color);
+
+        colorBoxes.forEach(box => {
+            box.classList.toggle('active', box.dataset.color.toLowerCase() === color.toLowerCase());
+        });
+
+        if (updatePicker) {
+            colorPicker.color = colorPicker.hexToHsv(color);
+            colorPicker.update();
+        }
+    }
+
+    colorBoxes.forEach(box => {
+        box.addEventListener('click', () => setActiveColor(box.dataset.color));
+    });
+
+    document.getElementById('save-color-btn').addEventListener('click', () => {
+        setActiveColor(colorPicker.hexInput.value, false);
+        colorPickerModal.hide();
+    });
+
+    // Load saved color from localStorage or set default
+    const savedColor = localStorage.getItem('resizeBgColor') || '#FDF5E6';
+    setActiveColor(savedColor);
+
+});
+</script>
+{% endblock %}

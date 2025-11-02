@@ -61,45 +61,102 @@ MathJax = {
 <script>
 // Function to fix font-family declarations in HTML strings
 function fixFontFamilyQuotes(htmlString) {
-    // Replace double quotes within font-family CSS declarations with single quotes
-    // This prevents JSON parsing issues when the HTML is stringified
-    return htmlString.replace(/font-family:"([^"]+)"/g, function(match, fontValue) {
-        // Replace any inner double quotes with single quotes
-        const fixedValue = fontValue.replace(/"/g, "'");
+    // First, handle escaped quotes in the HTML
+    // This regex matches font-family declarations with escaped quotes
+    htmlString = htmlString.replace(/font-family:\\?"([^\\]+(?:\\.[^\\]*)*)"(?=[\s;>])/g, function(match, fontValue) {
+        // Unescape the font value
+        let unescapedValue = fontValue.replace(/\\"/g, '"');
+        // Replace double quotes with single quotes in the font names
+        let fixedValue = unescapedValue.replace(/"/g, "'");
         return `font-family:'${fixedValue}'`;
     });
+    
+    // Also handle non-escaped font-family declarations
+    htmlString = htmlString.replace(/font-family:\s*"([^"]+(?:,\s*"[^"]+"\s*)*)"(?=[\s;>])/g, function(match) {
+        // Extract the full font-family value including all fonts
+        let fontDeclaration = match.match(/font-family:\s*(.+)/)[1];
+        // Replace outer quotes and inner quotes appropriately
+        fontDeclaration = fontDeclaration.replace(/^"|"$/g, "'");
+        fontDeclaration = fontDeclaration.replace(/","/g, "','");
+        return `font-family:${fontDeclaration}`;
+    });
+    
+    // Handle a more complex pattern where font-family might span multiple quoted sections
+    htmlString = htmlString.replace(/style="([^"]*)"/g, function(match, styleContent) {
+        // Process font-family within style attributes
+        let fixedStyle = styleContent.replace(/font-family:([^;]+)(;|$)/g, function(m, fontValue, ending) {
+            // Clean up the font value
+            fontValue = fontValue.trim();
+            
+            // If it starts and ends with quotes, process it
+            if ((fontValue.startsWith('"') && fontValue.endsWith('"')) || 
+                (fontValue.startsWith("'") && fontValue.endsWith("'"))) {
+                // Remove outer quotes
+                fontValue = fontValue.slice(1, -1);
+                // Replace any internal double quotes with single quotes
+                fontValue = fontValue.replace(/"/g, "'");
+                return `font-family:'${fontValue}'${ending}`;
+            }
+            
+            return m; // Return unchanged if doesn't match pattern
+        });
+        
+        return `style="${fixedStyle}"`;
+    });
+    
+    return htmlString;
 }
 
 document.getElementById('json-upload-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const jsonData = document.getElementById('json-data').value;
+    let jsonData = document.getElementById('json-data').value;
     const statusDiv = document.getElementById('status');
     const cardBody = document.querySelector('.card-body');
     const selectedStatuses = Array.from(document.querySelectorAll('input[type="checkbox"][id^="status_"]:checked')).map(cb => cb.value);
 
     try {
+        jsonData = fixFontFamilyQuotes(jsonData);
         const data = JSON.parse(jsonData);
-        const testName = data.data.root._testAttempt4d9rq8.test.name;
+        
+        let testName;
+        let bodyPayload;
+        let endpoint;
+
+        if (data.version && String(data.version) === "2.1") {
+            testName = data.test_name;
+            bodyPayload = data;
+            endpoint = '/json_upload'; 
+        } else if (data.data && data.data.root) {
+            testName = data.data.root._testAttempt4d9rq8.test.name;
+            bodyPayload = { data: data, statuses: selectedStatuses };
+            endpoint = '/process_json';
+        } else {
+            if (data.test_name) {
+                testName = data.test_name;
+                bodyPayload = data;
+                endpoint = '/json_upload';
+            } else {
+                throw new Error("Unknown JSON format. Could not determine structure.");
+            }
+        }
 
         statusDiv.innerHTML = '<div class="alert alert-info">Processing JSON...</div>';
-
-        const response = await fetch('/process_json', {
+        
+        const response = await fetch(endpoint, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ data: data, statuses: selectedStatuses })
+            body: JSON.stringify(bodyPayload)
         });
 
         const result = await response.json();
 
         if (result.success) {
-            // Fix font-family quotes in all question HTML before stringifying
-            result.questions.forEach(q => {
-                if (q.question) {
-                    q.question = fixFontFamilyQuotes(q.question);
-                }
-            });
+            if (result.edit_url) {
+                window.location.href = result.edit_url;
+                return;
+            }
 
             const form = document.createElement('form');
             form.action = '/save_processed_json';
@@ -118,14 +175,14 @@ document.getElementById('json-upload-form').addEventListener('submit', async (e)
             form.appendChild(testNameInput);
 
             const table = document.createElement('table');
-            table.className = 'table';
+            table.className = 'table table-dark';
             const thead = document.createElement('thead');
             thead.innerHTML = '<tr><th>Question</th><th>Your Answer</th><th>Correct Answer</th><th>Status</th></tr>';
             table.appendChild(thead);
 
             const tbody = document.createElement('tbody');
             result.questions.forEach(q => {
-                let badgeClass = 'bg-warning';
+                let badgeClass = 'bg-warning text-dark';
                 if (q.status === 'wrong') badgeClass = 'bg-danger';
                 if (q.status === 'correct') badgeClass = 'bg-success';
                 const row = document.createElement('tr');
@@ -137,13 +194,16 @@ document.getElementById('json-upload-form').addEventListener('submit', async (e)
 
             const button = document.createElement('button');
             button.type = 'submit';
-            button.className = 'btn btn-primary';
-            button.textContent = 'Go to Question Entry';
+            button.className = 'btn btn-primary mt-3';
+            button.textContent = 'Save and Go to Question Entry';
             form.appendChild(button);
 
             cardBody.innerHTML = '';
             cardBody.appendChild(form);
-            MathJax.typeset();
+
+            if (window.MathJax) {
+                MathJax.typesetPromise();
+            }
         } else {
             statusDiv.innerHTML = `<div class="alert alert-danger">Error: ${result.error}</div>`;
         }

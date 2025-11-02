@@ -1,0 +1,13 @@
+.env
+__pycache__/
+backup/
+bak2/
+changes_db.txt
+database.db
+output/
+processed/
+templates/json_upload.html.bak
+uploads/
+venv/
+x
+{%

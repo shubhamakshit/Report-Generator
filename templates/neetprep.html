@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+
+{% block title %}NeetPrep Incorrect Questions{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="card bg-dark text-white">
+        <div class="card-header">
+            <h2>NeetPrep Incorrect Question Manager</h2>
+        </div>
+        <div class="card-body">
+            <div class="d-flex align-items-center mb-3">
+                <button id="sync-btn" class="btn btn-primary">Sync/Fetch Latest Incorrect Questions</button>
+                <div class="form-check ms-3">
+                    <input class="form-check-input" type="checkbox" id="force-sync-checkbox">
+                    <label class="form-check-label" for="force-sync-checkbox">
+                        Force full re-sync
+                    </label>
+                </div>
+            </div>
+            <div class="d-flex align-items-center">
+                <button id="classify-btn" class="btn btn-warning">Classify Unclassified Questions</button>
+                <span class="ms-3">({{ unclassified_count }} unclassified)</span>
+            </div>
+            
+            <div id="sync-status" class="mt-3"></div>
+            <div id="pdf-link-container" class="mt-3"></div>
+
+            <hr class="my-4">
+
+            <h4>Generate PDF</h4>
+            <form id="generate-pdf-form">
+                <div class="mb-3">
+                    <button type="submit" name="pdf_type" value="all" class="btn btn-success">Generate PDF of All Incorrect Questions</button>
+                    <a href="/neetprep/edit" class="btn btn-secondary">Edit Synced Questions</a>
+                    <a href="/classified/edit" class="btn btn-secondary">Edit Classified Questions</a>
+                </div>
+                
+                <h5>Or, Generate by Topic:</h5>
+                <div class="table-responsive" style="max-height: 400px;">
+                    <table class="table table-sm table-hover">
+                        <thead>
+                            <tr>
+                                <th></th>
+                                <th>Topic</th>
+                                <th>NeetPrep Questions</th>
+                                <th>My Questions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="topic-list">
+                        {% if topics %}
+                            {% for item in topics %}
+                            <tr>
+                                <td><input class="form-check-input" type="checkbox" value="{{ item.topic }}"></td>
+                                <td>{{ item.topic }}</td>
+                                <td><span class="badge bg-secondary">{{ item.neetprep_count }}</span></td>
+                                <td><span class="badge bg-info">{{ item.my_questions_count }}</span></td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="4"><i>No topics found. Sync with NeetPrep to fetch questions and topics.</i></td>
+                            </tr>
+                        {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+                <button type="submit" name="pdf_type" value="selected" class="btn btn-info mt-2" {% if not topics %}disabled{% endif %}>Generate PDF for Selected Topics</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function loadSettings() {
+    const settings = JSON.parse(localStorage.getItem('pdfGeneratorSettings'));
+    console.log("Loaded settings from localStorage:", settings);
+    if (settings) {
+        return settings;
+    } else {
+        console.log("No settings found in localStorage, using default.");
+        return {
+            images_per_page: 4,
+            orientation: 'portrait',
+            grid_rows: 4,
+            grid_cols: 1,
+            practice_mode: 'none'
+        };
+    }
+}
+
+document.getElementById('sync-btn').addEventListener('click', async () => {
+    const syncStatus = document.getElementById('sync-status');
+    const forceSync = document.getElementById('force-sync-checkbox').checked;
+    syncStatus.innerHTML = '<div class="alert alert-info">Syncing... This may take a while.</div>';
+    
+    try {
+        const response = await fetch('/neetprep/sync', { 
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ force: forceSync })
+        });
+        const result = await response.json();
+        
+        if (response.ok) {
+            syncStatus.innerHTML = `<div class="alert alert-success">${result.status}</div>`;
+            // Reload the page to show updated topics
+            setTimeout(() => window.location.reload(), 2000);
+        } else {
+            syncStatus.innerHTML = `<div class="alert alert-danger">Error: ${result.error || 'Unknown error'}</div>`;
+        }
+    } catch (error) {
+        syncStatus.innerHTML = `<div class="alert alert-danger">Request failed: ${error}</div>`;
+    }
+});
+
+document.getElementById('classify-btn').addEventListener('click', async () => {
+    const syncStatus = document.getElementById('sync-status');
+    syncStatus.innerHTML = '<div class="alert alert-info">Classification started... This will take time due to rate limits.</div>';
+    
+    try {
+        const response = await fetch('/neetprep/classify', { method: 'POST' });
+        const result = await response.json();
+        
+        if (response.ok) {
+            syncStatus.innerHTML = `<div class="alert alert-success">${result.status}</div>`;
+            setTimeout(() => window.location.reload(), 2000);
+        } else {
+            syncStatus.innerHTML = `<div class="alert alert-danger">Error: ${result.error || 'Unknown error'}</div>`;
+        }
+    } catch (error) {
+        syncStatus.innerHTML = `<div class="alert alert-danger">Request failed: ${error}</div>`;
+    }
+});
+
+document.getElementById('generate-pdf-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const pdfType = e.submitter.value;
+    const statusDiv = document.getElementById('sync-status');
+    const settings = loadSettings();
+    let payload = { 
+        type: pdfType,
+        layout: {
+            images_per_page: settings.images_per_page,
+            orientation: settings.orientation,
+            grid_rows: settings.grid_rows,
+            grid_cols: settings.grid_cols,
+            practice_mode: settings.practice_mode
+        }
+    };
+
+    if (pdfType === 'selected') {
+        const selectedTopics = Array.from(document.querySelectorAll('#topic-list input[type="checkbox"]:checked')).map(cb => cb.value);
+        if (selectedTopics.length === 0) {
+            statusDiv.innerHTML = '<div class="alert alert-warning">Please select at least one topic.</div>';
+            return;
+        }
+        payload.topics = selectedTopics;
+    }
+
+    console.log("Payload sent to server:", payload);
+    statusDiv.innerHTML = '<div class="alert alert-info">Generating PDF...</div>';
+
+    try {
+        const response = await fetch('/neetprep/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const result = await response.json();
+
+        if (response.ok && result.success) {
+            statusDiv.innerHTML = '<div class="alert alert-success">PDF generated!</div>';
+            if(result.pdf_url) {
+                const pdfLinkContainer = document.getElementById('pdf-link-container');
+                const link = document.createElement('a');
+                link.href = result.pdf_url;
+                link.textContent = 'View Generated PDF';
+                link.className = 'btn btn-outline-light';
+                link.target = '_blank';
+                pdfLinkContainer.innerHTML = ''; // Clear previous links
+                pdfLinkContainer.appendChild(link);
+                window.open(result.pdf_url, '_blank');
+            }
+        } else {
+            statusDiv.innerHTML = `<div class="alert alert-danger">Error: ${result.error || 'PDF generation failed.'}</div>`;
+        }
+    } catch (error) {
+        statusDiv.innerHTML = `<div class="alert alert-danger">Request failed: ${error}</div>`;
+    }
+});
+</script>
+{% endblock %}

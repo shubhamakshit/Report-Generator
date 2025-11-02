@@ -2,44 +2,49 @@
 
 {% block title %}DocuPDF - Upload Options{% endblock %}
 
-{% block head %}
-<style>
-    body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
-    .choice-container { max-width: 800px; width: 100%; }
-    .choice-card { transition: transform 0.2s; }
-    .choice-card:hover { transform: translateY(-5px); }
-</style>
-{% endblock %}
-
 {% block content %}
-<div class="choice-container p-4">
-    <div class="card bg-dark text-white mb-4">
-        <div class="card-header text-center">
-            <h1 class="h3"><i class="bi bi-upload me-2"></i>Choose Upload Method</h1>
-        </div>
-        <div class="card-body">
-            <div class="row g-4">
-                <div class="col-md-6">
-                    <div class="card choice-card bg-secondary h-100">
-                        <div class="card-body text-center">
-                            <div class="mb-3">
-                                <i class="bi bi-file-earmark-pdf-fill" style="font-size: 3rem;"></i>
+<div class="d-flex align-items-center justify-content-center" style="min-height: calc(100vh - 56px);">
+    <div class="choice-container p-4" style="max-width: 1200px; width: 100%;">
+        <div class="card bg-dark text-white mb-4">
+            <div class="card-header text-center">
+                <h1 class="h3"><i class="bi bi-upload me-2"></i>Choose Upload Method</h1>
+            </div>
+            <div class="card-body">
+                <div class="row g-4">
+                    <div class="col-md-4">
+                        <div class="card choice-card bg-secondary h-100" style="transition: transform 0.2s;" onmouseover="this.style.transform='translateY(-5px)'" onmouseout="this.style.transform='translateY(0)'">
+                            <div class="card-body text-center">
+                                <div class="mb-3">
+                                    <i class="bi bi-file-earmark-pdf-fill" style="font-size: 3rem;"></i>
+                                </div>
+                                <h5 class="card-title">PDF Upload</h5>
+                                <p class="card-text">Upload a PDF document and extract questions from each page.</p>
+                                <a href="/v2" class="btn btn-primary">Upload PDF</a>
                             </div>
-                            <h5 class="card-title">PDF Upload</h5>
-                            <p class="card-text">Upload a PDF document and extract questions from each page.</p>
-                            <a href="/v2" class="btn btn-primary">Upload PDF</a>
                         </div>
                     </div>
-                </div>
-                <div class="col-md-6">
-                    <div class="card choice-card bg-secondary h-100">
-                        <div class="card-body text-center">
-                            <div class="mb-3">
-                                <i class="bi bi-file-earmark-image-fill" style="font-size: 3rem;"></i>
+                    <div class="col-md-4">
+                        <div class="card choice-card bg-secondary h-100" style="transition: transform 0.2s;" onmouseover="this.style.transform='translateY(-5px)'" onmouseout="this.style.transform='translateY(0)'">
+                            <div class="card-body text-center">
+                                <div class="mb-3">
+                                    <i class="bi bi-file-earmark-image-fill" style="font-size: 3rem;"></i>
+                                </div>
+                                <h5 class="card-title">Image Upload</h5>
+                                <p class="card-text">Upload multiple images and extract questions from each image.</p>
+                                <a href="/images" class="btn btn-primary">Upload Images</a>
                             </div>
-                            <h5 class="card-title">Image Upload</h5>
-                            <p class="card-text">Upload multiple images and extract questions from each image.</p>
-                            <a href="/images" class="btn btn-primary">Upload Images</a>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card choice-card bg-secondary h-100" style="transition: transform 0.2s;" onmouseover="this.style.transform='translateY(-5px)'" onmouseout="this.style.transform='translateY(0)'">
+                            <div class="card-body text-center">
+                                <div class="mb-3">
+                                    <i class="bi bi-file-code" style="font-size: 3rem;"></i>
+                                </div>
+                                <h5 class="card-title">JSON Upload</h5>
+                                <p class="card-text">Create questions from a JSON formatted text.</p>
+                                <a href="/json_upload" class="btn btn-primary">Upload JSON</a>
+                            </div>
                         </div>
                     </div>
                 </div>

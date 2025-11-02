@@ -27,6 +27,36 @@
         border-radius: .25rem;
         padding: .375rem .75rem;
     }
+    .table-hover .highlighted-row {
+        background-color: #0d6efd !important;
+    }
+
+    /* Tom Select Dark Mode Fix */
+    .ts-control {
+        background-color: #2b3035 !important;
+        border-color: #495057 !important;
+        color: #fff !important;
+    }
+    .ts-control input {
+        color: #fff !important;
+    }
+    .ts-dropdown, .ts-dropdown .optgroup-header {
+        background-color: #2b3035 !important;
+        border-color: #495057 !important;
+    }
+    .ts-dropdown .option {
+        color: #fff;
+    }
+    .ts-dropdown .option:hover, .ts-dropdown .active {
+        background-color: #0d6efd !important;
+    }
+    .ts-control .item {
+        background-color: #0d6efd !important;
+        color: #fff !important;
+    }
+    .ts-dropdown {
+        z-index: 1060 !important; /* Higher than Bootstrap's modal z-index */
+    }
 </style>
 {% endblock %}
 
@@ -43,8 +73,24 @@
             <button class="btn btn-primary" id="create-folder-btn">Create New Folder</button>
             <a href="/upload_final_pdf" class="btn btn-success">Upload Final PDF</a>
             <a href="/" class="btn btn-primary">New Upload</a>
+            <button class="btn btn-outline-info" data-bs-toggle="modal" data-bs-target="#shortcutsModal">Shortcuts (?)</button>
         </div>
-    </div>
+    </div>    <!-- Search Bar -->
+    <form method="get" action="/pdf_manager" class="mb-4">
+        <div class="input-group">
+            <input type="text" class="form-control" name="search" placeholder="Search by subject, tags, or notes..." value="{{ search_query or '' }}">
+            <button class="btn btn-primary" type="submit">Search</button>
+            {% if search_query %}
+            <a href="{{ url_for('main.pdf_manager') }}" class="btn btn-outline-secondary">Clear</a>
+            {% endif %}
+        </div>
+        <div class="form-check mt-2">
+            <input class="form-check-input" type="checkbox" name="recursive" value="true" id="recursive-search-checkbox" {% if recursive %}checked{% endif %}>
+            <label class="form-check-label" for="recursive-search-checkbox">
+                Recursive Search
+            </label>
+        </div>
+    </form>
 
     {% if not all_view %}
     <!-- Breadcrumbs -->
@@ -61,13 +107,17 @@
     <!-- Bulk Actions -->
     <div class="d-flex justify-content-end align-items-center mb-3">
         <button class="btn btn-info me-2" id="bulk-persist-btn" disabled>Toggle Persist</button>
+        <button class="btn btn-primary me-2" id="bulk-merge-btn" disabled>Merge Selected</button>
         <button class="btn btn-success me-2" id="bulk-download-btn" disabled>Download Selected</button>
         <button class="btn btn-warning me-2" id="bulk-move-btn" disabled>Move Selected</button>
+        <button class="btn btn-warning me-2" id="bulk-edit-btn" disabled>Edit</button>
         <button class="btn btn-primary me-2" id="bulk-rename-btn" disabled>Rename</button>
         <button class="btn btn-danger" id="bulk-delete-btn" disabled>Delete Selected</button>
+        <button class="btn btn-secondary" id="bulk-print-btn" disabled>Print Selected</button>
     </div>
 
-    <div class="card bg-dark text-white mb-4">
+    <form id="pdf-print-form" action="/print_pdfs" method="post" target="_blank">
+        <div class="card bg-dark text-white mb-4">
         <div class="card-header">
             <h2 class="h4 mb-0">Files</h2>
         </div>
@@ -101,12 +151,18 @@
                         {% for pdf in pdfs %}
                         <tr class="pdf-row">
                             <td><input type="checkbox" class="item-checkbox" data-item-type="pdf" value="{{ pdf.id }}"></td>
-                            <td class="filename-col">
+                            <td class="filename-col editable" data-item-type="pdf" data-item-id="{{ pdf.id }}" data-current-name="{{ pdf.filename }}">
                                 {% if pdf.persist %}<i class="bi bi-pin-angle-fill"></i>{% endif %}
                                 <a href="/view_pdf/{{ pdf.filename }}" target="_blank">{{ pdf.filename }}</a>
                             </td>
-                            <td class="editable" data-item-type="pdf" data-item-id="{{ pdf.id }}" data-current-name="{{ pdf.subject }}">{{ pdf.subject }}</td>
-                            <td>{{ pdf.tags }}</td>
+                            <td>{{ pdf.subject }}</td>
+                            <td>
+                                {% if pdf.tags %}
+                                    {% for tag in pdf.tags.split(',') %}
+                                        <a href="{{ url_for('main.pdf_manager', search=tag.strip()) }}" class="badge bg-secondary text-decoration-none">{{ tag.strip() }}</a>
+                                    {% endfor %}
+                                {% endif %}
+                            </td>
                             <td>{{ pdf.created_at }}</td>
                         </tr>
                         {% endfor %}
@@ -114,24 +170,149 @@
                 </table>
             </div>
         </div>
+            </div>
+        </div>
+    </form>
+    
+    <!-- Modals --><!-- Create Folder Modal -->
+<div class="modal fade" id="createFolderModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content bg-dark text-white">
+      <div class="modal-header">
+        <h5 class="modal-title">Create New Folder</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <label for="newFolderName" class="form-label">Folder Name</label>
+        <input type="text" class="form-control" id="newFolderName">
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="create-folder-confirm-btn">Create</button>
+      </div>
     </div>
+  </div>
 </div>
 
-<!-- Modals -->
-<!-- ... (Create Folder and Move Modals remain the same) ... -->
+<!-- Move Modal -->
+<div class="modal fade" id="moveModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content bg-dark text-white">
+      <div class="modal-header">
+        <h5 class="modal-title">Move Selected Files</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p>Select destination folder:</p>
+        <div id="folder-tree-move" class="list-group" style="max-height: 300px; overflow-y: auto;"></div>
+        <hr>
+        <div class="input-group mb-3">
+          <input type="text" class="form-control" placeholder="New subfolder name" id="new-subfolder-name">
+          <button class="btn btn-outline-secondary" type="button" id="create-subfolder-btn">Create Subfolder</button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="move-confirm-btn">Move Here</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Modal -->
+<div class="modal fade" id="editModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content bg-dark text-white">
+      <div class="modal-header">
+        <h5 class="modal-title">Edit PDF Details</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <!-- Carousel Navigation (visible in bulk edit) -->
+        <div id="edit-carousel-nav" class="d-flex justify-content-between align-items-center mb-3" style="display: none;">
+          <button class="btn btn-outline-secondary" id="edit-prev-btn">&laquo; Previous</button>
+          <span id="edit-carousel-indicator"></span>
+          <button class="btn btn-outline-secondary" id="edit-next-btn">Next &raquo;</button>
+        </div>
+
+        <input type="hidden" id="edit-pdf-id">
+        
+        <div class="mb-3">
+          <label for="edit-subject" class="form-label">Subject</label>
+          <input type="text" class="form-control" id="edit-subject">
+        </div>
+        <div class="mb-3">
+          <label for="edit-tags" class="form-label">Tags (comma-separated)</label>
+          <input type="text" class="form-control" id="edit-tags">
+        </div>
+        <div class="mb-3">
+          <label for="edit-notes" class="form-label">Notes</label>
+          <textarea class="form-control" id="edit-notes" rows="3"></textarea>
+        </div>
+        <div class="mb-3">
+          <label for="edit-filename" class="form-label">Filename</label>
+          <input type="text" class="form-control" id="edit-filename" readonly>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-primary" id="save-edit-btn">Save Changes</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Shortcuts Modal -->
+<div class="modal fade" id="shortcutsModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content bg-dark text-white">
+      <div class="modal-header">
+        <h5 class="modal-title">Keyboard Shortcuts</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <ul class="list-group">
+          <li class="list-group-item bg-dark text-white d-flex justify-content-between"><span>Navigate up/down</span><div><kbd>j</kbd> / <kbd>k</kbd> or <kbd>&uarr;</kbd> / <kbd>&darr;</kbd></div></li>
+          <li class="list-group-item bg-dark text-white d-flex justify-content-between"><span>Select/Deselect item</span><kbd>x</kbd></li>
+          <li class="list-group-item bg-dark text-white d-flex justify-content-between"><span>Toggle select all</span><kbd>s</kbd></li>
+          <li class="list-group-item bg-dark text-white d-flex justify-content-between"><span>Open folder / View PDF</span><kbd>Enter</kbd></li>
+          <li class="list-group-item bg-dark text-white d-flex justify-content-between"><span>Edit selected</span><kbd>e</kbd></li>
+          <li class="list-group-item bg-dark text-white d-flex justify-content-between"><span>Delete selected</span><kbd>d</kbd> or <kbd>Del</kbd></li>
+          <li class="list-group-item bg-dark text-white d-flex justify-content-between"><span>Toggle persist for selected</span><kbd>p</kbd></li>
+          <li class="list-group-item bg-dark text-white d-flex justify-content-between"><span>Show this help</span><kbd>?</kbd></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
 
 {% endblock %}
 
 {% block scripts %}
 <script>
-    const currentFolderId = {{ current_folder_id|tojson }};
-    const folderTree = {{ folder_tree|tojson }};
-
-    // ... (Existing script for modals and folder tree remains the same) ...
-
-    // --- NEW SCRIPT FOR INLINE EDIT AND BULK ACTIONS ---
     document.addEventListener('DOMContentLoaded', () => {
+        let allSubjects = [];
+        let allTags = [];
+        let subjectSelect, tagsSelect;
+
+        async function fetchSubjectsAndTags() {
+            try {
+                const response = await fetch('/get_all_subjects_and_tags');
+                const data = await response.json();
+                allSubjects = data.subjects.map(s => ({value: s, text: s}));
+                allTags = data.tags.map(t => ({value: t, text: t}));
+            } catch (error) {
+                console.error('Failed to fetch subjects and tags:', error);
+            }
+        }
+
+        const currentFolderId = {{ current_folder_id|tojson }};
+        const folderTree = {{ folder_tree|tojson }};
+        let selectedFolderId = null;
+
         const bulkRenameBtn = document.getElementById('bulk-rename-btn');
+        const bulkEditBtn = document.getElementById('bulk-edit-btn');
+        const bulkMergeBtn = document.getElementById('bulk-merge-btn');
         const bulkDeleteBtn = document.getElementById('bulk-delete-btn');
         const selectAllCheckbox = document.getElementById('select-all-checkbox');
         const itemCheckboxes = document.querySelectorAll('.item-checkbox');
@@ -144,14 +325,14 @@
             const selectedItems = getSelectedItems();
             const selectedCount = selectedItems.length;
             
-            // Standard bulk buttons
             document.getElementById('bulk-persist-btn').disabled = selectedCount === 0;
             document.getElementById('bulk-download-btn').disabled = selectedCount === 0 || selectedItems.some(cb => cb.dataset.itemType === 'folder');
             document.getElementById('bulk-move-btn').disabled = selectedCount === 0;
+            document.getElementById('bulk-print-btn').disabled = selectedCount === 0 || selectedItems.some(cb => cb.dataset.itemType === 'folder');
             bulkDeleteBtn.disabled = selectedCount === 0;
-
-            // Rename button logic
+            bulkMergeBtn.disabled = selectedItems.filter(cb => cb.dataset.itemType === 'pdf').length < 2;
             bulkRenameBtn.disabled = selectedCount !== 1;
+            bulkEditBtn.disabled = selectedCount === 0 || selectedItems.some(cb => cb.dataset.itemType === 'folder');
         }
 
         selectAllCheckbox.addEventListener('change', e => {
@@ -165,36 +346,27 @@
 
         document.querySelectorAll('.folder-row').forEach(row => {
             row.addEventListener('click', e => {
-                if (e.target.matches('input[type="checkbox"]')) {
-                    return;
-                }
-                if (e.target.closest('.dropdown')) {
-                    return;
-                }
+                if (e.target.matches('input[type="checkbox"]')) return;
+                if (e.target.closest('.dropdown')) return;
                 if (e.target.closest('td.editable')) {
                     window.location.href = `/pdf_manager/browse/${row.dataset.path}`;
                 } else {
                     const checkbox = row.querySelector('.item-checkbox');
                     checkbox.checked = !checkbox.checked;
-                    const changeEvent = new Event('change');
-                    checkbox.dispatchEvent(changeEvent);
+                    checkbox.dispatchEvent(new Event('change'));
                 }
             });
         });
 
         document.querySelectorAll('.pdf-row').forEach(row => {
             row.addEventListener('click', e => {
-                if (e.target.tagName === 'A' || e.target.closest('.dropdown') || e.target.matches('input[type="checkbox"]')) {
-                    return;
-                }
+                if (e.target.tagName === 'A' || e.target.closest('.dropdown') || e.target.matches('input[type="checkbox"]')) return;
                 const checkbox = row.querySelector('.item-checkbox');
                 checkbox.checked = !checkbox.checked;
-                const changeEvent = new Event('change');
-                checkbox.dispatchEvent(changeEvent);
+                checkbox.dispatchEvent(new Event('change'));
             });
         });
 
-        // --- Inline Rename Logic ---
         bulkRenameBtn.addEventListener('click', () => {
             const selectedItems = getSelectedItems();
             if (selectedItems.length !== 1) return;
@@ -225,10 +397,10 @@
                             location.reload();
                         } else {
                             alert('Failed to rename.');
-                            cellToEdit.innerHTML = currentName; // Revert on failure
+                            cellToEdit.innerHTML = currentName;
                         }
                     } else {
-                        cellToEdit.innerHTML = currentName; // Revert if no change
+                        cellToEdit.innerHTML = currentName;
                     }
                 };
 
@@ -240,14 +412,11 @@
             }
         });
 
-        // --- Bulk Delete Logic ---
         bulkDeleteBtn.addEventListener('click', async () => {
             const selectedItems = getSelectedItems();
             if (selectedItems.length === 0) return;
 
-            if (!confirm(`Are you sure you want to delete ${selectedItems.length} selected item(s)? This cannot be undone.`)) {
-                return;
-            }
+            if (!confirm(`Are you sure you want to delete ${selectedItems.length} selected item(s)?`)) return;
 
             const foldersToDelete = selectedItems.filter(cb => cb.dataset.itemType === 'folder').map(cb => cb.value);
             const pdfsToDelete = selectedItems.filter(cb => cb.dataset.itemType === 'pdf').map(cb => cb.value);
@@ -273,13 +442,428 @@
             if (allSucceeded) {
                 location.reload();
             } else {
-                alert('An error occurred during deletion. Some items may not have been deleted.');
+                alert('An error occurred during deletion.');
             }
         });
 
-        updateBulkButtons(); // Initial check
-    });
+        bulkMergeBtn.addEventListener('click', async () => {
+            const selectedPdfIds = getSelectedItems()
+                .filter(cb => cb.dataset.itemType === 'pdf')
+                .map(cb => cb.value);
 
-    // ... (The rest of the existing script for modals, etc.)
+            if (selectedPdfIds.length < 2) {
+                alert('Please select at least two PDFs to merge.');
+                return;
+            }
+
+            const response = await fetch('/merge_pdfs', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pdf_ids: selectedPdfIds })
+            });
+
+            if (response.ok) {
+                location.reload();
+            } else {
+                alert('Failed to merge PDFs.');
+            }
+        });
+
+        const editModalEl = document.getElementById('editModal');
+        const editModal = new bootstrap.Modal(editModalEl);
+        let editData = [];
+        let currentEditIndex = 0;
+
+        function initializeTomSelect() {
+            if (subjectSelect) subjectSelect.destroy();
+            if (tagsSelect) tagsSelect.destroy();
+
+            subjectSelect = new TomSelect('#edit-subject',{
+                create: true,
+                persist: false,
+                options: allSubjects,
+                dropdownParent: 'body'
+            });
+
+            tagsSelect = new TomSelect('#edit-tags',{
+                persist: false,
+                createOnBlur: true,
+                create: true,
+                plugins: ['remove_button'],
+                options: allTags,
+                dropdownParent: 'body'
+            });
+        }
+
+        function populateEditModal(index) {
+            const pdf = editData[index];
+            document.getElementById('edit-pdf-id').value = pdf.id;
+            
+            subjectSelect.setValue(pdf.subject || '');
+            tagsSelect.setValue((pdf.tags || '').split(',').map(t => t.trim()).filter(t => t));
+            
+            document.getElementById('edit-notes').value = pdf.notes || '';
+            document.getElementById('edit-filename').value = pdf.filename || '';
+            
+            if (editData.length > 1) {
+                document.getElementById('edit-carousel-nav').style.display = 'flex';
+                document.getElementById('edit-carousel-indicator').textContent = `${index + 1} / ${editData.length}`;
+            } else {
+                document.getElementById('edit-carousel-nav').style.display = 'none';
+            }
+        }
+
+        bulkEditBtn.addEventListener('click', async () => {
+            const selectedItems = getSelectedItems().filter(cb => cb.dataset.itemType === 'pdf');
+            if (selectedItems.length === 0) return;
+
+            await fetchSubjectsAndTags();
+
+            editData = [];
+            for (const item of selectedItems) {
+                const response = await fetch(`/get_pdf_details/${item.value}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    editData.push(data);
+                }
+            }
+
+            if (editData.length > 0) {
+                currentEditIndex = 0;
+                initializeTomSelect();
+                populateEditModal(currentEditIndex);
+                editModal.show();
+            }
+        });
+
+        document.getElementById('edit-prev-btn').addEventListener('click', () => {
+            if (currentEditIndex > 0) {
+                currentEditIndex--;
+                populateEditModal(currentEditIndex);
+            }
+        });
+
+        document.getElementById('edit-next-btn').addEventListener('click', () => {
+            if (currentEditIndex < editData.length - 1) {
+                currentEditIndex++;
+                populateEditModal(currentEditIndex);
+            }
+        });
+
+        document.getElementById('save-edit-btn').addEventListener('click', async () => {
+            try {
+                const pdfId = document.getElementById('edit-pdf-id').value;
+                const updatedData = {
+                    subject: subjectSelect.getValue(),
+                    tags: tagsSelect.getValue(),
+                    notes: document.getElementById('edit-notes').value,
+                };
+
+                const response = await fetch(`/update_pdf_details/${pdfId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(updatedData)
+                });
+
+                if (response.ok) {
+                    editData[currentEditIndex] = { ...editData[currentEditIndex], ...updatedData };
+                    
+                    if (currentEditIndex === editData.length - 1) {
+                        editModal.hide();
+                        location.reload();
+                    } else {
+                        currentEditIndex++;
+                        populateEditModal(currentEditIndex);
+                    }
+                } else {
+                    const error = await response.json();
+                    alert(`Failed to save changes: ${error.error}`);
+                }
+            } catch (error) {
+                alert(`An error occurred: ${error}`);
+            }
+        });
+
+        function renderFolderTree(folders, container, level = 0) {
+            const ul = document.createElement('ul');
+            ul.className = 'list-group';
+            if (level > 0) {
+                ul.style.display = 'none';
+            }
+            container.appendChild(ul);
+
+            folders.forEach(folder => {
+                const li = document.createElement('li');
+                li.className = 'list-group-item list-group-item-action bg-dark text-white';
+                li.style.paddingLeft = `${level * 20 + 12}px`;
+                li.dataset.folderId = folder.id;
+
+                let icon = '<i class="bi bi-folder"></i>';
+                if (folder.children && folder.children.length > 0) {
+                    icon = '<i class="bi bi-chevron-right"></i>';
+                }
+                li.innerHTML = `${icon} ${folder.name}`;
+
+                li.addEventListener('click', e => {
+                    e.stopPropagation();
+                    document.querySelectorAll('#folder-tree-move .list-group-item').forEach(item => item.classList.remove('active'));
+                    li.classList.add('active');
+                    selectedFolderId = folder.id;
+
+                    const childUl = li.querySelector('ul');
+                    if (childUl) {
+                        if (childUl.style.display === 'none') {
+                            childUl.style.display = 'block';
+                            li.querySelector('i').classList.replace('bi-chevron-right', 'bi-chevron-down');
+                        } else {
+                            childUl.style.display = 'none';
+                            li.querySelector('i').classList.replace('bi-chevron-down', 'bi-chevron-right');
+                        }
+                    }
+                });
+
+                ul.appendChild(li);
+
+                if (folder.children) {
+                    renderFolderTree(folder.children, li, level + 1);
+                }
+            });
+        }
+
+        document.getElementById('bulk-move-btn').addEventListener('click', () => {
+            const folderTreeContainer = document.getElementById('folder-tree-move');
+            folderTreeContainer.innerHTML = '';
+            const rootItem = document.createElement('a');
+            rootItem.href = '#';
+            rootItem.className = 'list-group-item list-group-item-action bg-dark text-white';
+            rootItem.dataset.folderId = 'null';
+            rootItem.innerHTML = `<i class="bi bi-house-door"></i> Root`;
+            rootItem.addEventListener('click', e => {
+                e.preventDefault();
+                document.querySelectorAll('#folder-tree-move .list-group-item').forEach(item => item.classList.remove('active'));
+                rootItem.classList.add('active');
+                selectedFolderId = null;
+            });
+            folderTreeContainer.appendChild(rootItem);
+            renderFolderTree(folderTree, folderTreeContainer);
+            new bootstrap.Modal(document.getElementById('moveModal')).show();
+        });
+
+        document.getElementById('create-subfolder-btn').addEventListener('click', async () => {
+            const newFolderName = document.getElementById('new-subfolder-name').value;
+            if (!newFolderName) {
+                alert('Please enter a name for the new subfolder.');
+                return;
+            }
+            const response = await fetch('/create_folder', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ new_folder_name: newFolderName, parent_id: selectedFolderId })
+            });
+            if (response.ok) {
+                location.reload();
+            } else {
+                alert('Failed to create subfolder.');
+            }
+        });
+
+        document.getElementById('move-confirm-btn').addEventListener('click', async () => {
+            const selectedItems = getSelectedItems();
+            const pdfIdsToMove = selectedItems.filter(cb => cb.dataset.itemType === 'pdf').map(cb => cb.value);
+            
+            if(pdfIdsToMove.length === 0) {
+                alert("No PDFs selected to move.");
+                return;
+            }
+
+            const response = await fetch('/bulk_move_pdfs', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: pdfIdsToMove, target_folder_id: selectedFolderId })
+            });
+            if (response.ok) {
+                location.reload();
+            } else {
+                alert('Failed to move files.');
+            }
+        });
+        
+        document.getElementById('create-folder-btn').addEventListener('click', () => {
+            new bootstrap.Modal(document.getElementById('createFolderModal')).show();
+        });
+
+        document.getElementById('create-folder-confirm-btn').addEventListener('click', createNewFolder);
+
+        async function createNewFolder() {
+            const newFolderName = document.getElementById('newFolderName').value;
+            const response = await fetch('/create_folder', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ new_folder_name: newFolderName, parent_id: currentFolderId })
+            });
+            if (response.ok) {
+                location.reload();
+            } else {
+                alert('Failed to create folder.');
+            }
+        }
+        
+        document.getElementById('bulk-persist-btn').addEventListener('click', async () => {
+            const selectedIds = getSelectedItems().map(cb => cb.value);
+            const response = await fetch('/bulk_toggle_persist', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: selectedIds })
+            });
+            if (response.ok) {
+                location.reload();
+            } else {
+                alert('Failed to toggle persistence.');
+            }
+        });
+
+        document.getElementById('bulk-download-btn').addEventListener('click', async () => {
+            const selectedIds = getSelectedItems().filter(cb => cb.dataset.itemType === 'pdf').map(cb => cb.value);
+            const response = await fetch('/bulk_download_pdfs', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: selectedIds })
+            });
+            if (response.ok) {
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = 'pdfs.zip';
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+            } else {
+                alert('Failed to download PDFs.');
+            }
+        });
+
+        document.getElementById('bulk-print-btn').addEventListener('click', () => {
+            const form = document.getElementById('pdf-print-form');
+            const selectedItems = getSelectedItems().filter(cb => cb.dataset.itemType === 'pdf');
+            
+            const existingInputs = form.querySelectorAll('input[name="pdf_ids"]');
+            existingInputs.forEach(input => input.remove());
+
+            if (selectedItems.length > 0) {
+                selectedItems.forEach(item => {
+                    const input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = 'pdf_ids';
+                    input.value = item.value;
+                    form.appendChild(input);
+                });
+                form.submit();
+            } else {
+                alert('Please select at least one PDF to print.');
+            }
+        });
+
+        updateBulkButtons();
+
+        const tableRows = Array.from(document.querySelectorAll('#file-manager-table tbody tr'));
+        let currentRowIndex = -1;
+        const shortcutsModal = new bootstrap.Modal(document.getElementById('shortcutsModal'));
+
+        function highlightRow(index) {
+            tableRows.forEach(row => row.classList.remove('highlighted-row'));
+            if (index >= 0 && index < tableRows.length) {
+                tableRows[index].classList.add('highlighted-row');
+                tableRows[index].scrollIntoView({ block: 'nearest' });
+            }
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+                return;
+            }
+
+            const isModalOpen = document.querySelector('.modal.show');
+            if (isModalOpen && e.key !== 'Escape') {
+                e.preventDefault();
+                if (e.key === '?') shortcutsModal.hide();
+                return;
+            }
+
+            switch (e.key) {
+                case 'j':
+                case 'ArrowDown':
+                    e.preventDefault();
+                    if (currentRowIndex < tableRows.length - 1) {
+                        currentRowIndex++;
+                        highlightRow(currentRowIndex);
+                    }
+                    break;
+                case 'k':
+                case 'ArrowUp':
+                    e.preventDefault();
+                    if (currentRowIndex > 0) {
+                        currentRowIndex--;
+                        highlightRow(currentRowIndex);
+                    }
+                    break;
+                case 'x':
+                    e.preventDefault();
+                    if (currentRowIndex >= 0) {
+                        const checkbox = tableRows[currentRowIndex].querySelector('.item-checkbox');
+                        if (checkbox) {
+                            checkbox.checked = !checkbox.checked;
+                            checkbox.dispatchEvent(new Event('change'));
+                        }
+                    }
+                    break;
+                case 's':
+                    e.preventDefault();
+                    selectAllCheckbox.checked = !selectAllCheckbox.checked;
+                    selectAllCheckbox.dispatchEvent(new Event('change'));
+                    break;
+                case 'Enter':
+                    e.preventDefault();
+                    if (currentRowIndex >= 0) {
+                        const row = tableRows[currentRowIndex];
+                        if (row.classList.contains('folder-row')) {
+                            window.location.href = `/pdf_manager/browse/${row.dataset.path}`;
+                        } else {
+                            const link = row.querySelector('a[target="_blank"]');
+                            if (link) {
+                                link.click();
+                            }
+                        }
+                    }
+                    break;
+                case 'e':
+                    e.preventDefault();
+                    if (!bulkEditBtn.disabled) bulkEditBtn.click();
+                    break;
+                case 'd':
+                case 'Delete':
+                    e.preventDefault();
+                    if (!bulkDeleteBtn.disabled) bulkDeleteBtn.click();
+                    break;
+                case 'p':
+                    e.preventDefault();
+                    const persistBtn = document.getElementById('bulk-persist-btn');
+                    if (!persistBtn.disabled) persistBtn.click();
+                    break;
+                case '?':
+                    e.preventDefault();
+                    shortcutsModal.show();
+                    break;
+            }
+        });
+
+        if (tableRows.length > 0) {
+            currentRowIndex = 0;
+            highlightRow(currentRowIndex);
+        }
+        
+        fetchSubjectsAndTags();
+    });
 </script>
 {% endblock %}

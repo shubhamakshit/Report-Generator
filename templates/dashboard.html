@@ -4,25 +4,25 @@
 
 {% block content %}
 <div class="container mt-4">
+    <!-- Editable Sessions -->
     <div class="card bg-dark text-white mb-4">
         <div class="card-header">
-            <h2 class="h4 mb-0">Sessions</h2>
+            <h2 class="h4 mb-0">Editable Sessions</h2>
         </div>
         <div class="card-body">
-            {% if sessions %}
             <div class="table-responsive">
                 <table class="table table-dark table-striped">
                     <thead>
                         <tr>
                             <th>File Name</th>
                             <th>Created At</th>
-                            <th>Pages/Images</th>
+                            <th>Pages</th>
                             <th>Questions</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {% for session in sessions %}
+                        {% for session in sessions if session.page_count > 0 %}
                         <tr>
                             <td>{{ session.pdf_name }}</td>
                             <td>{{ session.created_at }}</td>
@@ -30,9 +30,8 @@
                             <td>{{ session.question_count }}</td>
                             <td>
                                 <div class="btn-group" role="group">
-                                    {% if session.page_count > 0 %}
                                     <a href="/cropv2/{{ session.id }}/0" class="btn btn-sm btn-outline-primary">Edit Files</a>
-                                    {% endif %}
+                                    <a href="/redact_status/{{ session.id }}" class="btn btn-sm btn-outline-warning">Redact</a>
                                     {% if session.question_count > 0 %}
                                     <a href="/question_entry_v2/{{ session.id }}" class="btn btn-sm btn-outline-success">Edit Questions</a>
                                     {% endif %}
@@ -47,9 +46,42 @@
                     </tbody>
                 </table>
             </div>
-            {% else %}
-            <p class="text-center">No sessions found.</p>
-            {% endif %}
+        </div>
+    </div>
+
+    <!-- Final PDFs -->
+    <div class="card bg-dark text-white mb-4">
+        <div class="card-header">
+            <h2 class="h4 mb-0">Final PDFs</h2>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-dark table-striped">
+                    <thead>
+                        <tr>
+                            <th>File Name</th>
+                            <th>Created At</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for session in sessions if session.page_count == 0 %}
+                        <tr>
+                            <td>{{ session.pdf_name }}</td>
+                            <td>{{ session.created_at }}</td>
+                            <td>
+                                <div class="btn-group" role="group">
+                                    <button class="btn btn-sm btn-outline-danger" onclick="deleteSession('{{ session.id }}')">Delete</button>
+                                    <button class="btn btn-sm {% if session.persist %}btn-success{% else %}btn-outline-secondary{% endif %}" onclick="togglePersist('{{ session.id }}')">
+                                        {% if session.persist %}Persisted{% else %}Persist{% endif %}
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 </div>

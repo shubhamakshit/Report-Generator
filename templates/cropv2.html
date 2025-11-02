@@ -53,10 +53,12 @@
         </header>
         <div class="content-wrapper">
             <div class="image-pane" id="imagePane">
+                <div id="stitch-instructions" class="alert alert-warning position-absolute top-0 start-50 translate-middle-x mt-2" style="z-index: 20; display: none;"></div>
                 <div id="crop-area">
                     <img id="main-image" src="/image/upload/{{ image_info.filename }}" alt="PDF Page" crossorigin="anonymous">
                     <canvas id="draw-canvas" style="position: absolute; top: 0; left: 0; z-index: 10;"></canvas>
                     <div id="box-toolbar">
+                        <button id="stitch-btn" title="Stitch"><i class="bi bi-scissors"></i></button>
                         <button id="move-up-btn" title="Move Up"><i class="bi bi-arrow-up-circle"></i></button>
                         <button id="move-down-btn" title="Move Down"><i class="bi bi-arrow-down-circle"></i></button>
                         <button id="delete-btn" title="Delete Box"><i class="bi bi-trash"></i></button>
@@ -65,7 +67,8 @@
             </div>
             <div class="controls-pane">
                  <div class="controls-content">
-                    <div class="alert alert-info small p-2"><i class="bi bi-info-circle me-2"></i>Click and drag to draw boxes. Click a box to select it. Drag corners to resize.</div><hr>
+                    <div class="alert alert-info small p-2"><i class="bi bi-info-circle me-2"></i>Click and drag to draw boxes. Click a box to select it. Drag corners to resize.</div>
+                    <hr>
                     <h6 class="text-white mb-3">Page Adjustments</h6>
                     <div class="mb-3"><label for="brightness" class="control-label">Brightness<span class="control-value" id="brightnessValue">0</span></label><input type="range" class="form-range" id="brightness" min="-100" max="100" value="0" step="5"></div>
                     <div class="mb-3"><label for="contrast" class="control-label">Contrast<span class="control-value" id="contrastValue">1.0</span></label><input type="range" class="form-range" id="contrast" min="0.5" max="2.5" value="1.0" step="0.05"></div>
@@ -87,6 +90,10 @@
 
     let boxes = [], selectedBoxIndex = -1, dragTarget = null, isDrawing = false;
     let startX, startY, startPositions;
+    let stitchingState = 'inactive'; // inactive, selecting_source
+    let destinationBoxIndex = -1;
+
+    const stitchInstructions = document.getElementById('stitch-instructions');
 
     function initializeApp() {
         if (!image.naturalWidth) return;
@@ -110,15 +117,26 @@
         const handleSize = 10;
         boxes.forEach((box, index) => {
             const isSelected = index === selectedBoxIndex;
-            drawCtx.strokeStyle = isSelected ? 'rgba(255, 0, 0, 0.9)' : 'rgba(255, 215, 0, 0.9)';
-            drawCtx.lineWidth = isSelected ? 3 : 2;
+            const isDestination = index === destinationBoxIndex;
+            const isStitched = box.is_destination_for_stitch || box.stitch_to !== null;
+
+            let strokeColor = 'rgba(255, 215, 0, 0.9)';
+            if (isSelected) strokeColor = 'rgba(255, 0, 0, 0.9)';
+            if (isDestination) strokeColor = 'rgba(0, 255, 255, 0.9)';
+            if (isStitched && !isSelected && !isDestination) strokeColor = 'rgba(108, 117, 125, 0.9)';
+
+            drawCtx.strokeStyle = strokeColor;
+            drawCtx.lineWidth = isSelected || isDestination ? 3 : 2;
             drawCtx.fillStyle = isSelected ? 'rgba(255, 0, 0, 0.1)' : 'rgba(255, 215, 0, 0.1)';
+            if (isDestination) drawCtx.fillStyle = 'rgba(0, 255, 255, 0.1)';
+
             const p = (pt) => ({ x: pt.x * drawCanvas.width, y: pt.y * drawCanvas.height });
             drawCtx.beginPath();
             drawCtx.moveTo(p(box.tl).x, p(box.tl).y); drawCtx.lineTo(p(box.tr).x, p(box.tr).y);
             drawCtx.lineTo(p(box.br).x, p(box.br).y); drawCtx.lineTo(p(box.bl).x, p(box.bl).y);
             drawCtx.closePath();
             drawCtx.stroke(); drawCtx.fill();
+
             if (isSelected) {
                 drawCtx.fillStyle = 'rgba(255, 255, 255, 0.9)';
                 ['tl', 'tr', 'bl', 'br'].forEach(c => {
@@ -127,10 +145,17 @@
                     drawCtx.fill();
                 });
             }
+
             const centerX = (p(box.tl).x + p(box.br).x) / 2, centerY = (p(box.tl).y + p(box.br).y) / 2;
             drawCtx.font = 'bold 24px Arial';
             drawCtx.fillStyle = '#fff';
             drawCtx.fillText(String(index + 1), centerX, centerY);
+
+            if (isStitched) {
+                drawCtx.font = '24px Arial';
+                drawCtx.fillStyle = '#fff';
+                drawCtx.fillText('🔗', p(box.tr).x - 24, p(box.tr).y + 24);
+            }
         });
     }
 
@@ -152,17 +177,39 @@
         e.preventDefault();
         const rect = drawCanvas.getBoundingClientRect(), touch = e.touches ? e.touches[0] : e;
         const normX = (touch.clientX - rect.left) / rect.width, normY = (touch.clientY - rect.top) / rect.height;
-        dragTarget = hitTest(normX, normY);
-        if (dragTarget) {
-            isDrawing = false; selectBox(dragTarget.boxIndex);
-            startPositions = JSON.parse(JSON.stringify(boxes[dragTarget.boxIndex]));
-            startX = normX; startY = normY;
-        } else {
-            isDrawing = true; selectBox(-1);
-            startX = normX; startY = normY;
+        const hit = hitTest(normX, normY);
+
+        if (stitchingState === 'selecting_source') {
+            if (hit && hit.type === 'body' && hit.boxIndex !== destinationBoxIndex) {
+                const sourceIndex = hit.boxIndex;
+                boxes[sourceIndex].stitch_to = boxes[destinationBoxIndex].id;
+                boxes[sourceIndex].stitch_direction = 'vertical';
+                boxes[destinationBoxIndex].is_destination_for_stitch = true;
+
+                cancelStitch(); // Reset state
+            }
+            // Always cancel stitch mode after the first click, whether it was successful or not.
+            cancelStitch();
+            return; // Stop further processing for this event.
         }
-        document.addEventListener('mousemove', handleInteraction); document.addEventListener('touchmove', handleInteraction, { passive: false });
-        document.addEventListener('mouseup', endInteraction); document.addEventListener('touchend', endInteraction);
+
+        dragTarget = hit;
+        if (dragTarget) {
+            isDrawing = false;
+            selectBox(dragTarget.boxIndex);
+            startPositions = JSON.parse(JSON.stringify(boxes[dragTarget.boxIndex]));
+            startX = normX;
+            startY = normY;
+        } else {
+            isDrawing = true;
+            selectBox(-1);
+            startX = normX;
+            startY = normY;
+        }
+        document.addEventListener('mousemove', handleInteraction);
+        document.addEventListener('touchmove', handleInteraction, { passive: false });
+        document.addEventListener('mouseup', endInteraction);
+        document.addEventListener('touchend', endInteraction);
     }
 
     function handleInteraction(e) {
@@ -191,10 +238,15 @@
             const endX = (touch.clientX - rect.left) / rect.width, endY = (touch.clientY - rect.top) / rect.height;
             const w = endX - startX, h = endY - startY;
             if (Math.abs(w) * drawCanvas.width > 20 && Math.abs(h) * drawCanvas.height > 20) {
-                boxes.push({
+                const newBox = {
+                    id: Date.now(), // Unique ID for stitching
                     tl: { x: Math.min(startX, endX), y: Math.min(startY, endY) }, tr: { x: Math.max(startX, endX), y: Math.min(startY, endY) },
-                    bl: { x: Math.min(startX, endX), y: Math.max(startY, endY) }, br: { x: Math.max(startX, endX), y: Math.max(startY, endY) }
-                });
+                    bl: { x: Math.min(startX, endX), y: Math.max(startY, endY) }, br: { x: Math.max(startX, endX), y: Math.max(startY, endY) },
+                    stitch_to: null,
+                    stitch_direction: null,
+                    is_destination_for_stitch: false
+                };
+                boxes.push(newBox);
                 selectBox(boxes.length - 1);
             }
         }
@@ -238,11 +290,28 @@
         document.getElementById('clearBtn').addEventListener('click', () => { boxes = []; selectBox(-1); saveBoxes(); });
         processBtn.addEventListener('click', processAndContinue);
         document.getElementById('backBtn').addEventListener('click', navigateBack);
+        document.getElementById('stitch-btn').addEventListener('click', startStitchProcess);
         document.getElementById('delete-btn').addEventListener('click', deleteSelectedBox);
         document.getElementById('move-up-btn').addEventListener('click', () => moveSelectedBox(-1));
         document.getElementById('move-down-btn').addEventListener('click', () => moveSelectedBox(1));
         [brightnessSlider, contrastSlider, gammaSlider].forEach(s => s.addEventListener('input', updateImageFilters));
         window.addEventListener('beforeunload', saveBoxes);
+    }
+
+    function startStitchProcess() {
+        if (selectedBoxIndex === -1) return;
+        stitchingState = 'selecting_source';
+        destinationBoxIndex = selectedBoxIndex;
+        stitchInstructions.innerHTML = 'Click the box you want to stitch to the bottom of the selected box. <button class="btn-close btn-sm" onclick="cancelStitch()"></button>';
+        stitchInstructions.style.display = 'block';
+        selectBox(selectedBoxIndex); // Keep the box selected
+    }
+
+    function cancelStitch() {
+        stitchingState = 'inactive';
+        destinationBoxIndex = -1;
+        stitchInstructions.style.display = 'none';
+        drawBoxes();
     }
 
     function setLoading(isLoading) {
@@ -266,7 +335,13 @@
         const finalBoxes = boxes.map(b => {
             const minX = Math.min(b.tl.x, b.bl.x), minY = Math.min(b.tl.y, b.tr.y);
             const maxX = Math.max(b.tr.x, b.br.x), maxY = Math.max(b.bl.y, b.br.y);
-            return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+            return { 
+                ...b, // Pass all properties including stitch info
+                x: minX, 
+                y: minY, 
+                w: maxX - minX, 
+                h: maxY - minY 
+            };
         });
 
         const tempCanvas = document.createElement('canvas');
@@ -347,6 +422,13 @@
             const savedBoxes = localStorage.getItem(storageKey);
             if (savedBoxes) {
                 boxes = JSON.parse(savedBoxes);
+                // Defensive check for old data format
+                boxes.forEach((box, index) => {
+                    if (box.id === undefined) box.id = Date.now() + index;
+                    if (box.stitch_to === undefined) box.stitch_to = null;
+                    if (box.stitch_direction === undefined) box.stitch_direction = null;
+                    if (box.is_destination_for_stitch === undefined) box.is_destination_for_stitch = false;
+                });
                 drawBoxes();
             }
         } catch (e) {

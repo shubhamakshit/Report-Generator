@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-5">
+    <h2>Processed Quiz Data</h2>
+    <form action="{{ url_for('json_bp.save_processed_json') }}" method="post">
+        <input type="hidden" name="questions_data" value="{{ questions | tojson | e }}">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Question</th>
+                    <th>Your Answer</th>
+                    <th>Correct Answer</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for q in questions %}
+                <tr>
+                    <td>{{ q.question | safe }}</td>
+                    <td>{{ q.yourAnswer | safe }}</td>
+                    <td>{{ q.correctAnswer | safe }}</td>
+                    <td><span class="badge bg-{% if q.status == 'Wrong' %}danger{% else %}warning{% endif %}">{{ q.status }}</span></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <button type="submit" class="btn btn-primary">Go to Question Entry</button>
+    </form>
+</div>
+{% endblock %}

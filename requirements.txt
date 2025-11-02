@@ -1,7 +1,7 @@
-
 # requirements.txt
 
 Flask
+Flask-Cors
 numpy
 opencv-python
 Pillow
@@ -10,3 +10,8 @@ gunicorn
 PyMuPDF
 tqdm
 rich
+
+imgkit
+beautifulsoup4
+google-genai
+python-dotenv

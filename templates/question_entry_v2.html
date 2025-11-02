@@ -10,6 +10,27 @@
     .status-btn.active { background: #0d6efd; border-color: #0d6efd; }
     .status-btn:hover { background: #495057; }
     .auto-extract-btn { min-width: 120px; }
+
+    /* Tom Select Dark Theme */
+    .ts-wrapper .ts-control, .ts-wrapper .ts-control input {
+        background: #212529;
+        color: #fff;
+        border-color: #6c757d;
+    }
+
+    .ts-dropdown {
+        background: #212529;
+        color: #fff;
+        border-color: #6c757d;
+    }
+
+    .ts-dropdown .option {
+        color: #fff;
+    }
+
+    .ts-dropdown .option:hover, .ts-dropdown .active {
+        background: #495057;
+    }
 </style>
 {% endblock %}
 
@@ -50,6 +71,10 @@
                         <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
                         <span class="extract-text">Auto Extract All Question Numbers</span>
                     </button>
+                    <button id="extract-classify-all" class="btn btn-info">
+                        <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                        <span class="extract-text">Extract & Classify All</span>
+                    </button>
                 </div>
                 {% endif %}
 
@@ -70,37 +95,42 @@
                                 <label class="form-label" for="question_number_{{ loop.index0 }}">Question Number *</label>
                                 {% if nvidia_nim_available %}
                                 <div class="input-group">
-                                    <input type="number" class="form-control" id="question_number_{{ loop.index0 }}" name="question_number_{{ loop.index0 }}" data-image-id="{{ image.id }}" required>
+                                    <input type="number" class="form-control" id="question_number_{{ loop.index0 }}" name="question_number_{{ loop.index0 }}" data-image-id="{{ image.id }}" value="{{ image.question_number or '' }}" required>
                                     <button class="btn btn-outline-secondary auto-extract-btn" type="button" data-image-id="{{ image.id }}" data-index="{{ loop.index0 }}">
                                         <span class="extract-spinner spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
                                         <span class="extract-text">Auto Extract</span>
                                     </button>
                                 </div>
                                 {% else %}
-                                <input type="number" class="form-control" id="question_number_{{ loop.index0 }}" name="question_number_{{ loop.index0 }}" data-image-id="{{ image.id }}" required>
+                                <input type="number" class="form-control" id="question_number_{{ loop.index0 }}" name="question_number_{{ loop.index0 }}" data-image-id="{{ image.id }}" value="{{ image.question_number or '' }}" required>
                                 {% endif %}
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label" for="marked_solution_{{ loop.index0 }}">Your Answer</label>
-                                <input type="text" class="form-control" id="marked_solution_{{ loop.index0 }}" name="marked_solution_{{ loop.index0 }}">
+                                <input type="text" class="form-control" id="marked_solution_{{ loop.index0 }}" name="marked_solution_{{ loop.index0 }}" value="{{ image.marked_solution or '' }}">
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label" for="actual_solution_{{ loop.index0 }}">Correct Answer</label>
-                                <input type="text" class="form-control" id="actual_solution_{{ loop.index0 }}" name="actual_solution_{{ loop.index0 }}">
+                                <input type="text" class="form-control" id="actual_solution_{{ loop.index0 }}" name="actual_solution_{{ loop.index0 }}" value="{{ image.actual_solution or '' }}">
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">Status</label>
                                 <select class="form-select d-none" id="status_{{ loop.index0 }}" name="status_{{ loop.index0 }}">
-                                    <option value="correct">Correct</option>
-                                    <option value="wrong">Wrong</option>
-                                    <option value="unattempted" selected>Unattempted</option>
+                                    <option value="correct" {% if image.status == 'correct' %}selected{% endif %}>Correct</option>
+                                    <option value="wrong" {% if image.status == 'wrong' %}selected{% endif %}>Wrong</option>
+                                    <option value="unattempted" {% if image.status == 'unattempted' or not image.status %}selected{% endif %}>Unattempted</option>
                                 </select>
                                 <div class="status-buttons" data-index="{{ loop.index0 }}">
-                                    <button type="button" class="status-btn" data-status="correct">✓ Correct</button>
-                                    <button type="button" class="status-btn" data-status="wrong">✗ Wrong</button>
-                                    <button type="button" class="status-btn active" data-status="unattempted">− Skip</button>
-                                </div>
-                            </div>
+                                    <button type="button" class="status-btn {% if image.status == 'correct' %}active{% endif %}" data-status="correct">✓ Correct</button>
+                                    <button type="button" class="status-btn {% if image.status == 'wrong' %}active{% endif %}" data-status="wrong">✗ Wrong</button>
+                        </div>
+                    </div>
+                    <div class="row mt-2">
+                        <div class="col-md-6">
+                            <p class="mb-0"><strong>Subject:</strong> <span id="subject_{{ image.id }}">{{ image.subject or 'N/A' }}</span></p>
+                        </div>
+                        <div class="col-md-6">
+                            <p class="mb-0"><strong>Chapter:</strong> <span id="chapter_{{ image.id }}">{{ image.chapter or 'N/A' }}</span></p>
                         </div>
                     </div>
                 </fieldset>
@@ -111,27 +141,90 @@
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label" for="pdf_subject">PDF Subject *</label>
-                            <input type="text" id="pdf_subject" class="form-control" required>
+                            <input type="text" id="pdf_subject" class="form-control" value="{{ test_name or '' }}" required>
                         </div>
+                        <div class="col-md-6 mb-3" id="pdf-name-div">
+                            <label class="form-label" for="pdf_name">PDF Name</label>
+                            <input type="text" id="pdf_name" class="form-control" value="{{ test_name or '' }}">
+                        </div>
+                    </div>
+                    <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label" for="pdf_tags">Tags (comma-separated)</label>
                             <input type="text" id="pdf_tags" class="form-control">
                         </div>
-                        <div class="col-12 mb-3">
+                        <div class="col-md-6 mb-3">
                             <label class="form-label" for="pdf_notes">Notes</label>
-                            <textarea id="pdf_notes" class="form-control" rows="3"></textarea>
+                            <textarea id="pdf_notes" class="form-control" rows="1"></textarea>
                         </div>
-                        <div class="col-md-4 mb-3"><label class="form-label" for="pdf_name">PDF Name</label><input type="text" id="pdf_name" class="form-control" value="My-Test-Analysis"></div>
-                        <div class="col-md-2 mb-3"><label class="form-label" for="images_per_page">Images per Page</label><input type="number" id="images_per_page" class="form-control" value="4" min="1" max="20"></div>
-                        <div class="col-md-2 mb-3"><label class="form-label" for="grid_rows">Grid Rows</label><input type="number" id="grid_rows" class="form-control" value="4" min="1"></div>
-                        <div class="col-md-2 mb-3"><label class="form-label" for="grid_cols">Grid Cols</label><input type="number" id="grid_cols" class="form-control" value="1" min="1"></div>
-                        <div class="col-md-3 mb-3"><label class="form-label" for="orientation">Orientation</label><select id="orientation" class="form-select"><option value="portrait" selected>Portrait</option><option value="landscape">Landscape</option></select></div>
-                        <div class="col-md-3 mb-3"><label class="form-label" for="filter_type">Filter Questions</label><select id="filter_type" class="form-select"><option value="all">All</option><option value="wrong">Wrong Only</option><option value="unattempted">Unattempted Only</option></select></div>
+                    </div>
+                    <hr>
+                    <legend class="h5">Layout Options</legend>
+                    <div class="row align-items-end">
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label" for="practice_mode">Practice Mode</label>
+                            <select id="practice_mode" class="form-select">
+                                <option value="none" selected>None</option>
+                                <option value="portrait_2">Portrait 2</option>
+                                <option value="portrait_3">Portrait 3</option>
+                                <option value="landscape_2">Landscape 2</option>
+                                <option value="portrait_2_spacious">Portrait 2 - Spacious</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label" for="orientation">Orientation</label>
+                            <select id="orientation" class="form-select">
+                                <option value="portrait" selected>Portrait</option>
+                                <option value="landscape">Landscape</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label" for="filter_type">Filter Questions</label>
+                            <select id="filter_type" class="form-select">
+                                <option value="all">All</option>
+                                <option value="wrong">Wrong Only</option>
+                                <option value="unattempted">Unattempted Only</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="standard-layout-options">
+                        <div class="row">
+                            <div class="col-md-3 mb-3">
+                                <label class="form-label" for="images_per_page">Images per Page</label>
+                                <input type="number" id="images_per_page" class="form-control" value="4" min="1" max="20">
+                            </div>
+                            <div class="col-md-3 mb-3">
+                                <label class="form-label" for="grid_rows">Grid Rows</label>
+                                <input type="number" id="grid_rows" class="form-control" value="4" min="1">
+                            </div>
+                            <div class="col-md-3 mb-3">
+                                <label class="form-label" for="grid_cols">Grid Cols</label>
+                                <input type="number" id="grid_cols" class="form-control" value="1" min="1">
+                            </div>
+                        </div>
                     </div>
                 </fieldset>
                 
-                <button type="submit" class="btn btn-primary w-100 mt-3">Generate PDF</button>
+                <div class="d-flex gap-2 mt-3">
+                    <button type="button" id="preview-btn" class="btn btn-secondary w-100">See Preview</button>
+                    <button type="submit" class="btn btn-primary w-100">Generate PDF</button>
+                </div>
             </form>
+
+            <!-- Preview Modal -->
+            <div class="modal fade" id="previewModal" tabindex="-1" aria-labelledby="previewModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-xl">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="previewModalLabel">PDF Preview</h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body text-center">
+                            <img id="preview-img" src="" class="img-fluid" alt="PDF Preview">
+                        </div>
+                    </div>
+                </div>
+            </div>
 
             <div class="accordion mt-4" id="misc-accordion">
                 <div class="accordion-item bg-dark">
@@ -174,6 +267,33 @@
     let answerKeyData = new Map();
     let miscellaneousQuestions = [];
 
+    async function initializeTomSelect() {
+        try {
+            const response = await fetch('/get_metadata_suggestions');
+            const suggestions = await response.json();
+
+            const subjectOptions = suggestions.subjects.map(s => ({value: s, text: s}));
+            const tagOptions = suggestions.tags.map(t => ({value: t, text: t}));
+
+            new TomSelect('#pdf_subject',{
+                create: true,
+                persist: false,
+                options: subjectOptions
+            });
+
+            new TomSelect('#pdf_tags',{
+                persist: false,
+                createOnBlur: true,
+                create: true,
+                plugins: ['remove_button'],
+                options: tagOptions
+            });
+
+        } catch (err) {
+            console.error('Error initializing Tom Select:', err);
+        }
+    }
+
     function saveSettings() {
         const settings = {
             pdf_name: document.getElementById('pdf_name').value,
@@ -181,7 +301,8 @@
             orientation: document.getElementById('orientation').value,
             grid_rows: document.getElementById('grid_rows').value,
             grid_cols: document.getElementById('grid_cols').value,
-            filter_type: document.getElementById('filter_type').value
+            filter_type: document.getElementById('filter_type').value,
+            practice_mode: document.getElementById('practice_mode').value
         };
         localStorage.setItem('pdfGeneratorSettings', JSON.stringify(settings));
     }
@@ -189,12 +310,37 @@
     function loadSettings() {
         const settings = JSON.parse(localStorage.getItem('pdfGeneratorSettings'));
         if (settings) {
-            document.getElementById('pdf_name').value = settings.pdf_name || 'My-Test-Analysis';
+            const pdfNameInput = document.getElementById('pdf_name');
+            if (!pdfNameInput.value) { // Only set from local storage if the value is not already set
+                pdfNameInput.value = settings.pdf_name || 'My-Test-Analysis';
+            }
             document.getElementById('images_per_page').value = settings.images_per_page || 4;
             document.getElementById('orientation').value = settings.orientation || 'portrait';
             document.getElementById('grid_rows').value = settings.grid_rows || 4;
             document.getElementById('grid_cols').value = settings.grid_cols || 1;
             document.getElementById('filter_type').value = settings.filter_type || 'all';
+            document.getElementById('practice_mode').value = settings.practice_mode || 'none';
+            handlePracticeModeChange(); // Apply visibility changes on load
+        }
+    }
+
+    function handlePracticeModeChange() {
+        const practiceMode = document.getElementById('practice_mode').value;
+        const standardOptions = document.getElementById('standard-layout-options');
+        const orientationSelect = document.getElementById('orientation');
+        const pdfNameDiv = document.getElementById('pdf-name-div');
+
+        if (practiceMode === 'none') {
+            standardOptions.style.display = 'block';
+            pdfNameDiv.style.display = 'block';
+        } else {
+            standardOptions.style.display = 'none';
+            pdfNameDiv.style.display = 'none';
+            if (practiceMode === 'landscape_2') {
+                orientationSelect.value = 'landscape';
+            } else {
+                orientationSelect.value = 'portrait';
+            }
         }
     }
 
@@ -224,15 +370,70 @@
         document.getElementById('json-upload').addEventListener('change', handleJsonUpload);
         document.getElementById('images_per_page').addEventListener('change', updateGridDefaults);
         document.getElementById('orientation').addEventListener('change', updateGridDefaults);
+        document.getElementById('practice_mode').addEventListener('change', handlePracticeModeChange);
         document.querySelectorAll('input[id^="question_number_"]').forEach(input => {
             input.addEventListener('change', handleQuestionNumberChange);
         });
         document.addEventListener('keydown', handleShortcuts);
         document.querySelectorAll('.status-buttons').forEach(setupStatusButtons);
         document.getElementById('questions-form').addEventListener('submit', handleFormSubmit);
+        document.getElementById('preview-btn').addEventListener('click', handlePreview);
         
         document.getElementById('add-misc-question').addEventListener('click', handleAddMiscQuestion);
         
+        document.getElementById('extract-classify-all').addEventListener('click', async () => {
+            const extractBtn = document.getElementById('extract-classify-all');
+            const spinner = extractBtn.querySelector('.spinner-border');
+            const text = extractBtn.querySelector('.extract-text');
+
+            spinner.classList.remove('d-none');
+            text.textContent = 'Processing...';
+            extractBtn.disabled = true;
+
+            // First, save the questions
+            const questions = [];
+            document.querySelectorAll('fieldset[data-question-index]').forEach((fieldset, i) => {
+                questions.push({
+                    image_id: fieldset.querySelector('input[name^="image_id_"]').value,
+                    question_number: fieldset.querySelector('input[name^="question_number_"]').value,
+                    status: fieldset.querySelector('select[name^="status_"]').value,
+                    marked_solution: fieldset.querySelector('input[name^="marked_solution_"]').value,
+                    actual_solution: fieldset.querySelector('input[name^="actual_solution_"]').value,
+                });
+            });
+
+            try {
+                const saveResponse = await fetch('/save_questions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ session_id: sessionId, questions: questions })
+                });
+                if (!saveResponse.ok) throw new Error((await saveResponse.json()).error || 'Failed to save questions.');
+
+                // Now, run the classification
+                const response = await fetch(`/extract_and_classify_all/${sessionId}`, {
+                    method: 'POST'
+                });
+                const result = await response.json();
+
+                if (result.success) {
+                    showStatus(result.message, 'success');
+                    // Reload the page to show the updated data
+                    setTimeout(() => {
+                        location.reload();
+                    }, 2000);
+                } else {
+                    showStatus(`Error: ${result.error}`, 'danger');
+                }
+            } catch (err) {
+                showStatus(`Error: ${err.message}`, 'danger');
+            } finally {
+                spinner.classList.add('d-none');
+                text.textContent = 'Extract & Classify All';
+                extractBtn.disabled = false;
+            }
+        });
+
         // Add event listeners for auto-extract buttons if NVIDIA NIM is available
         {% if nvidia_nim_available %}
         document.querySelectorAll('.auto-extract-btn').forEach(button => {
@@ -333,6 +534,56 @@
         });
     }
 
+    async function handlePreview(e) {
+        e.preventDefault();
+        saveSettings(); // Save settings for consistency
+        const statusDiv = document.getElementById('status');
+        showStatus('Generating preview...', 'info');
+
+        const questions = [];
+        document.querySelectorAll('fieldset[data-question-index]').forEach((fieldset, i) => {
+            questions.push({
+                image_id: fieldset.querySelector('input[name^="image_id_"]').value,
+                question_number: fieldset.querySelector('input[name^="question_number_"]').value,
+                status: fieldset.querySelector('select[name^="status_"]').value,
+                marked_solution: fieldset.querySelector('input[name^="marked_solution_"]').value,
+                actual_solution: fieldset.querySelector('input[name^="actual_solution_"]').value,
+            });
+        });
+
+        try {
+            const response = await fetch('/generate_preview', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    session_id: sessionId,
+                    subject: document.getElementById('pdf_subject').value,
+                    images_per_page: parseInt(document.getElementById('images_per_page').value, 10),
+                    filter_type: document.getElementById('filter_type').value,
+                    orientation: document.getElementById('orientation').value,
+                    grid_rows: parseInt(document.getElementById('grid_rows').value, 10),
+                    grid_cols: parseInt(document.getElementById('grid_cols').value, 10),
+                    practice_mode: document.getElementById('practice_mode').value,
+                    miscellaneous_questions: miscellaneousQuestions,
+                    questions: questions // Pass the main questions too
+                })
+            });
+
+            const result = await response.json();
+            if (result.error) throw new Error(result.error);
+
+            const previewImg = document.getElementById('preview-img');
+            previewImg.src = result.preview_image;;
+
+            const previewModal = new bootstrap.Modal(document.getElementById('previewModal'));
+            previewModal.show();
+            showStatus('Preview generated.', 'success');
+
+        } catch (err) {
+            showStatus(`Error: ${err.message}`, 'danger');
+        }
+    }
+
     async function handleFormSubmit(e) {
         e.preventDefault();
         saveSettings(); // Save settings on submit
@@ -374,6 +625,7 @@
                     orientation: document.getElementById('orientation').value,
                     grid_rows: parseInt(document.getElementById('grid_rows').value, 10),
                     grid_cols: parseInt(document.getElementById('grid_cols').value, 10),
+                    practice_mode: document.getElementById('practice_mode').value,
                     miscellaneous_questions: miscellaneousQuestions
                 })
             });
@@ -590,9 +842,9 @@
     }
 
     document.addEventListener('DOMContentLoaded', () => {
+        initializeTomSelect(); // Initialize Tom Select here
         loadSettings();
         setupEventListeners();
     });
-
 </script>
 {% endblock %}
