@@ -35,6 +35,9 @@ def resize_image_if_needed(image_path: str) -> bytes:
         
         resized_image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
         
+        if resized_image.mode == 'RGBA':
+            resized_image = resized_image.convert('RGB')
+
         img_byte_arr = io.BytesIO()
         resized_image.save(img_byte_arr, format='JPEG', quality=85, optimize=True)
         image_bytes = img_byte_arr.getvalue()

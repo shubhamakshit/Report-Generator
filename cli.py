@@ -16,11 +16,13 @@ from rich.progress import (
     TimeElapsedColumn,
     TimeRemainingColumn,
 )
+from urllib.parse import urlparse
 from werkzeug.utils import secure_filename
 
 # --- Configuration ---
+from utils import get_db_connection
+
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-DATABASE = os.path.join(SCRIPT_DIR, 'database.db')
 UPLOAD_FOLDER = os.path.join(SCRIPT_DIR, 'uploads')
 PROCESSED_FOLDER = os.path.join(SCRIPT_DIR, 'processed')
 OUTPUT_FOLDER = os.path.join(SCRIPT_DIR, 'output')
@@ -30,17 +32,6 @@ os.makedirs(PROCESSED_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
 
-# --- Database Helper Function ---
-def get_db_connection():
-    """Establishes a connection to the SQLite database."""
-    try:
-        conn = sqlite3.connect(DATABASE)
-        conn.row_factory = sqlite3.Row
-        return conn
-    except sqlite3.Error as e:
-        click.secho(f"Database connection error: {e}", fg="red")
-        raise click.Abort()
-
 
 # --- Core Logic Functions (mirrored from app.py) ---
 def setup_database_cli():
@@ -49,13 +40,32 @@ def setup_database_cli():
     cursor = conn.cursor()
     click.echo("Creating/updating tables...")
 
-    cursor.execute("CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, original_filename TEXT, persist INTEGER DEFAULT 0);")
+    cursor.execute("CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, original_filename TEXT, persist INTEGER DEFAULT 0, subject TEXT, tags TEXT, notes TEXT);")
     cursor.execute("CREATE TABLE IF NOT EXISTS images (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, image_index INTEGER NOT NULL, filename TEXT NOT NULL, original_name TEXT NOT NULL, processed_filename TEXT, image_type TEXT DEFAULT 'original', FOREIGN KEY (session_id) REFERENCES sessions (id));")
-    cursor.execute("CREATE TABLE IF NOT EXISTS questions (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, image_id INTEGER NOT NULL, question_number TEXT, subject TEXT, status TEXT, marked_solution TEXT, actual_solution TEXT, time_taken TEXT, FOREIGN KEY (session_id) REFERENCES sessions (id), FOREIGN KEY (image_id) REFERENCES images (id));")
+    cursor.execute("CREATE TABLE IF NOT EXISTS questions (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, image_id INTEGER NOT NULL, question_number TEXT, subject TEXT, status TEXT, marked_solution TEXT, actual_solution TEXT, time_taken TEXT, tags TEXT, FOREIGN KEY (session_id) REFERENCES sessions (id), FOREIGN KEY (image_id) REFERENCES images (id));")
     cursor.execute("CREATE TABLE IF NOT EXISTS folders (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, parent_id INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (parent_id) REFERENCES folders (id) ON DELETE CASCADE);")
     cursor.execute("CREATE TABLE IF NOT EXISTS generated_pdfs (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, filename TEXT NOT NULL, subject TEXT NOT NULL, tags TEXT, notes TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, source_filename TEXT, folder_id INTEGER, persist INTEGER DEFAULT 0, FOREIGN KEY (session_id) REFERENCES sessions (id), FOREIGN KEY (folder_id) REFERENCES folders (id) ON DELETE SET NULL);")
     cursor.execute("CREATE TABLE IF NOT EXISTS neetprep_questions (id TEXT PRIMARY KEY, question_text TEXT, options TEXT, correct_answer_index INTEGER, level TEXT, topic TEXT, subject TEXT, last_fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);")
     cursor.execute("CREATE TABLE IF NOT EXISTS neetprep_processed_attempts (attempt_id TEXT PRIMARY KEY, processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);")
+
+    # Add columns to sessions table if they don't exist
+    try:
+        cursor.execute("SELECT subject FROM sessions LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE sessions ADD COLUMN subject TEXT")
+    try:
+        cursor.execute("SELECT tags FROM sessions LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE sessions ADD COLUMN tags TEXT")
+    try:
+        cursor.execute("SELECT notes FROM sessions LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE sessions ADD COLUMN notes TEXT")
+
+    try:
+        cursor.execute("SELECT tags FROM questions LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE questions ADD COLUMN tags TEXT")
 
     click.echo("Tables created successfully.")
     conn.commit()
@@ -150,6 +160,57 @@ def db_cleanup():
     cleanup_old_data_cli()
     click.secho("Cleanup finished.", fg="green")
 
+@cli.command('add-question')
+@click.option('--session-id', required=True, type=click.STRING)
+@click.option('--image-path', required=True, type=click.Path(exists=True))
+@click.option('--q-num', type=click.STRING)
+@click.option('--status', type=click.Choice(['Correct', 'Wrong', 'Unattempted']))
+@click.option('--marked-ans', type=click.STRING)
+@click.option('--correct-ans', type=click.STRING)
+@click.option('--subject', type=click.STRING)
+@click.option('--time', type=click.STRING)
+def add_question(session_id, image_path, q_num, status, marked_ans, correct_ans, subject, time):
+    """Adds a single question with metadata to the database."""
+    setup_database_cli()  # Ensure database tables exist
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # 1. Copy image to processed folder
+        original_filename = secure_filename(os.path.basename(image_path))
+        processed_filename = f"processed_{session_id}_{str(uuid.uuid4())[:8]}_{original_filename}"
+        processed_path = os.path.join(PROCESSED_FOLDER, processed_filename)
+        import shutil
+        shutil.copy(image_path, processed_path)
+
+        # 2. Create a new image record
+        # Find the next available image_index for the session
+        cursor.execute("SELECT MAX(image_index) FROM images WHERE session_id = ?", (session_id,))
+        max_index = cursor.fetchone()[0]
+        new_index = (max_index or -1) + 1
+
+        cursor.execute(
+            'INSERT INTO images (session_id, image_index, filename, original_name, processed_filename, image_type) VALUES (?, ?, ?, ?, ?, ?)',
+            (session_id, new_index, original_filename, original_filename, processed_filename, 'cropped')
+        )
+        image_id = cursor.lastrowid
+
+        # 3. Create a new question record
+        cursor.execute(
+            'INSERT INTO questions (session_id, image_id, question_number, status, marked_solution, actual_solution, subject, time_taken) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            (session_id, image_id, q_num, status, marked_ans, correct_ans, subject, time)
+        )
+
+        conn.commit()
+        click.secho(f"Successfully added question {q_num} (Image ID: {image_id}) to session {session_id}.", fg="green")
+
+    except Exception as e:
+        click.secho(f"Error adding question: {e}", fg="red", err=True)
+        raise click.Abort()
+    finally:
+        if conn:
+            conn.close()
+
 @cli.command('upload')
 @click.argument('pdf_paths', type=click.STRING)
 @click.option('--simple-progress', is_flag=True, help='Print simple percentage progress to stdout.')
@@ -163,6 +224,7 @@ def upload(pdf_paths, simple_progress, final, subject, tags, notes, log):
     A CLI tool to upload a large PDF directly to the application's database.
     PDF_PATHS: A comma-separated list of full paths to the PDF files you wish to upload or Google Drive URLs.
     """
+    setup_database_cli()  # Ensure database tables exist
     if log:
         try:
             log_f = open('cli.log', 'a')
@@ -180,7 +242,7 @@ def upload(pdf_paths, simple_progress, final, subject, tags, notes, log):
 
     for pdf_path_or_url in files_to_process:
         click.secho(f"--- Processing: {click.style(pdf_path_or_url, bold=True)} ---", fg="yellow")
-        
+
         local_pdf_path, original_filename, is_temp = _get_local_pdf_path(pdf_path_or_url)
 
         if not local_pdf_path:
@@ -197,7 +259,7 @@ def upload(pdf_paths, simple_progress, final, subject, tags, notes, log):
                 cursor = conn.cursor()
                 cursor.execute('INSERT INTO sessions (id, original_filename) VALUES (?, ?)',
                                (session_id, original_filename))
-                
+
                 output_filename = original_filename
                 output_path = os.path.join(OUTPUT_FOLDER, output_filename)
 
@@ -281,7 +343,7 @@ def upload(pdf_paths, simple_progress, final, subject, tags, notes, log):
 
         except Exception as e:
             click.secho(f"An unexpected error occurred while processing {original_filename}: {e}", fg="red", err=True)
-        
+
         finally:
             if is_temp and os.path.exists(local_pdf_path):
                 os.remove(local_pdf_path)

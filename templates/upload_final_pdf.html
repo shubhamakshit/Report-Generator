@@ -1,155 +1,68 @@
 {% extends "base.html" %}
 
-{% block title %}Upload JSON{% endblock %}
-
-{% block head %}
-<script>
-MathJax = {
-  tex: {
-    inlineMath: [['\(', '\)']]
-  },
-  svg: {
-    fontCache: 'global'
-  }
-};
-</script>
-<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
-{% endblock %}
+{% block title %}Upload Final PDF{% endblock %}
 
 {% block content %}
 <div class="container mt-5">
     <div class="card bg-dark text-white">
         <div class="card-header">
-            <h2>Upload JSON Data</h2>
+            <h2>Upload Final PDF</h2>
         </div>
         <div class="card-body">
-            <form id="json-upload-form">
-                <div class="mb-3">
-                    <label for="json-data" class="form-label">Paste your JSON data here:</label>
-                    <textarea class="form-control" id="json-data" rows="15" required></textarea>
+            <ul class="nav nav-tabs" id="myTab" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="upload-tab" data-bs-toggle="tab" data-bs-target="#upload" type="button" role="tab" aria-controls="upload" aria-selected="true">Upload PDF</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="url-tab" data-bs-toggle="tab" data-bs-target="#url" type="button" role="tab" aria-controls="url" aria-selected="false">From URL</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="curl-tab" data-bs-toggle="tab" data-bs-target="#curl" type="button" role="tab" aria-controls="curl" aria-selected="false">From cURL</button>
+                </li>
+            </ul>
+            <div class="tab-content" id="myTabContent">
+                <div class="tab-pane fade show active" id="upload" role="tabpanel" aria-labelledby="upload-tab">
+                    <form action="/handle_final_pdf_upload" method="post" enctype="multipart/form-data" class="mt-3">
+                        <div class="mb-3">
+                            <label for="pdf" class="form-label">Select PDF file</label>
+                            <input type="file" class="form-control" id="pdf" name="pdf" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="subject" class="form-label">Subject</label>
+                            <input type="text" class="form-control" id="subject" name="subject" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Upload</button>
+                    </form>
                 </div>
-                <div class="mb-3">
-                    <label class="form-label">Process Questions with Status:</label>
-                    <div class="form-check">
-                        <input class="form-check-input" type="checkbox" value="correct" id="status_correct">
-                        <label class="form-check-label" for="status_correct">
-                            Correct
-                        </label>
-                    </div>
-                    <div class="form-check">
-                        <input class="form-check-input" type="checkbox" value="wrong" id="status_wrong" checked>
-                        <label class="form-check-label" for="status_wrong">
-                            Wrong
-                        </label>
-                    </div>
-                    <div class="form-check">
-                        <input class="form-check-input" type="checkbox" value="unattempted" id="status_unattempted" checked>
-                        <label class="form-check-label" for="status_unattempted">
-                            Unattempted
-                        </label>
-                    </div>
+                <div class="tab-pane fade" id="url" role="tabpanel" aria-labelledby="url-tab">
+                    <form action="/handle_final_pdf_upload" method="post" class="mt-3">
+                        <div class="mb-3">
+                            <label for="pdf_url" class="form-label">PDF URL</label>
+                            <input type="url" class="form-control" id="pdf_url" name="pdf_url" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="subject_url" class="form-label">Subject</label>
+                            <input type="text" class="form-control" id="subject_url" name="subject" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Upload from URL</button>
+                    </form>
                 </div>
-                <button type="submit" class="btn btn-primary">Process JSON</button>
-            </form>
-            <div id="status" class="mt-3"></div>
+                <div class="tab-pane fade" id="curl" role="tabpanel" aria-labelledby="curl-tab">
+                    <form action="/handle_final_pdf_upload" method="post" class="mt-3">
+                        <div class="mb-3">
+                            <label for="curl_command" class="form-label">cURL command(s)</label>
+                            <textarea class="form-control" id="curl_command" name="curl_command" rows="5" required></textarea>
+                            <div class="form-text">Paste one or more cURL commands. Each command on a new line.</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="subject_curl" class="form-label">Subject</label>
+                            <input type="text" class="form-control" id="subject_curl" name="subject" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Upload from cURL</button>
+                    </form>
+                </div>
+            </div>
         </div>
     </div>
 </div>
-{% endblock %}
-
-{% block scripts %}
-<script>
-// Function to fix font-family declarations in HTML strings
-function fixFontFamilyQuotes(htmlString) {
-    // Replace double quotes within font-family CSS declarations with single quotes
-    // This prevents JSON parsing issues when the HTML is stringified
-    return htmlString.replace(/font-family:"([^"]+)"/g, function(match, fontValue) {
-        // Replace any inner double quotes with single quotes
-        const fixedValue = fontValue.replace(/"/g, "'");
-        return `font-family:'${fixedValue}'`;
-    });
-}
-
-document.getElementById('json-upload-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const jsonData = document.getElementById('json-data').value;
-    const statusDiv = document.getElementById('status');
-    const cardBody = document.querySelector('.card-body');
-    const selectedStatuses = Array.from(document.querySelectorAll('input[type="checkbox"][id^="status_"]:checked')).map(cb => cb.value);
-
-    try {
-        const data = JSON.parse(jsonData);
-        const testName = data.data.root._testAttempt4d9rq8.test.name;
-
-        statusDiv.innerHTML = '<div class="alert alert-info">Processing JSON...</div>';
-
-        const response = await fetch('/process_json', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ data: data, statuses: selectedStatuses })
-        });
-
-        const result = await response.json();
-
-        if (result.success) {
-            // Fix font-family quotes in all question HTML before stringifying
-            result.questions.forEach(q => {
-                if (q.question) {
-                    q.question = fixFontFamilyQuotes(q.question);
-                }
-            });
-
-            const form = document.createElement('form');
-            form.action = '/save_processed_json';
-            form.method = 'post';
-
-            const questionsInput = document.createElement('input');
-            questionsInput.type = 'hidden';
-            questionsInput.name = 'questions_data';
-            questionsInput.value = JSON.stringify(result.questions);
-            form.appendChild(questionsInput);
-
-            const testNameInput = document.createElement('input');
-            testNameInput.type = 'hidden';
-            testNameInput.name = 'test_name';
-            testNameInput.value = testName;
-            form.appendChild(testNameInput);
-
-            const table = document.createElement('table');
-            table.className = 'table';
-            const thead = document.createElement('thead');
-            thead.innerHTML = '<tr><th>Question</th><th>Your Answer</th><th>Correct Answer</th><th>Status</th></tr>';
-            table.appendChild(thead);
-
-            const tbody = document.createElement('tbody');
-            result.questions.forEach(q => {
-                let badgeClass = 'bg-warning';
-                if (q.status === 'wrong') badgeClass = 'bg-danger';
-                if (q.status === 'correct') badgeClass = 'bg-success';
-                const row = document.createElement('tr');
-                row.innerHTML = `<td>${q.question}</td><td>${q.yourAnswer}</td><td>${q.correctAnswer}</td><td><span class="badge ${badgeClass}">${q.status}</span></td>`;
-                tbody.appendChild(row);
-            });
-            table.appendChild(tbody);
-            form.appendChild(table);
-
-            const button = document.createElement('button');
-            button.type = 'submit';
-            button.className = 'btn btn-primary';
-            button.textContent = 'Go to Question Entry';
-            form.appendChild(button);
-
-            cardBody.innerHTML = '';
-            cardBody.appendChild(form);
-            MathJax.typeset();
-        } else {
-            statusDiv.innerHTML = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-        }
-    } catch (error) {
-        statusDiv.innerHTML = `<div class="alert alert-danger">Invalid JSON format or processing error: ${error.message}</div>`;
-    }
-});
-</script>
 {% endblock %}

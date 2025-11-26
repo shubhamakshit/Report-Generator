@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}{{ pdf_title }} - Legacy View{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/viewerjs/1.11.3/viewer.min.css">
+<style>
+    #image-gallery {
+        height: calc(100vh - 150px); /* Adjust height as needed */
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <h1 class="h3">{{ pdf_title }} (Legacy View)</h1>
+        <a href="javascript:history.back()" class="btn btn-secondary">Back</a>
+    </div>
+
+    <div id="image-gallery">
+        {% for image_url in image_urls %}
+        <img src="{{ image_url }}" alt="Page {{ loop.index }}" style="display:none;">
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/viewerjs/1.11.3/viewer.min.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const gallery = document.getElementById('image-gallery');
+        const viewer = new Viewer(gallery, {
+            inline: true,
+            toolbar: {
+                zoomIn: 1,
+                zoomOut: 1,
+                oneToOne: 1,
+                reset: 1,
+                prev: 1,
+                play: {
+                    show: 1,
+                    size: 'large',
+                },
+                next: 1,
+                rotateLeft: 1,
+                rotateRight: 1,
+                flipHorizontal: 1,
+                flipVertical: 1,
+            },
+            title: false,
+            url: 'src',
+        });
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <title>{{ pdf_title }}</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf_viewer.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf_viewer.js"></script>
+    <style>
+        body {
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 0;
+        }
+        #viewerContainer {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div id="viewerContainer">
+        <div id="viewer" class="pdfViewer"></div>
+    </div>
+
+    <script>
+        const pdfUrl = "{{ pdf_url }}";
+
+        // Set the worker source
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.worker.js`;
+
+        // Initialize the PDF.js viewer
+        const eventBus = new pdfjsViewer.EventBus();
+        const pdfViewer = new pdfjsViewer.PDFViewer({
+            container: document.getElementById('viewerContainer'),
+            eventBus: eventBus,
+        });
+
+        // Load the PDF document
+        const loadingTask = pdfjsLib.getDocument(pdfUrl);
+        loadingTask.promise.then(function(pdfDocument) {
+            pdfViewer.setDocument(pdfDocument);
+        });
+    </script>
+</body>
+</html>

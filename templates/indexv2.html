@@ -10,16 +10,45 @@
                 <h1 class="h3"><i class="bi bi-file-earmark-pdf-fill me-2"></i>PDF Question Extractor</h1>
             </div>
             <div class="card-body">
+                <ul class="nav nav-tabs" id="uploadMethodTab" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="file-tab" data-bs-toggle="tab" data-bs-target="#file-upload-pane" type="button" role="tab" aria-controls="file-upload-pane" aria-selected="true">Upload File</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="url-tab" data-bs-toggle="tab" data-bs-target="#url-upload-pane" type="button" role="tab" aria-controls="url-upload-pane" aria-selected="false">From URL</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="curl-tab" data-bs-toggle="tab" data-bs-target="#curl-upload-pane" type="button" role="tab" aria-controls="curl-upload-pane" aria-selected="false">From cURL</button>
+                    </li>
+                </ul>
+
                 <form id="upload-form">
-                    <div class="mb-3">
-                        <label for="pdf-upload" class="form-label">Select PDF File</label>
-                        <input type="file" class="form-control" id="pdf-upload" name="pdf" accept=".pdf" required>
+                    <div class="tab-content mt-3">
+                        <div class="tab-pane fade show active" id="file-upload-pane" role="tabpanel" aria-labelledby="file-tab">
+                            <div class="mb-3">
+                                <label for="pdf-upload" class="form-label">Select PDF File</label>
+                                <input type="file" class="form-control" id="pdf-upload" name="pdf" accept=".pdf">
+                            </div>
+                        </div>
+                        <div class="tab-pane fade" id="url-upload-pane" role="tabpanel" aria-labelledby="url-tab">
+                            <div class="mb-3">
+                                <label for="pdf-url" class="form-label">PDF URL</label>
+                                <input type="url" class="form-control" id="pdf-url" name="pdf_url" placeholder="https://example.com/document.pdf">
+                            </div>
+                        </div>
+                        <div class="tab-pane fade" id="curl-upload-pane" role="tabpanel" aria-labelledby="curl-tab">
+                            <div class="mb-3">
+                                <label for="curl-command" class="form-label">cURL Command</label>
+                                <input type="text" class="form-control" id="curl-command" name="curl_command" placeholder="curl -o 'report.pdf' https://example.com/...">
+                            </div>
+                        </div>
                     </div>
                     <button type="submit" class="btn btn-primary w-100">
                         <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
                         Upload and Start Cropping
                     </button>
                 </form>
+
                 <div class="mt-3 text-center">
                     <p class="text-muted">Or</p>
                     <a href="/images" class="btn btn-outline-primary">Upload Images Instead</a>
@@ -27,7 +56,7 @@
                 <div id="status" class="mt-3"></div>
 
                 <div class="mt-3 text-center">
-                    <p class="text-muted">Or (Last Resort)</p>
+                    <p class="text-muted">Or</p>
                     <button class="btn btn-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#existingPdfSection" aria-expanded="false" aria-controls="existingPdfSection">
                         Process an Existing Final PDF
                     </button>
@@ -38,7 +67,7 @@
                         <h5>Select an Existing PDF to Process</h5>
                         <div class="list-group" style="max-height: 200px; overflow-y: auto;">
                             {% for pdf in pdfs %}
-                                <a href="/process_final_pdf/{{ pdf.id }}" class="list-group-item list-group-item-action">
+                                <a href="/process_final_pdf/{{ pdf.id }}" class="list-group-item list-group-item-action bg-dark text-white">
                                     {{ pdf.filename }}
                                 </a>
                             {% endfor %}
@@ -56,7 +85,7 @@
     document.getElementById('upload-form').addEventListener('submit', async function(e) {
         e.preventDefault();
         const form = e.target;
-        const button = form.querySelector('button');
+        const button = form.querySelector('button[type="submit"]');
         const spinner = button.querySelector('.spinner-border');
         const statusDiv = document.getElementById('status');
 
@@ -64,24 +93,62 @@
         spinner.classList.remove('d-none');
         statusDiv.innerHTML = '<div class="alert alert-info">Uploading and processing PDF... this may take a moment.</div>';
 
-        const formData = new FormData(form);
+        const activeTab = document.querySelector('#uploadMethodTab .nav-link.active').id;
+        const formData = new FormData();
+
+        let isValid = false;
+        if (activeTab === 'file-tab') {
+            const fileInput = document.getElementById('pdf-upload');
+            if (fileInput.files.length > 0) {
+                formData.append('pdf', fileInput.files[0]);
+                isValid = true;
+            } else {
+                statusDiv.innerHTML = `<div class="alert alert-danger">Error: Please select a PDF file.</div>`;
+            }
+        } else if (activeTab === 'url-tab') {
+            const urlInput = document.getElementById('pdf-url');
+            if (urlInput.value) {
+                formData.append('pdf_url', urlInput.value);
+                isValid = true;
+            } else {
+                statusDiv.innerHTML = `<div class="alert alert-danger">Error: Please enter a PDF URL.</div>`;
+            }
+        } else if (activeTab === 'curl-tab') {
+            const curlInput = document.getElementById('curl-command');
+            if (curlInput.value) {
+                formData.append('curl_command', curlInput.value);
+                isValid = true;
+            } else {
+                statusDiv.innerHTML = `<div class="alert alert-danger">Error: Please enter a cURL command.</div>`;
+            }
+        }
+
+        if (!isValid) {
+            button.disabled = false;
+            spinner.classList.add('d-none');
+            if (!statusDiv.innerHTML.includes('Error')) {
+               statusDiv.innerHTML = '';
+            }
+            return;
+        }
 
         try {
-            const response = await fetch('/upload_pdf', {
+            const response = await fetch('/v2/upload', {
                 method: 'POST',
                 body: formData
             });
-            
+
             const result = await response.json();
 
             if (response.ok) {
                 statusDiv.innerHTML = `
                     <div class="alert alert-success">Success! Found ${result.files.length} pages.</div>
                     <div class="d-grid gap-2 mt-3">
-                        <a href="/cropv2/${result.session_id}/0" class="btn btn-primary">Crop Questions</a>
+                        <a href="/cropv2/${result.session_id}/0" class="btn btn-primary">Start Cropping</a>
                         <a href="/redact_status/${result.session_id}" class="btn btn-secondary">Redact Document</a>
                     </div>
                 `;
+                 button.style.display = 'none';
             } else {
                 throw new Error(result.error || 'Upload failed');
             }
@@ -91,5 +158,18 @@
             spinner.classList.add('d-none');
         }
     });
+
+    // Optional: Reset required attribute on inactive tabs to allow form submission
+    const tabs = document.querySelectorAll('#uploadMethodTab .nav-link');
+    tabs.forEach(tab => {
+        tab.addEventListener('shown.bs.tab', function (event) {
+            const currentTabId = event.target.id;
+            document.getElementById('pdf-upload').required = (currentTabId === 'file-tab');
+            document.getElementById('pdf-url').required = (currentTabId === 'url-tab');
+            document.getElementById('curl-command').required = (currentTabId === 'curl-tab');
+        });
+    });
+    // Set initial required state
+    document.getElementById('pdf-upload').required = true;
 </script>
 {% endblock %}

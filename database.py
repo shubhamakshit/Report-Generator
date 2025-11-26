@@ -10,6 +10,16 @@ def setup_database():
     conn = get_db_connection()
     cursor = conn.cursor()
 
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL UNIQUE,
+        email TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
     # Create sessions table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS sessions (
@@ -46,6 +56,7 @@ def setup_database():
         marked_solution TEXT,
         actual_solution TEXT,
         time_taken TEXT,
+        tags TEXT,
         FOREIGN KEY (session_id) REFERENCES sessions (id),
         FOREIGN KEY (image_id) REFERENCES images (id)
     );
@@ -104,6 +115,16 @@ def setup_database():
 
     # --- Migrations ---
     try:
+        cursor.execute("SELECT tags FROM questions LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE questions ADD COLUMN tags TEXT")
+
+    try:
+        cursor.execute("SELECT tags FROM questions LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE questions ADD COLUMN tags TEXT")
+
+    try:
         cursor.execute("SELECT image_type FROM images LIMIT 1")
     except sqlite3.OperationalError:
         cursor.execute("ALTER TABLE images ADD COLUMN image_type TEXT DEFAULT 'original'")
@@ -117,6 +138,11 @@ def setup_database():
         cursor.execute("SELECT persist FROM sessions LIMIT 1")
     except sqlite3.OperationalError:
         cursor.execute("ALTER TABLE sessions ADD COLUMN persist INTEGER DEFAULT 0")
+
+    try:
+        cursor.execute("SELECT name FROM sessions LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE sessions ADD COLUMN name TEXT")
 
     try:
         cursor.execute("SELECT persist FROM generated_pdfs LIMIT 1")
@@ -137,6 +163,32 @@ def setup_database():
         cursor.execute("SELECT chapter FROM questions LIMIT 1")
     except sqlite3.OperationalError:
         cursor.execute("ALTER TABLE questions ADD COLUMN chapter TEXT")
+
+    # --- Multi-user Migrations ---
+    try:
+        cursor.execute("SELECT user_id FROM sessions LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE sessions ADD COLUMN user_id INTEGER REFERENCES users(id)")
+
+    try:
+        cursor.execute("SELECT user_id FROM generated_pdfs LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE generated_pdfs ADD COLUMN user_id INTEGER REFERENCES users(id)")
+
+    try:
+        cursor.execute("SELECT user_id FROM folders LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE folders ADD COLUMN user_id INTEGER REFERENCES users(id)")
+
+    try:
+        cursor.execute("SELECT neetprep_enabled FROM users LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE users ADD COLUMN neetprep_enabled INTEGER DEFAULT 1")
+    
+    try:
+        cursor.execute("SELECT dpi FROM users LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE users ADD COLUMN dpi INTEGER DEFAULT 300")
 
     conn.commit()
     conn.close()
@@ -193,9 +245,13 @@ def cleanup_old_data():
     conn.close()
     print("Cleanup finished.")
 
-def get_folder_tree():
+def get_folder_tree(user_id=None):
     conn = get_db_connection()
-    folders = conn.execute('SELECT id, name, parent_id FROM folders ORDER BY name').fetchall()
+    if user_id:
+        folders = conn.execute('SELECT id, name, parent_id FROM folders WHERE user_id = ? ORDER BY name', (user_id,)).fetchall()
+    else:
+        # Fallback for old behavior or admin views
+        folders = conn.execute('SELECT id, name, parent_id FROM folders ORDER BY name').fetchall()
     conn.close()
     
     folder_map = {f['id']: dict(f) for f in folders}
@@ -213,10 +269,14 @@ def get_folder_tree():
             
     return tree
 
-def get_all_descendant_folder_ids(conn, folder_id):
-    """Recursively gets all descendant folder IDs for a given folder."""
-    children = conn.execute('SELECT id FROM folders WHERE parent_id = ?', (folder_id,)).fetchall()
+def get_all_descendant_folder_ids(conn, folder_id, user_id=None):
+    """Recursively gets all descendant folder IDs for a given folder, scoped to a user."""
+    if user_id:
+        children = conn.execute('SELECT id FROM folders WHERE parent_id = ? AND user_id = ?', (folder_id, user_id)).fetchall()
+    else:
+        children = conn.execute('SELECT id FROM folders WHERE parent_id = ?', (folder_id,)).fetchall()
+        
     folder_ids = [f['id'] for f in children]
     for child_id in folder_ids:
-        folder_ids.extend(get_all_descendant_folder_ids(conn, child_id))
+        folder_ids.extend(get_all_descendant_folder_ids(conn, child_id, user_id))
     return folder_ids

@@ -57,6 +57,12 @@ class JSONProcessor:
             raise ValueError(f"Unsupported or unknown JSON version: {self.version}")
 
     def _process_v2_1(self):
+        def safe_int(value):
+            try:
+                return int(value)
+            except (ValueError, TypeError):
+                return None
+
         processed_questions = []
         statuses_to_include = self.data.get("config", {}).get("statuses_to_include", ["wrong", "unattempted"])
         for q in self.data.get("questions", []):
@@ -64,12 +70,20 @@ class JSONProcessor:
             if status in statuses_to_include:
                 options = q.get("options", [])
                 user_answer = "N/A"
-                if q.get("user_answer_index") is not None and q.get("user_answer_index") < len(options):
-                    user_answer = options[q.get("user_answer_index")]
+                if q.get('source') == 'classified':
+                    user_answer = q.get('user_answer_index')
+                else:
+                    user_answer_index = safe_int(q.get("user_answer_index"))
+                    if user_answer_index is not None and user_answer_index < len(options):
+                        user_answer = options[user_answer_index]
 
                 correct_answer = "N/A"
-                if q.get("correct_answer_index") is not None and q.get("correct_answer_index") < len(options):
-                    correct_answer = options[q.get("correct_answer_index")]
+                if q.get('source') == 'classified':
+                    correct_answer = q.get('correct_answer_index')
+                else:
+                    correct_answer_index = safe_int(q.get("correct_answer_index"))
+                    if correct_answer_index is not None and correct_answer_index < len(options):
+                        correct_answer = options[correct_answer_index]
 
                 processed_questions.append({
                     "question": q.get("question_text"),
@@ -199,140 +213,106 @@ def html_to_image_worker(item, session_id, font_size, processed_folder, original
         'index': index
     }
 
-@json_bp.route('/json_upload', methods=['GET', 'POST'])
-def json_upload(font_size=None):
+from flask_login import login_required, current_user
+
+def _process_json_and_generate_pdf(raw_data, user_id):
+    """
+    Helper function to process JSON data, generate images, and create a PDF.
+    This is called by both the /json_upload route and directly from other modules.
+    """
     from utils import get_or_download_font, create_a4_pdf_from_images
+    
+    conn = get_db_connection()
+    try:
+        if not raw_data:
+            return {'error': 'No JSON payload received.'}, 400
 
-    if request.method == 'POST':
-        conn = get_db_connection()
-        try:
-            raw_data = request.json
-            if not raw_data:
-                return jsonify({'error': 'No JSON payload received.'}), 400
+        processor = JSONProcessor(raw_data)
+        processed_data = processor.process()
 
-            processor = JSONProcessor(raw_data)
-            processed_data = processor.process()
+        test_name = processed_data.get("test_name")
+        processed_questions = processed_data.get("questions")
+        font_size = processed_data.get("font_size")
+        metadata = processed_data.get("metadata", {})
+        tags = metadata.get("tags", "programmatic")
+        layout = processed_data.get("config", {}).get("layout", {})
+        
+        images_per_page = int(layout.get('images_per_page', 4))
+        orientation = layout.get('orientation', 'portrait')
+        grid_rows = int(layout.get('grid_rows')) if layout.get('grid_rows') else None
+        grid_cols = int(layout.get('grid_cols')) if layout.get('grid_cols') else None
+        practice_mode = layout.get('practice_mode', 'none')
+        
+        session_id = str(uuid.uuid4())
+        conn.execute('INSERT INTO sessions (id, original_filename, user_id) VALUES (?, ?, ?)', (session_id, f"{test_name}.json", user_id))
+        
+        original_filename = f"{session_id}_dummy_original.png"
+        conn.execute(
+            'INSERT INTO images (session_id, image_index, filename, original_name, image_type) VALUES (?, ?, ?, ?, ?)',
+            (session_id, 0, original_filename, 'JSON Upload', 'original')
+        )
 
-            test_name = processed_data.get("test_name")
-            processed_questions = processed_data.get("questions")
-            font_size = processed_data.get("font_size")
-            metadata = processed_data.get("metadata", {})
-            tags = metadata.get("tags", "programmatic")
-            layout = processed_data.get("config", {}).get("layout", {})
-            print("Layout settings from payload:", layout)
-            images_per_page = int(layout.get('images_per_page', 4))
-            orientation = layout.get('orientation', 'portrait')
-            grid_rows = int(layout.get('grid_rows')) if layout.get('grid_rows') else None
-            grid_cols = int(layout.get('grid_cols')) if layout.get('grid_cols') else None
-            practice_mode = layout.get('practice_mode', 'none')
-            print(f"Using layout settings: images_per_page={images_per_page}, orientation={orientation}, grid_rows={grid_rows}, grid_cols={grid_cols}, practice_mode={practice_mode}")
-            
-            session_id = str(uuid.uuid4())
-            conn.execute('INSERT INTO sessions (id, original_filename) VALUES (?, ?)', (session_id, f"{test_name}.json"))
-            
-            original_filename = f"{session_id}_dummy_original.png"
-            conn.execute(
-                'INSERT INTO images (session_id, image_index, filename, original_name, image_type) VALUES (?, ?, ?, ?, ?)',
-                (session_id, 0, original_filename, 'JSON Upload', 'original')
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            list(executor.map(
+                lambda p: html_to_image_worker(*p),
+                [(item, session_id, font_size, current_app.config['PROCESSED_FOLDER'], original_filename, i) for i, item in enumerate(processed_questions)]
+            ))
+
+        for i, item in enumerate(processed_questions):
+            processed_filename = f"processed_{session_id}_page0_crop{i}.jpg"
+            image_insert_result = conn.execute(
+                'INSERT INTO images (session_id, image_index, filename, original_name, processed_filename, image_type) VALUES (?, ?, ?, ?, ?, ?)',
+                (session_id, i + 1, original_filename, f"Question {i+1}", processed_filename, 'cropped')
             )
+            image_id = image_insert_result.lastrowid
+            conn.execute(
+                'INSERT INTO questions (session_id, image_id, question_number, status, marked_solution, actual_solution) VALUES (?, ?, ?, ?, ?, ?)',
+                (session_id, image_id, str(i + 1), item.get('status'), item.get('yourAnswer'), item.get('correctAnswer'))
+            )
+        
+        conn.commit()
 
-            total_questions = len(processed_questions)
-            print(f"Generating images for {total_questions} questions...")
+        if raw_data.get('view') is True:
+            query = "SELECT q.*, i.processed_filename FROM questions q JOIN images i ON q.image_id = i.id WHERE q.session_id = ? ORDER BY i.id"
+            all_questions = [dict(row) for row in conn.execute(query, (session_id,)).fetchall()]
+            if not all_questions:
+                return {'error': 'No questions were processed to generate a PDF.'}, 400
+
+            from datetime import datetime
+            from werkzeug.utils import secure_filename
+            pdf_filename = f"{secure_filename(test_name)}_{session_id[:8]}.pdf"
             
-            results = []
-            completed = 0
-            with ThreadPoolExecutor(max_workers=10) as executor:
-                future_to_item = {
-                    executor.submit(
-                        html_to_image_worker, 
-                        item, 
-                        session_id, 
-                        font_size, 
-                        current_app.config['PROCESSED_FOLDER'], 
-                        original_filename, 
-                        i
-                    ): item for i, item in enumerate(processed_questions)
-                }
-                
-                for future in as_completed(future_to_item):
-                    results.append(future.result())
-                    completed += 1
-                    percentage = int((completed / total_questions) * 100)
-                    sys.stdout.write(f'\rImage Generation Progress: {completed}/{total_questions} ({percentage}%)')
-                    sys.stdout.flush()
-            
-            print("\nImage generation complete.")
-
-            results.sort(key=lambda r: r['index'])
-
-            for result in results:
-                item = result['item']
-                processed_filename = result['processed_filename']
-                index = result['index']
-
-                image_insert_result = conn.execute(
-                    'INSERT INTO images (session_id, image_index, filename, original_name, processed_filename, image_type) VALUES (?, ?, ?, ?, ?, ?)',
-                    (session_id, index + 1, original_filename, f"Question {index+1}", processed_filename, 'cropped')
-                )
-                image_id = image_insert_result.lastrowid
-
-                conn.execute(
-                    'INSERT INTO questions (session_id, image_id, question_number, status, marked_solution, actual_solution) VALUES (?, ?, ?, ?, ?, ?)',
-                    (session_id, image_id, str(index + 1), item.get('status'), item.get('yourAnswer'), item.get('correctAnswer'))
-                )
-
+            create_a4_pdf_from_images(
+                image_info=all_questions, base_folder=current_app.config['PROCESSED_FOLDER'], output_filename=pdf_filename,
+                images_per_page=images_per_page, output_folder=current_app.config['OUTPUT_FOLDER'],
+                orientation=orientation, grid_rows=grid_rows, grid_cols=grid_cols, practice_mode=practice_mode
+            )
+            conn.execute(
+                'INSERT INTO generated_pdfs (session_id, filename, subject, tags, notes, source_filename, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                (session_id, pdf_filename, test_name, tags, 'Generated automatically via JSON upload.', f"{test_name}.json", user_id)
+            )
             conn.commit()
-            
-            if raw_data.get('view') is True:
-                query = """
-                    SELECT q.*, i.filename, i.processed_filename FROM questions q 
-                    JOIN images i ON q.image_id = i.id
-                    WHERE q.session_id = ? ORDER BY i.id
-                """
-                all_questions = [dict(row) for row in conn.execute(query, (session_id,)).fetchall()]
+            return {'success': True, 'view_url': url_for('main.view_pdf', filename=pdf_filename, _external=True)}, 200
+        else:
+            return {'success': True, 'edit_url': url_for('main.question_entry_v2', session_id=session_id, test_name=test_name, _external=True)}, 200
 
-                if not all_questions:
-                    return jsonify({'error': 'No questions were processed to generate a PDF.'}), 400
-
-                from datetime import datetime
-                from werkzeug.utils import secure_filename
-                pdf_filename = f"{secure_filename(test_name)}_{session_id[:8]}.pdf"
-                
-                create_a4_pdf_from_images(
-                    image_info=all_questions, 
-                    base_folder=current_app.config['PROCESSED_FOLDER'], 
-                    output_filename=pdf_filename, 
-                    images_per_page=images_per_page, 
-                    output_folder=current_app.config['OUTPUT_FOLDER'],
-                    orientation=orientation,
-                    grid_rows=grid_rows,
-                    grid_cols=grid_cols,
-                    practice_mode=practice_mode
-                )
-
-                conn.execute(
-                    'INSERT INTO generated_pdfs (session_id, filename, subject, tags, notes, source_filename) VALUES (?, ?, ?, ?, ?, ?)',
-                    (session_id, pdf_filename, test_name, tags, 'Generated automatically via JSON upload.', f"{test_name}.json")
-                )
-                conn.commit()
-
-                return jsonify({
-                    'success': True,
-                    'view_url': url_for('main.view_pdf', filename=pdf_filename, _external=True)
-                })
-            else:
-                return jsonify({
-                    'success': True,
-                    'edit_url': url_for('main.question_entry_v2', session_id=session_id, test_name=test_name, _external=True)
-                })
-        except Exception as e:
+    except Exception as e:
+        if conn:
             conn.rollback()
-            current_app.logger.error(f"Error in json_upload POST: {repr(e)}")
-            return jsonify({'error': str(e)}), 500
-        finally:
+        current_app.logger.error(f"Error in _process_json_and_generate_pdf: {repr(e)}")
+        return {'error': str(e)}, 500
+    finally:
+        if conn:
             conn.close()
 
+@json_bp.route('/json_upload', methods=['GET', 'POST'])
+@login_required
+def json_upload():
+    if request.method == 'POST':
+        result, status_code = _process_json_and_generate_pdf(request.json, current_user.id)
+        return jsonify(result), status_code
     return render_template('json_upload.html')
+
 
 def draw_multiline_text(draw, text, position, font, max_width, fill):
     x, y = position
@@ -391,6 +371,7 @@ def process_json():
 
 
 @json_bp.route('/save_processed_json', methods=['POST'])
+@login_required
 def save_processed_json():
     from app import get_db_connection
     questions_data = request.form.get('questions_data')
@@ -414,7 +395,7 @@ def save_processed_json():
     conn = get_db_connection()
     
     try:
-        conn.execute('INSERT INTO sessions (id, original_filename) VALUES (?, ?)', (session_id, 'JSON Upload'))
+        conn.execute('INSERT INTO sessions (id, original_filename, user_id) VALUES (?, ?, ?)', (session_id, 'JSON Upload', current_user.id))
         
         original_filename = f"{session_id}_dummy_original.png"
         conn.execute(

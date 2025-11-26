@@ -1,0 +1,49 @@
+{
+    "wooderin": {
+        "name": "charges-ready",
+        "client_id": "wooderin",
+        "sessions": {
+            "3_11_2025__10_18_18_pm.wooderin": {
+                "tasks": {
+                    "338db4f6-bf6a-4171-9856-da4f64c00019": {
+                        "task_id": "338db4f6-bf6a-4171-9856-da4f64c00019",
+                        "progress": {
+                            "audio": {
+                                "type": "audio",
+                                "total": 2132,
+                                "current": 2132,
+                                "percentage": 100.0,
+                                "segment_num": 2101,
+                                "success": true,
+                                "failed_segments": [],
+                                "timestamp": "2025-11-03 16:51:00"
+                            },
+                            "video": {
+                                "type": "video",
+                                "total": 2131,
+                                "current": 2131,
+                                "percentage": 100.0,
+                                "segment_num": 2125,
+                                "success": true,
+                                "failed_segments": [],
+                                "timestamp": "2025-11-03 16:51:49"
+                            }
+                        },
+                        "status": "completed",
+                        "name": "Oscillations_01__Feel_of_SHM__Rescheduled_at_0830_AM__NO_DPP_",
+                        "out_dir": "/data/data/com.termux/files/home/pwdlv3/webdl",
+                        "id": "68b7ea1c18f010ab787a2fc9",
+                        "batch_name": "678b4cf5a3a368218a2b16e7",
+                        "topic_name": null,
+                        "lecture_url": null,
+                        "client_id": "wooderin",
+                        "session_id": "3_11_2025__10_18_18_pm.wooderin",
+                        "url": "/get-file/338db4f6-bf6a-4171-9856-da4f64c00019/Oscillations_01__Feel_of_SHM__Rescheduled_at_0830_AM__NO_DPP_"
+                    }
+                },
+                "name": "invitations-cancel",
+                "timestamp": "2025-11-03 22:18:19"
+            }
+        }
+    }
+}

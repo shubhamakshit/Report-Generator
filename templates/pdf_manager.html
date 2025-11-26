@@ -4,6 +4,13 @@
 
 {% block styles %}
 <style>
+    .table-container {
+        max-height: 60vh; /* Adjust as needed */
+        overflow-y: auto;
+        border: 1px solid #495057;
+        border-radius: .25rem;
+    }
+
     .filename-col {
         max-width: 250px;
         white-space: normal;
@@ -61,40 +68,41 @@
 {% endblock %}
 
 {% block content %}
-<div class="container mt-4">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1>PDF Manager</h1>
-        <div>
+<div class="container-fluid mt-4" style="width: 90%; margin: auto;">
+    <!-- Header & Actions -->
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+        <h1 class="mb-0">PDF Manager</h1>
+        <div class="d-flex flex-wrap gap-2">
             {% if all_view %}
-            <a href="/pdf_manager" class="btn btn-info">Show Folders</a>
-        {% else %}
-            <a href="/pdf_manager?view=all" class="btn btn-info">Show All PDFs</a>
-        {% endif %}
-            <button class="btn btn-primary" id="create-folder-btn">Create New Folder</button>
-            <a href="/upload_final_pdf" class="btn btn-success">Upload Final PDF</a>
-            <a href="/" class="btn btn-primary">New Upload</a>
-            <button class="btn btn-outline-info" data-bs-toggle="modal" data-bs-target="#shortcutsModal">Shortcuts (?)</button>
-        </div>
-    </div>    <!-- Search Bar -->
-    <form method="get" action="/pdf_manager" class="mb-4">
-        <div class="input-group">
-            <input type="text" class="form-control" name="search" placeholder="Search by subject, tags, or notes..." value="{{ search_query or '' }}">
-            <button class="btn btn-primary" type="submit">Search</button>
-            {% if search_query %}
-            <a href="{{ url_for('main.pdf_manager') }}" class="btn btn-outline-secondary">Clear</a>
+                <a href="/pdf_manager" class="btn btn-info">Show Folders</a>
+            {% else %}
+                <a href="/pdf_manager?view=all" class="btn btn-info">Show All PDFs</a>
             {% endif %}
+            <button class="btn btn-primary" id="create-folder-btn">Create Folder</button>
+            <a href="/upload_final_pdf" class="btn btn-success">Upload</a>
+            <button class="btn btn-outline-info" data-bs-toggle="modal" data-bs-target="#shortcutsModal">?</button>
         </div>
-        <div class="form-check mt-2">
-            <input class="form-check-input" type="checkbox" name="recursive" value="true" id="recursive-search-checkbox" {% if recursive %}checked{% endif %}>
-            <label class="form-check-label" for="recursive-search-checkbox">
-                Recursive Search
-            </label>
+    </div>
+
+    <!-- Bulk Actions -->
+    <div class="d-flex flex-wrap justify-content-end align-items-center gap-2 mb-3">
+        <div class="form-check me-3">
+            <input type="checkbox" class="form-check-input" id="select-all-checkbox">
+            <label class="form-check-label" for="select-all-checkbox">Select All</label>
         </div>
-    </form>
+        <button class="btn btn-info" id="bulk-persist-btn" disabled>Toggle Persist</button>
+        <button class="btn btn-primary" id="bulk-merge-btn" disabled>Merge Selected</button>
+        <button class="btn btn-success" id="bulk-download-btn" disabled>Download Selected</button>
+        <button class="btn btn-warning" id="bulk-move-btn" disabled>Move Selected</button>
+        <button class="btn btn-warning" id="bulk-edit-btn" disabled>Edit</button>
+        <button class="btn btn-primary" id="bulk-rename-btn" disabled>Rename</button>
+        <button class="btn btn-danger" id="bulk-delete-btn" disabled>Delete Selected</button>
+        <button class="btn btn-secondary" id="bulk-print-btn" disabled>Print Selected</button>
+    </div>
 
     {% if not all_view %}
     <!-- Breadcrumbs -->
-    <nav aria-label="breadcrumb">
+    <nav aria-label="breadcrumb" class="mb-3">
         <ol class="breadcrumb">
             <li class="breadcrumb-item"><a href="/pdf_manager">Home</a></li>
             {% for item in breadcrumbs %}
@@ -104,74 +112,77 @@
     </nav>
     {% endif %}
 
-    <!-- Bulk Actions -->
-    <div class="d-flex justify-content-end align-items-center mb-3">
-        <button class="btn btn-info me-2" id="bulk-persist-btn" disabled>Toggle Persist</button>
-        <button class="btn btn-primary me-2" id="bulk-merge-btn" disabled>Merge Selected</button>
-        <button class="btn btn-success me-2" id="bulk-download-btn" disabled>Download Selected</button>
-        <button class="btn btn-warning me-2" id="bulk-move-btn" disabled>Move Selected</button>
-        <button class="btn btn-warning me-2" id="bulk-edit-btn" disabled>Edit</button>
-        <button class="btn btn-primary me-2" id="bulk-rename-btn" disabled>Rename</button>
-        <button class="btn btn-danger" id="bulk-delete-btn" disabled>Delete Selected</button>
-        <button class="btn btn-secondary" id="bulk-print-btn" disabled>Print Selected</button>
-    </div>
-
     <form id="pdf-print-form" action="/print_pdfs" method="post" target="_blank">
-        <div class="card bg-dark text-white mb-4">
-        <div class="card-header">
-            <h2 class="h4 mb-0">Files</h2>
+    <div class="row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-4 g-4">
+        {% if not all_view %}
+        <!-- Folders -->
+        {% for folder in subfolders %}
+        <div class="col">
+            <div class="card h-100 bg-dark text-white border-secondary folder-card" data-path="{{ (breadcrumbs|map(attribute='path')|list)|last if breadcrumbs else '' }}/{{ folder.name }}">
+                <div class="card-body text-center">
+                    <i class="bi bi-folder-fill fs-1 text-primary"></i>
+                    <h5 class="card-title mt-2">{{ folder.name }}</h5>
+                    <p class="card-text text-muted">{{ folder.created_at.strftime('%Y-%m-%d %I:%M %p') }}</p>
+                </div>
+                <div class="card-footer text-center">
+                    <input type="checkbox" class="form-check-input item-checkbox" data-item-type="folder" value="{{ folder.id }}">
+                </div>
+            </div>
         </div>
-        <div class="card-body">
-            <div class="table-responsive">
-                <table class="table table-dark table-hover" id="file-manager-table">
-                    <thead>
-                        <tr>
-                            <th><input type="checkbox" id="select-all-checkbox"></th>
-                            <th>Name</th>
-                            <th>Subject</th>
-                            <th>Tags</th>
-                            <th>Created At</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% if not all_view %}
-                        <!-- Folders -->
-                        {% for folder in subfolders %}
-                        <tr class="folder-row" data-path="{{ (breadcrumbs|map(attribute='path')|list)|last if breadcrumbs else '' }}/{{ folder.name }}">
-                            <td><input type="checkbox" class="item-checkbox" data-item-type="folder" value="{{ folder.id }}"></td>
-                            <td class="editable" data-item-type="folder" data-item-id="{{ folder.id }}" data-current-name="{{ folder.name }}"><i class="bi bi-folder-fill"></i> {{ folder.name }}</td>
-                            <td></td>
-                            <td></td>
-                            <td>{{ folder.created_at }}</td>
-                        </tr>
-                        {% endfor %}
+        {% endfor %}
+        {% endif %}
+
+        <!-- PDFs -->
+        {% for pdf in pdfs %}
+        <div class="col">
+            <div class="card h-100 bg-dark text-white border-secondary pdf-card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <div>
+                        <i class="bi bi-file-earmark-text me-2"></i>
+                        <a href="/view_pdf/{{ pdf.filename }}" target="_blank" class="text-white text-decoration-none">
+                            <span class="fw-bold">{{ pdf.subject }}</span>
+                        </a>
+                        <a href="intent://{{ request.host }}{{ url_for('main.download_file', filename=pdf.filename) }}#Intent;scheme={{ request.scheme }};action=android.intent.action.VIEW;type=application/pdf;end"
+                           class="ms-2 text-white text-decoration-none"
+                           title="Open in external app"
+                           style="display: inline-block; vertical-align: middle;"
+                           target="_blank">
+                            <i class="bi bi-phone ms-1"></i>
+                        </a>
+                    </div>
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input item-checkbox" data-item-type="pdf" value="{{ pdf.id }}" style="z-index: 2; position: relative;">
+                    </div>
+                </div>
+                <div class="card-body">
+                    <p class="card-text small text-muted">
+                        {{ pdf.filename }}
+                        <a href="intent://{{ request.host }}{{ url_for('main.download_file', filename=pdf.filename) }}#Intent;scheme={{ request.scheme }};action=android.intent.action.VIEW;type=application/pdf;end"
+                           class="ms-1 text-muted text-decoration-none"
+                           title="Open in external app"
+                           style="display: inline-block; vertical-align: middle;"
+                           target="_blank">
+                            <i class="bi bi-phone"></i>
+                        </a>
+                    </p>
+                    <p class="card-text">
+                        {% if pdf.tags %}
+                            {% for tag in pdf.tags.split(',') %}
+                                <a href="{{ url_for('main.pdf_manager', search=tag.strip()) }}" class="badge bg-secondary text-decoration-none">{{ tag.strip() }}</a>
+                            {% endfor %}
                         {% endif %}
-                        
-                        <!-- PDFs -->
-                        {% for pdf in pdfs %}
-                        <tr class="pdf-row">
-                            <td><input type="checkbox" class="item-checkbox" data-item-type="pdf" value="{{ pdf.id }}"></td>
-                            <td class="filename-col editable" data-item-type="pdf" data-item-id="{{ pdf.id }}" data-current-name="{{ pdf.filename }}">
-                                {% if pdf.persist %}<i class="bi bi-pin-angle-fill"></i>{% endif %}
-                                <a href="/view_pdf/{{ pdf.filename }}" target="_blank">{{ pdf.filename }}</a>
-                            </td>
-                            <td>{{ pdf.subject }}</td>
-                            <td>
-                                {% if pdf.tags %}
-                                    {% for tag in pdf.tags.split(',') %}
-                                        <a href="{{ url_for('main.pdf_manager', search=tag.strip()) }}" class="badge bg-secondary text-decoration-none">{{ tag.strip() }}</a>
-                                    {% endfor %}
-                                {% endif %}
-                            </td>
-                            <td>{{ pdf.created_at }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+                    </p>
+                </div>
+                <div class="card-footer d-flex justify-content-between align-items-center">
+                    <small class="text-muted">{{ pdf.created_at.strftime('%Y-%m-%d %I:%M %p') }}</small>
+                    <span>
+                        {% if pdf.persist %}<i class="bi bi-pin-angle-fill text-primary" title="Persisted"></i>{% endif %}
+                    </span>
+                </div>
             </div>
         </div>
-            </div>
-        </div>
+        {% endfor %}
+    </div>
     </form>
     
     <!-- Modals --><!-- Create Folder Modal -->
@@ -317,22 +328,28 @@
         const selectAllCheckbox = document.getElementById('select-all-checkbox');
         const itemCheckboxes = document.querySelectorAll('.item-checkbox');
 
-        function getSelectedItems() {
-            return Array.from(itemCheckboxes).filter(cb => cb.checked);
+        function getSelectedItems(type = null) {
+            let items = Array.from(itemCheckboxes).filter(cb => cb.checked);
+            if (type) {
+                items = items.filter(cb => cb.dataset.itemType === type);
+            }
+            return items;
         }
 
         function updateBulkButtons() {
             const selectedItems = getSelectedItems();
             const selectedCount = selectedItems.length;
-            
+            const selectedPdfs = getSelectedItems('pdf');
+            const selectedFolders = getSelectedItems('folder');
+
             document.getElementById('bulk-persist-btn').disabled = selectedCount === 0;
-            document.getElementById('bulk-download-btn').disabled = selectedCount === 0 || selectedItems.some(cb => cb.dataset.itemType === 'folder');
+            document.getElementById('bulk-download-btn').disabled = selectedPdfs.length === 0;
             document.getElementById('bulk-move-btn').disabled = selectedCount === 0;
-            document.getElementById('bulk-print-btn').disabled = selectedCount === 0 || selectedItems.some(cb => cb.dataset.itemType === 'folder');
+            document.getElementById('bulk-print-btn').disabled = selectedPdfs.length === 0;
             bulkDeleteBtn.disabled = selectedCount === 0;
-            bulkMergeBtn.disabled = selectedItems.filter(cb => cb.dataset.itemType === 'pdf').length < 2;
+            bulkMergeBtn.disabled = selectedPdfs.length < 2;
             bulkRenameBtn.disabled = selectedCount !== 1;
-            bulkEditBtn.disabled = selectedCount === 0 || selectedItems.some(cb => cb.dataset.itemType === 'folder');
+            bulkEditBtn.disabled = selectedPdfs.length === 0;
         }
 
         selectAllCheckbox.addEventListener('change', e => {
@@ -344,72 +361,90 @@
             cb.addEventListener('change', updateBulkButtons);
         });
 
-        document.querySelectorAll('.folder-row').forEach(row => {
-            row.addEventListener('click', e => {
-                if (e.target.matches('input[type="checkbox"]')) return;
-                if (e.target.closest('.dropdown')) return;
-                if (e.target.closest('td.editable')) {
-                    window.location.href = `/pdf_manager/browse/${row.dataset.path}`;
-                } else {
-                    const checkbox = row.querySelector('.item-checkbox');
+        document.querySelectorAll('.folder-card').forEach(card => {
+            card.addEventListener('click', e => {
+                // If the click target is the folder name link, let the link handle it
+                if (e.target.closest('.card-title a')) {
+                    return;
+                }
+                // Otherwise, toggle the checkbox
+                const checkbox = card.querySelector('.item-checkbox');
+                if (checkbox) {
                     checkbox.checked = !checkbox.checked;
                     checkbox.dispatchEvent(new Event('change'));
                 }
             });
         });
 
-        document.querySelectorAll('.pdf-row').forEach(row => {
-            row.addEventListener('click', e => {
-                if (e.target.tagName === 'A' || e.target.closest('.dropdown') || e.target.matches('input[type="checkbox"]')) return;
-                const checkbox = row.querySelector('.item-checkbox');
-                checkbox.checked = !checkbox.checked;
-                checkbox.dispatchEvent(new Event('change'));
+        // Make the folder name itself a clickable link
+        document.querySelectorAll('.folder-card .card-title').forEach(title => {
+            const card = title.closest('.folder-card');
+            const folderPath = card.dataset.path;
+            title.innerHTML = `<a href="/pdf_manager/browse/${folderPath}" class="text-white text-decoration-none">${title.textContent}</a>`;
+        });
+
+        document.querySelectorAll('.pdf-card').forEach(card => {
+            card.addEventListener('click', e => {
+                // If the click target is the link itself or a child of the link, let the link handle it
+                if (e.target.closest('a.text-decoration-none')) {
+                    return;
+                }
+                // Otherwise, toggle the checkbox
+                const checkbox = card.querySelector('.item-checkbox');
+                if (checkbox) {
+                    checkbox.checked = !checkbox.checked;
+                    checkbox.dispatchEvent(new Event('change'));
+                }
+            });
+        });
+
+        document.querySelectorAll('.pdf-card .form-check-input').forEach(checkbox => {
+            checkbox.addEventListener('click', e => {
+                e.stopPropagation(); // Prevent the card's link from firing
             });
         });
 
         bulkRenameBtn.addEventListener('click', () => {
             const selectedItems = getSelectedItems();
             if (selectedItems.length !== 1) return;
-
             const checkbox = selectedItems[0];
-            const cellToEdit = document.querySelector(`.editable[data-item-id='${checkbox.value}'][data-item-type='${checkbox.dataset.itemType}']`);
-            
-            if (cellToEdit) {
-                const currentName = cellToEdit.dataset.currentName;
-                cellToEdit.innerHTML = `<input type="text" class="editable-input" value="${currentName}" />`;
-                const input = cellToEdit.querySelector('input');
-                input.focus();
-                input.select();
+            const card = checkbox.closest('.card');
+            const titleElement = card.querySelector('.card-title') || card.querySelector('.fw-bold');
+            const currentName = titleElement.textContent.trim();
 
-                const saveChanges = async () => {
-                    const newName = input.value;
-                    if (newName && newName !== currentName) {
-                        const response = await fetch('/rename_item', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                item_type: checkbox.dataset.itemType,
-                                item_id: checkbox.value,
-                                new_name: newName
-                            })
-                        });
-                        if (response.ok) {
-                            location.reload();
-                        } else {
-                            alert('Failed to rename.');
-                            cellToEdit.innerHTML = currentName;
-                        }
+            titleElement.innerHTML = `<input type="text" class="editable-input" value="${currentName}" />`;
+            const input = titleElement.querySelector('input');
+            input.focus();
+            input.select();
+
+            const saveChanges = async () => {
+                const newName = input.value;
+                if (newName && newName !== currentName) {
+                    const response = await fetch('/rename_item', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            item_type: checkbox.dataset.itemType,
+                            item_id: checkbox.value,
+                            new_name: newName
+                        })
+                    });
+                    if (response.ok) {
+                        location.reload();
                     } else {
-                        cellToEdit.innerHTML = currentName;
+                        alert('Failed to rename.');
+                        titleElement.textContent = currentName;
                     }
-                };
+                } else {
+                    titleElement.textContent = currentName;
+                }
+            };
 
-                input.addEventListener('blur', saveChanges);
-                input.addEventListener('keydown', e => {
-                    if (e.key === 'Enter') saveChanges();
-                    if (e.key === 'Escape') cellToEdit.innerHTML = currentName;
-                });
-            }
+            input.addEventListener('blur', saveChanges);
+            input.addEventListener('keydown', e => {
+                if (e.key === 'Enter') saveChanges();
+                if (e.key === 'Escape') titleElement.textContent = currentName;
+            });
         });
 
         bulkDeleteBtn.addEventListener('click', async () => {
@@ -418,8 +453,8 @@
 
             if (!confirm(`Are you sure you want to delete ${selectedItems.length} selected item(s)?`)) return;
 
-            const foldersToDelete = selectedItems.filter(cb => cb.dataset.itemType === 'folder').map(cb => cb.value);
-            const pdfsToDelete = selectedItems.filter(cb => cb.dataset.itemType === 'pdf').map(cb => cb.value);
+            const foldersToDelete = getSelectedItems('folder').map(cb => cb.value);
+            const pdfsToDelete = getSelectedItems('pdf').map(cb => cb.value);
 
             let allSucceeded = true;
 
@@ -447,26 +482,18 @@
         });
 
         bulkMergeBtn.addEventListener('click', async () => {
-            const selectedPdfIds = getSelectedItems()
-                .filter(cb => cb.dataset.itemType === 'pdf')
-                .map(cb => cb.value);
-
+            const selectedPdfIds = getSelectedItems('pdf').map(cb => cb.value);
             if (selectedPdfIds.length < 2) {
                 alert('Please select at least two PDFs to merge.');
                 return;
             }
-
             const response = await fetch('/merge_pdfs', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ pdf_ids: selectedPdfIds })
             });
-
-            if (response.ok) {
-                location.reload();
-            } else {
-                alert('Failed to merge PDFs.');
-            }
+            if (response.ok) location.reload();
+            else alert('Failed to merge PDFs.');
         });
 
         const editModalEl = document.getElementById('editModal');
@@ -477,34 +504,17 @@
         function initializeTomSelect() {
             if (subjectSelect) subjectSelect.destroy();
             if (tagsSelect) tagsSelect.destroy();
-
-            subjectSelect = new TomSelect('#edit-subject',{
-                create: true,
-                persist: false,
-                options: allSubjects,
-                dropdownParent: 'body'
-            });
-
-            tagsSelect = new TomSelect('#edit-tags',{
-                persist: false,
-                createOnBlur: true,
-                create: true,
-                plugins: ['remove_button'],
-                options: allTags,
-                dropdownParent: 'body'
-            });
+            subjectSelect = new TomSelect('#edit-subject',{ create: true, persist: false, options: allSubjects, dropdownParent: 'body' });
+            tagsSelect = new TomSelect('#edit-tags',{ persist: false, createOnBlur: true, create: true, plugins: ['remove_button'], options: allTags, dropdownParent: 'body' });
         }
 
         function populateEditModal(index) {
             const pdf = editData[index];
             document.getElementById('edit-pdf-id').value = pdf.id;
-            
             subjectSelect.setValue(pdf.subject || '');
             tagsSelect.setValue((pdf.tags || '').split(',').map(t => t.trim()).filter(t => t));
-            
             document.getElementById('edit-notes').value = pdf.notes || '';
             document.getElementById('edit-filename').value = pdf.filename || '';
-            
             if (editData.length > 1) {
                 document.getElementById('edit-carousel-nav').style.display = 'flex';
                 document.getElementById('edit-carousel-indicator').textContent = `${index + 1} / ${editData.length}`;
@@ -514,20 +524,14 @@
         }
 
         bulkEditBtn.addEventListener('click', async () => {
-            const selectedItems = getSelectedItems().filter(cb => cb.dataset.itemType === 'pdf');
+            const selectedItems = getSelectedItems('pdf');
             if (selectedItems.length === 0) return;
-
             await fetchSubjectsAndTags();
-
             editData = [];
             for (const item of selectedItems) {
                 const response = await fetch(`/get_pdf_details/${item.value}`);
-                if (response.ok) {
-                    const data = await response.json();
-                    editData.push(data);
-                }
+                if (response.ok) editData.push(await response.json());
             }
-
             if (editData.length > 0) {
                 currentEditIndex = 0;
                 initializeTomSelect();
@@ -558,16 +562,13 @@
                     tags: tagsSelect.getValue(),
                     notes: document.getElementById('edit-notes').value,
                 };
-
                 const response = await fetch(`/update_pdf_details/${pdfId}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(updatedData)
                 });
-
                 if (response.ok) {
                     editData[currentEditIndex] = { ...editData[currentEditIndex], ...updatedData };
-                    
                     if (currentEditIndex === editData.length - 1) {
                         editModal.hide();
                         location.reload();
@@ -576,8 +577,7 @@
                         populateEditModal(currentEditIndex);
                     }
                 } else {
-                    const error = await response.json();
-                    alert(`Failed to save changes: ${error.error}`);
+                    alert(`Failed to save changes: ${(await response.json()).error}`);
                 }
             } catch (error) {
                 alert(`An error occurred: ${error}`);
@@ -587,46 +587,34 @@
         function renderFolderTree(folders, container, level = 0) {
             const ul = document.createElement('ul');
             ul.className = 'list-group';
-            if (level > 0) {
-                ul.style.display = 'none';
-            }
+            if (level > 0) ul.style.display = 'none';
             container.appendChild(ul);
-
             folders.forEach(folder => {
                 const li = document.createElement('li');
                 li.className = 'list-group-item list-group-item-action bg-dark text-white';
                 li.style.paddingLeft = `${level * 20 + 12}px`;
                 li.dataset.folderId = folder.id;
-
-                let icon = '<i class="bi bi-folder"></i>';
-                if (folder.children && folder.children.length > 0) {
-                    icon = '<i class="bi bi-chevron-right"></i>';
-                }
+                let icon = folder.children && folder.children.length > 0 ? '<i class="bi bi-chevron-right"></i>' : '<i class="bi bi-folder"></i>';
                 li.innerHTML = `${icon} ${folder.name}`;
-
                 li.addEventListener('click', e => {
                     e.stopPropagation();
                     document.querySelectorAll('#folder-tree-move .list-group-item').forEach(item => item.classList.remove('active'));
                     li.classList.add('active');
                     selectedFolderId = folder.id;
-
                     const childUl = li.querySelector('ul');
                     if (childUl) {
+                        const iconEl = li.querySelector('i');
                         if (childUl.style.display === 'none') {
                             childUl.style.display = 'block';
-                            li.querySelector('i').classList.replace('bi-chevron-right', 'bi-chevron-down');
+                            iconEl.classList.replace('bi-chevron-right', 'bi-chevron-down');
                         } else {
                             childUl.style.display = 'none';
-                            li.querySelector('i').classList.replace('bi-chevron-down', 'bi-chevron-right');
+                            iconEl.classList.replace('bi-chevron-down', 'bi-chevron-right');
                         }
                     }
                 });
-
                 ul.appendChild(li);
-
-                if (folder.children) {
-                    renderFolderTree(folder.children, li, level + 1);
-                }
+                if (folder.children) renderFolderTree(folder.children, li, level + 1);
             });
         }
 
@@ -651,62 +639,39 @@
 
         document.getElementById('create-subfolder-btn').addEventListener('click', async () => {
             const newFolderName = document.getElementById('new-subfolder-name').value;
-            if (!newFolderName) {
-                alert('Please enter a name for the new subfolder.');
-                return;
-            }
+            if (!newFolderName) return alert('Please enter a name for the new subfolder.');
             const response = await fetch('/create_folder', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ new_folder_name: newFolderName, parent_id: selectedFolderId })
             });
-            if (response.ok) {
-                location.reload();
-            } else {
-                alert('Failed to create subfolder.');
-            }
+            if (response.ok) location.reload();
+            else alert('Failed to create subfolder.');
         });
 
         document.getElementById('move-confirm-btn').addEventListener('click', async () => {
-            const selectedItems = getSelectedItems();
-            const pdfIdsToMove = selectedItems.filter(cb => cb.dataset.itemType === 'pdf').map(cb => cb.value);
-            
-            if(pdfIdsToMove.length === 0) {
-                alert("No PDFs selected to move.");
-                return;
-            }
-
+            const pdfIdsToMove = getSelectedItems('pdf').map(cb => cb.value);
+            if(pdfIdsToMove.length === 0) return alert("No PDFs selected to move.");
             const response = await fetch('/bulk_move_pdfs', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ids: pdfIdsToMove, target_folder_id: selectedFolderId })
             });
-            if (response.ok) {
-                location.reload();
-            } else {
-                alert('Failed to move files.');
-            }
+            if (response.ok) location.reload();
+            else alert('Failed to move files.');
         });
         
-        document.getElementById('create-folder-btn').addEventListener('click', () => {
-            new bootstrap.Modal(document.getElementById('createFolderModal')).show();
-        });
-
-        document.getElementById('create-folder-confirm-btn').addEventListener('click', createNewFolder);
-
-        async function createNewFolder() {
+        document.getElementById('create-folder-btn').addEventListener('click', () => new bootstrap.Modal(document.getElementById('createFolderModal')).show());
+        document.getElementById('create-folder-confirm-btn').addEventListener('click', async () => {
             const newFolderName = document.getElementById('newFolderName').value;
             const response = await fetch('/create_folder', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ new_folder_name: newFolderName, parent_id: currentFolderId })
             });
-            if (response.ok) {
-                location.reload();
-            } else {
-                alert('Failed to create folder.');
-            }
-        }
+            if (response.ok) location.reload();
+            else alert('Failed to create folder.');
+        });
         
         document.getElementById('bulk-persist-btn').addEventListener('click', async () => {
             const selectedIds = getSelectedItems().map(cb => cb.value);
@@ -715,15 +680,12 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ids: selectedIds })
             });
-            if (response.ok) {
-                location.reload();
-            } else {
-                alert('Failed to toggle persistence.');
-            }
+            if (response.ok) location.reload();
+            else alert('Failed to toggle persistence.');
         });
 
         document.getElementById('bulk-download-btn').addEventListener('click', async () => {
-            const selectedIds = getSelectedItems().filter(cb => cb.dataset.itemType === 'pdf').map(cb => cb.value);
+            const selectedIds = getSelectedItems('pdf').map(cb => cb.value);
             const response = await fetch('/bulk_download_pdfs', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -744,64 +706,70 @@
             }
         });
 
-        document.getElementById('bulk-print-btn').addEventListener('click', () => {
-            const form = document.getElementById('pdf-print-form');
-            const selectedItems = getSelectedItems().filter(cb => cb.dataset.itemType === 'pdf');
-            
-            const existingInputs = form.querySelectorAll('input[name="pdf_ids"]');
-            existingInputs.forEach(input => input.remove());
-
-            if (selectedItems.length > 0) {
-                selectedItems.forEach(item => {
-                    const input = document.createElement('input');
-                    input.type = 'hidden';
-                    input.name = 'pdf_ids';
-                    input.value = item.value;
-                    form.appendChild(input);
-                });
-                form.submit();
-            } else {
+        document.getElementById('bulk-print-btn').addEventListener('click', async (e) => {
+            e.preventDefault();
+            const selectedItems = getSelectedItems('pdf');
+            if (selectedItems.length === 0) {
                 alert('Please select at least one PDF to print.');
+                return;
+            }
+
+            const formData = new FormData();
+            selectedItems.forEach(item => {
+                formData.append('pdf_ids', item.value);
+            });
+
+            try {
+                const response = await fetch('/print_pdfs', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    window.open(result.url, '_blank');
+                } else {
+                    alert(`Failed to generate PDF for printing: ${result.error}`);
+                }
+            } catch (error) {
+                console.error('Error printing PDFs:', error);
+                alert('An unexpected error occurred while printing.');
             }
         });
 
         updateBulkButtons();
 
-        const tableRows = Array.from(document.querySelectorAll('#file-manager-table tbody tr'));
+        const cards = Array.from(document.querySelectorAll('.col'));
         let currentRowIndex = -1;
         const shortcutsModal = new bootstrap.Modal(document.getElementById('shortcutsModal'));
 
         function highlightRow(index) {
-            tableRows.forEach(row => row.classList.remove('highlighted-row'));
-            if (index >= 0 && index < tableRows.length) {
-                tableRows[index].classList.add('highlighted-row');
-                tableRows[index].scrollIntoView({ block: 'nearest' });
+            cards.forEach(card => card.querySelector('.card')?.classList.remove('border-primary'));
+            if (index >= 0 && index < cards.length) {
+                const card = cards[index].querySelector('.card');
+                card.classList.add('border-primary');
+                card.scrollIntoView({ block: 'center', behavior: 'smooth' });
             }
         }
 
         document.addEventListener('keydown', (e) => {
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
-                return;
-            }
-
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
             const isModalOpen = document.querySelector('.modal.show');
             if (isModalOpen && e.key !== 'Escape') {
-                e.preventDefault();
                 if (e.key === '?') shortcutsModal.hide();
                 return;
             }
 
             switch (e.key) {
-                case 'j':
-                case 'ArrowDown':
+                case 'j': case 'ArrowDown':
                     e.preventDefault();
-                    if (currentRowIndex < tableRows.length - 1) {
+                    if (currentRowIndex < cards.length - 1) {
                         currentRowIndex++;
                         highlightRow(currentRowIndex);
                     }
                     break;
-                case 'k':
-                case 'ArrowUp':
+                case 'k': case 'ArrowUp':
                     e.preventDefault();
                     if (currentRowIndex > 0) {
                         currentRowIndex--;
@@ -811,7 +779,7 @@
                 case 'x':
                     e.preventDefault();
                     if (currentRowIndex >= 0) {
-                        const checkbox = tableRows[currentRowIndex].querySelector('.item-checkbox');
+                        const checkbox = cards[currentRowIndex].querySelector('.item-checkbox');
                         if (checkbox) {
                             checkbox.checked = !checkbox.checked;
                             checkbox.dispatchEvent(new Event('change'));
@@ -826,14 +794,12 @@
                 case 'Enter':
                     e.preventDefault();
                     if (currentRowIndex >= 0) {
-                        const row = tableRows[currentRowIndex];
-                        if (row.classList.contains('folder-row')) {
-                            window.location.href = `/pdf_manager/browse/${row.dataset.path}`;
+                        const card = cards[currentRowIndex].querySelector('.card');
+                        if (card.classList.contains('folder-card')) {
+                            window.location.href = `/pdf_manager/browse/${card.dataset.path}`;
                         } else {
-                            const link = row.querySelector('a[target="_blank"]');
-                            if (link) {
-                                link.click();
-                            }
+                            const link = card.querySelector('a.stretched-link');
+                            if (link) link.click();
                         }
                     }
                     break;
@@ -841,8 +807,7 @@
                     e.preventDefault();
                     if (!bulkEditBtn.disabled) bulkEditBtn.click();
                     break;
-                case 'd':
-                case 'Delete':
+                case 'd': case 'Delete':
                     e.preventDefault();
                     if (!bulkDeleteBtn.disabled) bulkDeleteBtn.click();
                     break;
@@ -858,7 +823,7 @@
             }
         });
 
-        if (tableRows.length > 0) {
+        if (cards.length > 0) {
             currentRowIndex = 0;
             highlightRow(currentRowIndex);
         }

@@ -25,23 +25,43 @@
                 </div>
             </div>
 
+            <!-- Tag Filter -->
+            <div class="mb-3">
+                <strong>Filter by Tag:</strong>
+                <span id="tag-filter-chips">
+                    <button class="btn btn-sm btn-outline-light active" data-tag="all">All</button>
+                    {% for tag in all_tags %}
+                    <button class="btn btn-sm btn-outline-info" data-tag="{{ tag }}">{{ tag }}</button>
+                    {% endfor %}
+                </span>
+            </div>
+
+            <!-- Bulk Actions -->
+            <div class="mb-3">
+                <button class="btn btn-danger" id="delete-selected-btn">Delete Selected</button>
+            </div>
+
             <!-- Questions Table -->
             <div class="table-responsive">
                 <table class="table table-dark table-hover">
                     <thead>
                         <tr>
+                            <th><input type="checkbox" id="select-all-checkbox"></th>
                             <th>Question Text</th>
                             <th>Chapter</th>
                             <th>Subject</th>
+                            <th>Tags</th>
                             <th>Action</th>
                         </tr>
                     </thead>
                     <tbody id="questions-table-body">
                         {% for q in questions %}
-                        <tr data-chapter="{{ q.chapter }}">
+                        <tr data-chapter="{{ q.chapter }}" data-tags="{{ q.tags or '' }}">
+                            <td><input type="checkbox" class="question-checkbox" data-id="{{ q.id }}"></td>
                             <td>{{ q.question_text_plain }}</td>
                             <td class="chapter-cell">{{ q.chapter }}</td>
                             <td class="subject-cell">{{ q.subject }}</td>
+                            <td>{{ q.tags }}</td>
                             <td>
                                 <button class="btn btn-sm btn-primary edit-btn" 
                                         data-id="{{ q.id }}" 
@@ -82,7 +102,11 @@
                     </div>
                     <div class="mb-3">
                         <label for="edit-subject" class="form-label">Subject</label>
-                        <input type="text" class="form-control bg-secondary text-white" id="edit-subject" required>
+                        <select class="form-select bg-secondary text-white" id="edit-subject" required>
+                            {% for subject in available_subjects %}
+                            <option value="{{ subject }}">{{ subject }}</option>
+                            {% endfor %}
+                        </select>
                     </div>
                 </form>
             </div>
@@ -146,8 +170,11 @@ document.addEventListener('DOMContentLoaded', function () {
     // --- Filtering Logic ---
     const searchInput = document.getElementById('search-input');
     const chapterFilter = document.getElementById('chapter-filter');
+    const tagFilterChips = document.getElementById('tag-filter-chips');
     const tableBody = document.getElementById('questions-table-body');
     const rows = tableBody.getElementsByTagName('tr');
+
+    let activeTag = 'all';
 
     function filterTable() {
         const searchText = searchInput.value.toLowerCase();
@@ -156,12 +183,14 @@ document.addEventListener('DOMContentLoaded', function () {
         for (let i = 0; i < rows.length; i++) {
             const row = rows[i];
             const chapter = row.dataset.chapter;
+            const tags = (row.dataset.tags || '').split(',').map(t => t.trim());
             const text = row.textContent || row.innerText;
             
             const chapterMatch = (selectedChapter === 'all' || chapter === selectedChapter);
             const searchMatch = (text.toLowerCase().indexOf(searchText) > -1);
+            const tagMatch = (activeTag === 'all' || tags.includes(activeTag));
 
-            if (chapterMatch && searchMatch) {
+            if (chapterMatch && searchMatch && tagMatch) {
                 row.style.display = "";
             } else {
                 row.style.display = "none";
@@ -171,6 +200,57 @@ document.addEventListener('DOMContentLoaded', function () {
 
     searchInput.addEventListener('keyup', filterTable);
     chapterFilter.addEventListener('change', filterTable);
+    tagFilterChips.addEventListener('click', (e) => {
+        if (e.target.tagName === 'BUTTON') {
+            tagFilterChips.querySelectorAll('button').forEach(btn => btn.classList.remove('active'));
+            e.target.classList.add('active');
+            activeTag = e.target.dataset.tag;
+            filterTable();
+        }
+    });
+
+    // --- Bulk Actions ---
+    const selectAllCheckbox = document.getElementById('select-all-checkbox');
+    const questionCheckboxes = document.querySelectorAll('.question-checkbox');
+    const deleteSelectedBtn = document.getElementById('delete-selected-btn');
+
+    selectAllCheckbox.addEventListener('change', (e) => {
+        questionCheckboxes.forEach(checkbox => {
+            checkbox.checked = e.target.checked;
+        });
+    });
+
+    deleteSelectedBtn.addEventListener('click', async () => {
+        const selectedIds = Array.from(questionCheckboxes)
+            .filter(checkbox => checkbox.checked)
+            .map(checkbox => checkbox.dataset.id);
+
+        if (selectedIds.length === 0) {
+            alert('Please select at least one question to delete.');
+            return;
+        }
+
+        if (!confirm(`Are you sure you want to delete ${selectedIds.length} questions?`)) return;
+
+        try {
+            const response = await fetch('/classified/delete_many', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: selectedIds })
+            });
+            const result = await response.json();
+
+            if (result.success) {
+                selectedIds.forEach(id => {
+                    document.querySelector(`.question-checkbox[data-id='${id}']`).closest('tr').remove();
+                });
+            } else {
+                alert(`Error: ${result.error}`);
+            }
+        } catch (error) {
+            alert(`Request failed: ${error}`);
+        }
+    });
 
     document.querySelectorAll('.delete-btn').forEach(button => {
         button.addEventListener('click', async () => {

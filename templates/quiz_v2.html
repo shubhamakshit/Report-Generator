@@ -1,0 +1,236 @@
+{% extends "base.html" %}
+
+{% block title %}Quiz Mode{% endblock %}
+
+{% block head %}
+<style>
+    /* --- FORCE NO SCROLL ON PAGE --- */
+    body, html {
+        overflow: hidden;
+        height: 100%;
+        background-color: #212529;
+    }
+
+    /* --- MAIN CONTAINER (The Hammer) --- */
+    /* We force this to be exactly 88% of the screen height. 
+       The remaining 12% allows for the Navbar above it. */
+    .quiz-container {
+        height: 88dvh; 
+        max-height: 88dvh;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        margin: 0 auto;
+        background-color: #2b3035;
+    }
+
+    /* --- 1. TOP PROGRESS --- */
+    .progress-container {
+        height: 5px;
+        background-color: #343a40;
+        flex-shrink: 0;
+    }
+    .progress-bar {
+        height: 100%;
+        background-color: #0d6efd;
+        width: 0%;
+        transition: width 0.3s;
+    }
+
+    /* --- 2. MIDDLE IMAGE AREA (Flexible) --- */
+    .question-display {
+        flex: 1;           /* Fill all available space between progress and buttons */
+        min-height: 0;     /* CRITICAL: Allows this box to shrink if image is huge */
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 5px;
+        position: relative;
+        overflow: hidden;  /* Cut off anything spilling out */
+    }
+
+    .question-image {
+        max-width: 100%;
+        max-height: 100%;  /* Force image to fit INSIDE the .question-display box */
+        width: auto;
+        height: auto;
+        object-fit: contain; /* Maintain aspect ratio, never crop */
+        border-radius: 6px;
+    }
+
+    /* --- 3. BOTTOM CONTROLS (Fixed Height) --- */
+    .quiz-controls {
+        flex-shrink: 0; /* Never shrink buttons */
+        height: 70px;   /* Fixed height for stability */
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        align-items: center;
+        padding: 0 15px;
+        background-color: #212529;
+        border-top: 1px solid #495057;
+        /* Ensure it sits above everything */
+        z-index: 50;
+    }
+
+    /* --- DETAILS PANEL (Overlay style) --- */
+    .details-spoiler {
+        display: none;
+        background-color: #343a40;
+        border-top: 1px solid #6c757d;
+        max-height: 30%; /* Only take up 30% of container when open */
+        overflow-y: auto;
+        padding: 15px;
+        font-size: 0.9rem;
+        color: #e9ecef;
+    }
+
+    /* --- BUTTON STYLES --- */
+    .btn-pill { border-radius: 50px; }
+    
+    /* --- OVERLAYS --- */
+    .answer-overlay {
+        position: absolute;
+        top: 10px;
+        padding: 5px 10px;
+        border-radius: 15px;
+        color: white;
+        font-weight: bold;
+        font-size: 0.8rem;
+        z-index: 10;
+        display: none;
+        backdrop-filter: blur(2px);
+        box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+    }
+    #your-answer-overlay { left: 10px; background: rgba(13, 110, 253, 0.9); }
+    #correct-answer-overlay { right: 10px; background: rgba(25, 135, 84, 0.9); }
+
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="quiz-container">
+    <!-- 1. Progress -->
+    <div class="progress-container">
+        <div class="progress-bar" id="progress-bar"></div>
+    </div>
+
+    <!-- 2. Image (Will auto-resize to fit remaining space) -->
+    <div class="question-display">
+        <img src="" id="question-image" class="question-image" alt="Question">
+        <div id="your-answer-overlay" class="answer-overlay"></div>
+        <div id="correct-answer-overlay" class="answer-overlay"></div>
+    </div>
+
+    <!-- 3. Details (Hidden by default) -->
+    <div class="details-spoiler" id="details-spoiler">
+        <h6 class="text-white">Details</h6>
+        <div id="details-content"></div>
+    </div>
+
+    <!-- 4. Controls -->
+    <div class="quiz-controls">
+        <!-- Left -->
+        <div>
+            <button id="prev-btn" class="btn btn-secondary btn-sm btn-pill">
+                <i class="bi bi-arrow-left"></i> Prev
+            </button>
+        </div>
+        
+        <!-- Center -->
+        <div class="text-center">
+            <button id="spoiler-btn" class="btn btn-warning btn-sm btn-pill px-3">Check Answer</button>
+            <div id="question-counter" style="font-size: 11px; color: #adb5bd; margin-top: 2px;"></div>
+        </div>
+
+        <!-- Right -->
+        <div class="text-end">
+            <button id="next-btn" class="btn btn-primary btn-sm btn-pill">
+                Next <i class="bi bi-arrow-right"></i>
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const questions = {{ questions | tojson | safe }};
+</script>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    let currentQuestionIndex = 0;
+    const img = document.getElementById('question-image');
+    const counter = document.getElementById('question-counter');
+    const pBar = document.getElementById('progress-bar');
+    const spoiler = document.getElementById('details-spoiler');
+    const spoilerBtn = document.getElementById('spoiler-btn');
+    const yourOv = document.getElementById('your-answer-overlay');
+    const corrOv = document.getElementById('correct-answer-overlay');
+
+    function loadQ(i) {
+        if(i < 0 || i >= questions.length) return;
+        currentQuestionIndex = i;
+        const q = questions[i];
+
+        // Path Fix
+        let path = q.image_path;
+        if(path.includes('/processed/')) path = `/neetprep/processed/${path.split('/processed/')[1]}`;
+        else if(path.includes('/tmp/')) path = `/neetprep/tmp/${path.split('/tmp/')[1]}`;
+        img.src = path;
+
+        // UI Updates
+        counter.textContent = `${i+1} / ${questions.length}`;
+        pBar.style.width = `${((i+1)/questions.length)*100}%`;
+
+        // Details
+        const d = q.details;
+        let h = `<strong>Sub:</strong> ${d.subject} <br> <strong>Topic:</strong> ${d.topic}`;
+        if(d.options) { h += '<ol type="A" style="padding-left:15px; margin:5px 0;">'; d.options.forEach(o=>h+=`<li>${o}</li>`); h+='</ol>'; }
+        document.getElementById('details-content').innerHTML = h;
+
+        // Overlays
+        const fmt = v => typeof v==='number'?String.fromCharCode(65+v):v;
+        yourOv.textContent = `You: ${fmt(d.user_answer_index)}`;
+        corrOv.textContent = `Ans: ${fmt(d.correct_answer_index)}`;
+
+        // Reset
+        spoiler.style.display = 'none';
+        yourOv.style.display = 'none';
+        corrOv.style.display = 'none';
+        spoilerBtn.textContent = 'Check Answer';
+        spoilerBtn.className = 'btn btn-warning btn-sm btn-pill px-3';
+
+        document.getElementById('prev-btn').disabled = i === 0;
+        document.getElementById('next-btn').disabled = i === questions.length - 1;
+    }
+
+    spoilerBtn.onclick = () => {
+        if(spoiler.style.display === 'none') {
+            spoiler.style.display = 'block';
+            yourOv.style.display = 'block';
+            corrOv.style.display = 'block';
+            spoilerBtn.textContent = 'Hide';
+            spoilerBtn.className = 'btn btn-outline-light btn-sm btn-pill px-3';
+        } else {
+            spoiler.style.display = 'none';
+            yourOv.style.display = 'none';
+            corrOv.style.display = 'none';
+            spoilerBtn.textContent = 'Check Answer';
+            spoilerBtn.className = 'btn btn-warning btn-sm btn-pill px-3';
+        }
+    };
+
+    document.getElementById('prev-btn').onclick = () => loadQ(currentQuestionIndex - 1);
+    document.getElementById('next-btn').onclick = () => loadQ(currentQuestionIndex + 1);
+
+    document.addEventListener('keydown', e => {
+        if(e.key === 'ArrowLeft') loadQ(currentQuestionIndex - 1);
+        if(e.key === 'ArrowRight') loadQ(currentQuestionIndex + 1);
+        if(e.key === ' ' || e.key === 'Enter') spoilerBtn.click();
+    });
+
+    if(questions.length) loadQ(0);
+});
+</script>
+{% endblock %}

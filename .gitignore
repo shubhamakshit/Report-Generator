@@ -1,7 +1,9 @@
 .env
+tmp/
 __pycache__/
 backup/
 bak2/
+*.zip
 changes_db.txt
 database.db
 output/

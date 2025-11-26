@@ -4,20 +4,14 @@ import uuid
 import base64
 import io
 import zipfile
-from datetime import datetime
-from flask import (
-    Blueprint,
-    Response,
-    render_template,
-    request,
-    jsonify,
-    send_file,
-    redirect,
-    url_for,
-    current_app,
-)
+from datetime import datetime, timedelta
+from flask import Blueprint, render_template, request, jsonify, current_app, url_for, send_from_directory, send_file, redirect
+from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
+import shlex
 import fitz
+from urllib.parse import urlparse
+import requests
 import cv2
 import numpy as np
 
@@ -34,18 +28,49 @@ from strings import *
 from redact import redact_pictures_in_image
 from resize import expand_pdf_for_notes
 
+
+
 main_bp = Blueprint('main', __name__)
+
+# ... (rest of the routes) ...
+
+@main_bp.route('/tmp/<path:filename>')
+@login_required  # Should still protect temp files if they are user-specific
+def serve_tmp_file(filename):
+    # In a real multi-user scenario, you'd check if this temp file belongs to the user
+    return send_from_directory(current_app.config['TEMP_FOLDER'], filename)
+
+@main_bp.route('/processed/<path:filename>')
+@login_required
+def serve_processed_file(filename):
+    # This is a critical security change. Before serving a processed file,
+    # we must check if it belongs to the current user.
+    conn = get_db_connection()
+    image_owner = conn.execute(
+        "SELECT s.user_id FROM images i JOIN sessions s ON i.session_id = s.id WHERE i.processed_filename = ?",
+        (filename,)
+    ).fetchone()
+    conn.close()
+
+    if image_owner and image_owner['user_id'] == current_user.id:
+        return send_from_directory(current_app.config['PROCESSED_FOLDER'], filename)
+    else:
+        return "Unauthorized", 403
+
 
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 NVIDIA_NIM_AVAILABLE = bool(NVIDIA_API_KEY)
 
 @main_bp.route('/process_final_pdf/<int:pdf_id>')
+@login_required
 def process_final_pdf(pdf_id):
     conn = get_db_connection()
-    pdf_info = conn.execute('SELECT filename FROM generated_pdfs WHERE id = ?', (pdf_id,)).fetchone()
+    # Security: Check if the PDF belongs to the current user
+    pdf_info = conn.execute('SELECT filename FROM generated_pdfs WHERE id = ? AND user_id = ?', (pdf_id, current_user.id)).fetchone()
     
     if not pdf_info:
         conn.close()
+        flash("PDF not found or you don't have permission to access it.", "warning")
         return redirect(url_for('main.index_v2')) 
 
     original_filename = pdf_info['filename']
@@ -53,15 +78,17 @@ def process_final_pdf(pdf_id):
 
     if not os.path.exists(pdf_path):
         conn.close()
+        flash("PDF file is missing from disk.", "danger")
         return redirect(url_for('main.index_v2'))
 
     session_id = str(uuid.uuid4())
     
-    conn.execute('INSERT INTO sessions (id, original_filename) VALUES (?, ?)', (session_id, original_filename))
+    # Associate new session with the current user
+    conn.execute('INSERT INTO sessions (id, original_filename, user_id) VALUES (?, ?, ?)', (session_id, original_filename, current_user.id))
     
     doc = fitz.open(pdf_path)
     for i, page in enumerate(doc):
-        pix = page.get_pixmap(dpi=900)
+        pix = page.get_pixmap(dpi=current_user.dpi)
         page_filename = f"{session_id}_page_{i}.png"
         page_path = os.path.join(current_app.config['UPLOAD_FOLDER'], page_filename)
         pix.save(page_path)
@@ -78,37 +105,109 @@ def process_final_pdf(pdf_id):
     return redirect(url_for('main.crop_interface_v2', session_id=session_id, image_index=0))
 
 @main_bp.route(ROUTE_INDEX_V2)
+@login_required
 def index_v2():
     conn = get_db_connection()
-    pdfs = conn.execute('SELECT id, filename, subject, tags, notes, persist FROM generated_pdfs ORDER BY created_at DESC').fetchall()
+    pdfs = conn.execute('SELECT id, filename, subject, tags, notes, persist FROM generated_pdfs WHERE user_id = ? ORDER BY created_at DESC', (current_user.id,)).fetchall()
     conn.close()
     return render_template('indexv2.html', pdfs=[dict(row) for row in pdfs])
 
-@main_bp.route(ROUTE_IMAGES)
-def image_upload():
-    return render_template('image_upload.html')
-
-@main_bp.route(ROUTE_UPLOAD_PDF, methods=[METHOD_POST])
-def upload_pdf():
-    session_id = str(uuid.uuid4())
-    if 'pdf' not in request.files:
-        return jsonify({'error': 'No PDF file part'}), 400
-    file = request.files['pdf']
-    if file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
-
-    if file and file.filename.lower().endswith('.pdf'):
-        conn = get_db_connection()
-        conn.execute('INSERT INTO sessions (id, original_filename) VALUES (?, ?)', (session_id, secure_filename(file.filename)))
+def _parse_curl_command(command):
+    current_app.logger.info(f"Parsing cURL command: {command}")
+    try:
+        parts = shlex.split(command)
+    except ValueError as e:
+        current_app.logger.error(f"shlex splitting failed for command: '{command}'. Error: {e}")
+        # Fallback to simple split for commands that might not be perfectly quoted
+        parts = command.split()
         
-        pdf_filename = f"{session_id}_{secure_filename(file.filename)}"
+    current_app.logger.info(f"Command parts: {parts}")
+    url, output_filename = None, None
+    
+    # First, try to find the output filename if -o is present
+    try:
+        if '-o' in parts:
+            o_index = parts.index('-o')
+            if o_index + 1 < len(parts):
+                output_filename = parts[o_index + 1] # shlex handles quotes
+    except ValueError:
+        pass # -o not found, handled below
+
+    # Then, find the URL (always starts with http)
+    for part in parts:
+        if part.startswith('http'):
+            url = part
+            break
+    
+    # If URL found but no output filename was specified with -o, derive from URL
+    if url and not output_filename:
+        output_filename = os.path.basename(urlparse(url).path)
+        if not output_filename: # Fallback if path is empty (e.g., http://example.com)
+            output_filename = "downloaded_pdf.pdf"
+        if not output_filename.lower().endswith('.pdf'):
+            output_filename += '.pdf' # Ensure it has a .pdf extension
+
+    current_app.logger.info(f"Parsed URL: {url}, Filename: {output_filename}")
+    return url, output_filename
+
+@main_bp.route('/v2/upload', methods=['POST'])
+@login_required
+def v2_upload():
+    session_id = str(uuid.uuid4())
+    pdf_content, original_filename = None, None
+
+    try:
+        # Case 1: Direct file upload
+        if 'pdf' in request.files and request.files['pdf'].filename:
+            file = request.files['pdf']
+            if file and file.filename.lower().endswith('.pdf'):
+                original_filename = secure_filename(file.filename)
+                pdf_content = file.read()
+            else:
+                return jsonify({'error': 'Invalid file type, please upload a PDF'}), 400
+
+        # Case 2: URL upload
+        elif 'pdf_url' in request.form and request.form['pdf_url']:
+            pdf_url = request.form['pdf_url']
+            response = requests.get(pdf_url, allow_redirects=True)
+            response.raise_for_status()
+            original_filename = os.path.basename(urlparse(pdf_url).path)
+            if not original_filename.lower().endswith('.pdf'):
+                original_filename += '.pdf'
+            pdf_content = response.content
+
+        # Case 3: cURL command upload
+        elif 'curl_command' in request.form and request.form['curl_command']:
+            # For simplicity, we handle one cURL command at a time for the analysis workflow
+            command = request.form['curl_command'].strip().split('\n')[0]
+            url, filename = _parse_curl_command(command)
+            if not url or not filename:
+                return jsonify({'error': f"Could not parse cURL command: {command}"}), 400
+            
+            response = requests.get(url, allow_redirects=True)
+            response.raise_for_status()
+            original_filename = filename
+            pdf_content = response.content
+
+        else:
+            return jsonify({'error': 'No PDF file, URL, or cURL command provided'}), 400
+
+        if not pdf_content or not original_filename:
+            return jsonify({'error': 'Failed to retrieve PDF content or filename'}), 500
+
+        # --- Common processing logic (from original upload_pdf) ---
+        conn = get_db_connection()
+        conn.execute('INSERT INTO sessions (id, original_filename, name, user_id) VALUES (?, ?, ?, ?)', (session_id, original_filename, original_filename, current_user.id))
+        
+        pdf_filename = f"{session_id}_{original_filename}"
         pdf_path = os.path.join(current_app.config['UPLOAD_FOLDER'], pdf_filename)
-        file.save(pdf_path)
+        with open(pdf_path, 'wb') as f:
+            f.write(pdf_content)
 
         doc = fitz.open(pdf_path)
         page_files = []
         for i, page in enumerate(doc):
-            pix = page.get_pixmap(dpi=900)
+            pix = page.get_pixmap(dpi=current_user.dpi)
             page_filename = f"{session_id}_page_{i}.png"
             page_path = os.path.join(current_app.config['UPLOAD_FOLDER'], page_filename)
             pix.save(page_path)
@@ -123,10 +222,25 @@ def upload_pdf():
         conn.close()
         doc.close()
         return jsonify({'session_id': session_id, 'files': page_files})
-    else:
-        return jsonify({'error': 'Invalid file type, please upload a PDF'}), 400
+
+    except requests.RequestException as e:
+        return jsonify({'error': f"Failed to download PDF from URL: {e}"}), 500
+    except Exception as e:
+        # Ensure connection is closed on error
+        if 'conn' in locals() and conn:
+            conn.rollback()
+            conn.close()
+        current_app.logger.error(f"An error occurred during v2 upload: {e}")
+        return jsonify({'error': "An internal error occurred while processing the PDF."}), 500
+
+
+@main_bp.route(ROUTE_IMAGES)
+@login_required
+def image_upload():
+    return render_template('image_upload.html')
 
 @main_bp.route(ROUTE_UPLOAD_IMAGES, methods=[METHOD_POST])
+@login_required
 def upload_images():
     session_id = str(uuid.uuid4())
     
@@ -145,7 +259,7 @@ def upload_images():
 
     conn = get_db_connection()
     original_filename = f"{len(files)} images" if len(files) > 1 else secure_filename(files[0].filename) if files else "images"
-    conn.execute('INSERT INTO sessions (id, original_filename) VALUES (?, ?)', (session_id, original_filename))
+    conn.execute('INSERT INTO sessions (id, original_filename, name, user_id) VALUES (?, ?, ?, ?)', (session_id, original_filename, original_filename, current_user.id))
     
     uploaded_files = []
     for i, file in enumerate(files):
@@ -166,9 +280,16 @@ def upload_images():
     return jsonify({'session_id': session_id, 'files': uploaded_files})
 
 @main_bp.route('/cropv2/<session_id>/<int:image_index>')
+@login_required
 def crop_interface_v2(session_id, image_index):
     conn = get_db_connection()
     
+    # Security: Check ownership of the session
+    session_owner = conn.execute('SELECT user_id FROM sessions WHERE id = ?', (session_id,)).fetchone()
+    if not session_owner or session_owner['user_id'] != current_user.id:
+        conn.close()
+        return "Unauthorized", 403
+
     image_info = conn.execute(
         "SELECT * FROM images WHERE session_id = ? AND image_index = ? AND image_type = 'original'",
         (session_id, image_index)
@@ -195,11 +316,19 @@ def crop_interface_v2(session_id, image_index):
     )
 
 @main_bp.route(ROUTE_PROCESS_CROP_V2, methods=[METHOD_POST])
+@login_required
 def process_crop_v2():
     data = request.json
     session_id, page_index, boxes_data, image_data_url = data['session_id'], data['image_index'], data['boxes'], data.get('imageData')
 
     conn = get_db_connection()
+
+    # Security: Check ownership of the session
+    session_owner = conn.execute('SELECT user_id FROM sessions WHERE id = ?', (session_id,)).fetchone()
+    if not session_owner or session_owner['user_id'] != current_user.id:
+        conn.close()
+        return jsonify({'error': 'Unauthorized'}), 403
+
     page_info = conn.execute(
         "SELECT filename FROM images WHERE session_id = ? AND image_index = ? AND image_type = 'original'", 
         (session_id, page_index)
@@ -314,9 +443,21 @@ def process_crop_v2():
         return jsonify({'error': f'Processing failed: {str(e)}'}), 500
 
 @main_bp.route('/question_entry_v2/<session_id>')
+@login_required
 def question_entry_v2(session_id):
-    test_name = request.args.get('test_name')
     conn = get_db_connection()
+    
+    # Fetch session metadata, ensuring it belongs to the current user
+    session_data = conn.execute(
+        'SELECT original_filename, subject, tags, notes FROM sessions WHERE id = ? AND user_id = ?', (session_id, current_user.id)
+    ).fetchone()
+
+    if not session_data:
+        conn.close()
+        flash("Session not found or you don't have permission to access it.", "warning")
+        return redirect(url_for('dashboard.dashboard'))
+
+    # Fetch images and associated questions
     images = conn.execute(
         """SELECT i.id, i.processed_filename, q.question_number, q.status, q.marked_solution, q.actual_solution 
            FROM images i 
@@ -333,11 +474,12 @@ def question_entry_v2(session_id):
     return render_template('question_entry_v2.html', 
                           session_id=session_id, 
                           images=[dict(img) for img in images],
-                          nvidia_nim_available=NVIDIA_NIM_AVAILABLE,
-                          test_name=test_name)
+                          session_data=dict(session_data) if session_data else {},
+                          nvidia_nim_available=NVIDIA_NIM_AVAILABLE)
 
-@main_bp.route(ROUTE_DASHBOARD)
-def dashboard():
+@main_bp.route('/old/dashboard')
+@login_required
+def old_dashboard():
     conn = get_db_connection()
     sessions = conn.execute("""
         SELECT s.id, s.created_at, s.original_filename, s.persist,
@@ -345,9 +487,10 @@ def dashboard():
                COUNT(CASE WHEN i.image_type = 'cropped' THEN 1 END) as question_count
         FROM sessions s
         LEFT JOIN images i ON s.id = i.session_id
+        WHERE s.user_id = ?
         GROUP BY s.id, s.created_at, s.original_filename, s.persist
         ORDER BY s.created_at DESC
-    """).fetchall()
+    """, (current_user.id,)).fetchall()
     
     processed_sessions = []
     for session in sessions:
@@ -360,9 +503,16 @@ def dashboard():
     return render_template('dashboard.html', sessions=processed_sessions)
 
 @main_bp.route('/delete_session/<session_id>', methods=[METHOD_DELETE])
+@login_required
 def delete_session(session_id):
     try:
         conn = get_db_connection()
+        # Security: Check ownership of the session
+        session_owner = conn.execute('SELECT user_id FROM sessions WHERE id = ?', (session_id,)).fetchone()
+        if not session_owner or session_owner['user_id'] != current_user.id:
+            conn.close()
+            return jsonify({'error': 'Unauthorized'}), 403
+
         images_to_delete = conn.execute('SELECT filename, processed_filename FROM images WHERE session_id = ?', (session_id,)).fetchall()
         for img in images_to_delete:
             if img['filename']:
@@ -384,9 +534,16 @@ def delete_session(session_id):
         return jsonify({'error': str(e)}), 500
 
 @main_bp.route('/toggle_persist/<session_id>', methods=[METHOD_POST])
+@login_required
 def toggle_persist(session_id):
     try:
         conn = get_db_connection()
+        # Security: Check ownership of the session
+        session_owner = conn.execute('SELECT user_id FROM sessions WHERE id = ?', (session_id,)).fetchone()
+        if not session_owner or session_owner['user_id'] != current_user.id:
+            conn.close()
+            return jsonify({'error': 'Unauthorized'}), 403
+
         current_status_res = conn.execute('SELECT persist FROM sessions WHERE id = ?', (session_id,)).fetchone()
         
         if not current_status_res:
@@ -410,10 +567,46 @@ def toggle_persist(session_id):
         conn.close()
         return jsonify({'error': str(e)}), 500
 
+@main_bp.route('/rename_session/<session_id>', methods=['POST'])
+@login_required
+def rename_session(session_id):
+    data = request.json
+    new_name = data.get('new_name')
+
+    if not new_name:
+        return jsonify({'error': 'New name is required'}), 400
+
+    try:
+        conn = get_db_connection()
+        # Security: Check ownership of the session
+        session_owner = conn.execute('SELECT user_id FROM sessions WHERE id = ?', (session_id,)).fetchone()
+        if not session_owner or session_owner['user_id'] != current_user.id:
+            conn.close()
+            return jsonify({'error': 'Unauthorized'}), 403
+
+        conn.execute('UPDATE sessions SET name = ? WHERE id = ?', (new_name, session_id))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @main_bp.route('/delete_question/<image_id>', methods=[METHOD_DELETE])
+@login_required
 def delete_question(image_id):
     try:
         conn = get_db_connection()
+        # Security: Check ownership of the image via the session
+        image_owner = conn.execute("""
+            SELECT s.user_id FROM images i
+            JOIN sessions s ON i.session_id = s.id
+            WHERE i.id = ?
+        """, (image_id,)).fetchone()
+
+        if not image_owner or image_owner['user_id'] != current_user.id:
+            conn.close()
+            return jsonify({'error': 'Unauthorized'}), 403
+
         image_info = conn.execute(
             'SELECT session_id, filename, processed_filename FROM images WHERE id = ?', 
             (image_id,)
@@ -433,12 +626,33 @@ def delete_question(image_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+from rich.table import Table
+from rich.console import Console
+
 @main_bp.route(ROUTE_SAVE_QUESTIONS, methods=[METHOD_POST])
+@login_required
 def save_questions():
     data = request.json
-    session_id, questions = data['session_id'], data['questions']
-    
+    session_id = data['session_id']
+    questions = data['questions']
+    pdf_subject = data.get('pdf_subject', '')
+    pdf_tags = data.get('pdf_tags', '')
+    pdf_notes = data.get('pdf_notes', '')
+
     conn = get_db_connection()
+    # Security: Check ownership of the session
+    session_owner = conn.execute('SELECT user_id FROM sessions WHERE id = ?', (session_id,)).fetchone()
+    if not session_owner or session_owner['user_id'] != current_user.id:
+        conn.close()
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    # Update session metadata
+    conn.execute(
+        'UPDATE sessions SET subject = ?, tags = ?, notes = ? WHERE id = ?',
+        (pdf_subject, pdf_tags, pdf_notes, session_id)
+    )
+
+    # Delete and re-insert questions
     conn.execute('DELETE FROM questions WHERE session_id = ?', (session_id,))
     
     questions_to_insert = []
@@ -447,25 +661,26 @@ def save_questions():
             session_id, 
             q['image_id'], 
             q['question_number'], 
-            "", 
+            "", # subject column in questions table - can be removed later
             q['status'], 
-            q['marked_solution'], 
-            q['actual_solution'], 
-            q.get('time_taken', "")
+            q.get('marked_solution', ""), 
+            q.get('actual_solution', ""), 
+            q.get('time_taken', ""),
+            pdf_tags # Save tags with each question too
         ))
-
-    if questions_to_insert:
-        conn.executemany(
-            """INSERT INTO questions (session_id, image_id, question_number, subject, status, marked_solution, actual_solution, time_taken)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            questions_to_insert
-        )
+    
+    conn.executemany(
+        'INSERT INTO questions (session_id, image_id, question_number, subject, status, marked_solution, actual_solution, time_taken, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        questions_to_insert
+    )
     
     conn.commit()
     conn.close()
-    return jsonify({'success': True})
+    
+    return jsonify({'success': True, 'message': 'Questions saved successfully.'})
 
 @main_bp.route(ROUTE_EXTRACT_QUESTION_NUMBER, methods=[METHOD_POST])
+@login_required
 def extract_question_number():
     if not NVIDIA_NIM_AVAILABLE:
         return jsonify({'error': 'NVIDIA NIM feature is not available. Please set the NVIDIA_API_KEY environment variable.'}), 400
@@ -478,6 +693,17 @@ def extract_question_number():
     
     try:
         conn = get_db_connection()
+        # Security: Check ownership of the image via the session
+        image_owner = conn.execute("""
+            SELECT s.user_id FROM images i
+            JOIN sessions s ON i.session_id = s.id
+            WHERE i.id = ?
+        """, (image_id,)).fetchone()
+
+        if not image_owner or image_owner['user_id'] != current_user.id:
+            conn.close()
+            return jsonify({'error': 'Unauthorized'}), 403
+
         image_info = conn.execute(
             'SELECT processed_filename FROM images WHERE id = ?', 
             (image_id,)
@@ -505,6 +731,7 @@ def extract_question_number():
         return jsonify({'error': f'Failed to extract question number: {str(e)}'}), 500
 
 @main_bp.route(ROUTE_EXTRACT_ALL_QUESTION_NUMBERS, methods=[METHOD_POST])
+@login_required
 def extract_all_question_numbers():
     if not NVIDIA_NIM_AVAILABLE:
         return jsonify({'error': 'NVIDIA NIM feature is not available.'}), 400
@@ -517,6 +744,12 @@ def extract_all_question_numbers():
     
     try:
         conn = get_db_connection()
+        # Security: Check ownership of the session
+        session_owner = conn.execute('SELECT user_id FROM sessions WHERE id = ?', (session_id,)).fetchone()
+        if not session_owner or session_owner['user_id'] != current_user.id:
+            conn.close()
+            return jsonify({'error': 'Unauthorized'}), 403
+
         images = conn.execute(
             "SELECT id, processed_filename FROM images WHERE session_id = ? AND image_type = 'cropped' ORDER BY id", 
             (session_id,)
@@ -575,10 +808,11 @@ def extract_all_question_numbers():
         return jsonify({'error': f'Failed to extract question numbers: {str(e)}'}), 500
 
 @main_bp.route('/get_all_subjects_and_tags')
+@login_required
 def get_all_subjects_and_tags():
     conn = get_db_connection()
-    subjects = [row['subject'] for row in conn.execute('SELECT DISTINCT subject FROM generated_pdfs WHERE subject IS NOT NULL').fetchall()]
-    tags_query = conn.execute('SELECT DISTINCT tags FROM generated_pdfs WHERE tags IS NOT NULL AND tags != \'\'').fetchall()
+    subjects = [row['subject'] for row in conn.execute('SELECT DISTINCT subject FROM generated_pdfs WHERE subject IS NOT NULL AND user_id = ?', (current_user.id,)).fetchall()]
+    tags_query = conn.execute('SELECT DISTINCT tags FROM generated_pdfs WHERE tags IS NOT NULL AND tags != \'\' AND user_id = ?', (current_user.id,)).fetchall()
     all_tags = set()
     for row in tags_query:
         tags = [tag.strip() for tag in row['tags'].split(',')]
@@ -590,10 +824,11 @@ def get_all_subjects_and_tags():
     })
 
 @main_bp.route('/get_metadata_suggestions')
+@login_required
 def get_metadata_suggestions():
     conn = get_db_connection()
-    subjects = [row['subject'] for row in conn.execute('SELECT DISTINCT subject FROM generated_pdfs WHERE subject IS NOT NULL').fetchall()]
-    tags_query = conn.execute('SELECT DISTINCT tags FROM generated_pdfs WHERE tags IS NOT NULL AND tags != \'\'').fetchall()
+    subjects = [row['subject'] for row in conn.execute('SELECT DISTINCT subject FROM generated_pdfs WHERE subject IS NOT NULL AND user_id = ?', (current_user.id,)).fetchall()]
+    tags_query = conn.execute('SELECT DISTINCT tags FROM generated_pdfs WHERE tags IS NOT NULL AND tags != \'\' AND user_id = ?', (current_user.id,)).fetchall()
     all_tags = set()
     for row in tags_query:
         tags = [tag.strip() for tag in row['tags'].split(',')]
@@ -604,12 +839,19 @@ def get_metadata_suggestions():
         'tags': sorted(list(all_tags))
     })
 
-@main_bp.route('/generate_preview', methods=['POST'])
+@main_bp.route('/generate_preview', methods=[METHOD_POST])
+@login_required
 def generate_preview():
     data = request.json
     session_id = data['session_id']
 
     conn = get_db_connection()
+    # Security: Check ownership of the session
+    session_owner = conn.execute('SELECT user_id FROM sessions WHERE id = ?', (session_id,)).fetchone()
+    if not session_owner or session_owner['user_id'] != current_user.id:
+        conn.close()
+        return jsonify({'error': 'Unauthorized'}), 403
+
     query = """
         SELECT q.*, i.filename, i.processed_filename FROM questions q 
         JOIN images i ON q.image_id = i.id
@@ -687,19 +929,25 @@ def generate_preview():
         return jsonify({'error': 'PDF generation for preview failed'}), 500
 
 @main_bp.route(ROUTE_GENERATE_PDF, methods=[METHOD_POST])
+@login_required
 def generate_pdf():
     data = request.json
     session_id = data['session_id']
     
     conn = get_db_connection()
+    # Security: Check ownership of the session
+    session_owner = conn.execute('SELECT user_id FROM sessions WHERE id = ?', (session_id,)).fetchone()
+    if not session_owner or session_owner['user_id'] != current_user.id:
+        conn.close()
+        return jsonify({'error': 'Unauthorized'}), 403
+
     query = """
         SELECT q.*, i.filename, i.processed_filename FROM questions q 
         JOIN images i ON q.image_id = i.id
         WHERE q.session_id = ? ORDER BY i.id
     """
     all_questions = [dict(row) for row in conn.execute(query, (session_id,)).fetchall()]
-    conn.close()
-
+    
     miscellaneous_questions = data.get('miscellaneous_questions', [])
     all_questions.extend(miscellaneous_questions)
 
@@ -708,7 +956,9 @@ def generate_pdf():
         q for q in all_questions if filter_type == 'all' or q['status'] == filter_type
     ]
 
-    if not filtered_questions: return jsonify({'error': 'No questions match the filter criteria'}), 400
+    if not filtered_questions:
+        conn.close()
+        return jsonify({'error': 'No questions match the filter criteria'}), 400
     
     pdf_filename = f"{secure_filename(data.get('pdf_name', 'analysis'))}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
     
@@ -733,18 +983,18 @@ def generate_pdf():
         grid_cols = int(data.get('grid_cols')) if data.get('grid_cols') else None
 
     if create_a4_pdf_from_images(filtered_questions, current_app.config['PROCESSED_FOLDER'], pdf_filename, images_per_page, current_app.config['OUTPUT_FOLDER'], orientation, grid_rows, grid_cols, practice_mode):
-        conn = get_db_connection()
         session_info = conn.execute('SELECT original_filename FROM sessions WHERE id = ?', (session_id,)).fetchone()
         source_filename = session_info['original_filename'] if session_info else 'Unknown'
         
         conn.execute(
-            'INSERT INTO generated_pdfs (session_id, filename, subject, tags, notes, source_filename) VALUES (?, ?, ?, ?, ?, ?)',
-            (session_id, pdf_filename, data.get('subject'), data.get('tags'), data.get('notes'), source_filename)
+            'INSERT INTO generated_pdfs (session_id, filename, subject, tags, notes, source_filename, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            (session_id, pdf_filename, data.get('subject'), data.get('tags'), data.get('notes'), source_filename, current_user.id)
         )
         conn.commit()
         conn.close()
         return jsonify({'success': True, 'pdf_filename': pdf_filename})
     else:
+        conn.close()
         return jsonify({'error': 'PDF generation failed'}), 500
 
 @main_bp.route('/download/<filename>')
@@ -755,6 +1005,72 @@ def download_file(filename):
 def view_pdf(filename):
     return send_file(os.path.join(current_app.config['OUTPUT_FOLDER'], filename), as_attachment=False)
 
+@main_bp.route('/viewpdflegacy/<int:pdf_id>')
+def view_pdf_legacy(pdf_id):
+    conn = get_db_connection()
+    pdf_info = conn.execute('SELECT filename, subject FROM generated_pdfs WHERE id = ?', (pdf_id,)).fetchone()
+    conn.close()
+
+    if not pdf_info:
+        return "PDF not found", 404
+
+    pdf_filename = pdf_info['filename']
+    pdf_subject = pdf_info['subject']
+    pdf_path = os.path.join(current_app.config['OUTPUT_FOLDER'], pdf_filename)
+
+    if not os.path.exists(pdf_path):
+        return "PDF file not found on disk", 404
+
+    image_paths = []
+    try:
+        doc = fitz.open(pdf_path)
+        for i in range(0, doc.page_count, 2):
+            # Get first page
+            page1 = doc.load_page(i)
+            pix1 = page1.get_pixmap(dpi=current_user.dpi)
+
+            # Check for second page
+            if i + 1 < doc.page_count:
+                page2 = doc.load_page(i + 1)
+                pix2 = page2.get_pixmap(dpi=current_user.dpi)
+
+                # Convert pixmaps to numpy arrays for easier manipulation
+                img1 = np.frombuffer(pix1.samples, dtype=np.uint8).reshape(pix1.h, pix1.w, pix1.n)
+                img2 = np.frombuffer(pix2.samples, dtype=np.uint8).reshape(pix2.h, pix2.w, pix2.n)
+
+                # Ensure both images have 3 channels (RGB) for consistent stacking
+                if img1.shape[2] == 4: # RGBA
+                    img1 = cv2.cvtColor(img1, cv2.COLOR_RGBA2RGB)
+                if img2.shape[2] == 4: # RGBA
+                    img2 = cv2.cvtColor(img2, cv2.COLOR_RGBA2RGB)
+
+                # Pad images to have the same height if necessary
+                max_h = max(img1.shape[0], img2.shape[0])
+                if img1.shape[0] < max_h:
+                    img1 = np.pad(img1, ((0, max_h - img1.shape[0]), (0, 0), (0, 0)), mode='constant', constant_values=255)
+                if img2.shape[0] < max_h:
+                    img2 = np.pad(img2, ((0, max_h - img2.shape[0]), (0, 0), (0, 0)), mode='constant', constant_values=255)
+
+                # Combine images horizontally
+                combined_img = np.hstack((img1, img2))
+
+                # Convert back to pixmap for saving
+                combined_pix = fitz.Pixmap(fitz.csRGB, combined_img.shape[1], combined_img.shape[0], combined_img.tobytes())
+            else:
+                # Only one page, use pix1 directly
+                combined_pix = pix1
+
+            temp_image_filename = f"legacy_view_{uuid.uuid4()}_page_{i}_{i+1}.png"
+            temp_image_path = os.path.join(current_app.config['PROCESSED_FOLDER'], temp_image_filename)
+            combined_pix.save(temp_image_path)
+            image_paths.append(url_for('main.serve_image', folder='processed', filename=temp_image_filename))
+        doc.close()
+    except Exception as e:
+        print(f"Error converting PDF to images: {e}")
+        return f"Error processing PDF: {str(e)}", 500
+
+    return render_template('simple_viewer.html', image_urls=image_paths, pdf_title=pdf_subject or pdf_filename)
+
 @main_bp.route('/image/<folder>/<filename>')
 def serve_image(folder, filename):
     folder_path = current_app.config.get(f'{folder.upper()}_FOLDER')
@@ -764,18 +1080,21 @@ def serve_image(folder, filename):
 
 @main_bp.route(ROUTE_INDEX)
 def index():
-    return render_template('main.html')
+    if current_user.is_authenticated:
+        return redirect(url_for('dashboard.dashboard'))
+    return redirect(url_for('auth.login'))
 
 @main_bp.route('/pdf_manager')
 @main_bp.route('/pdf_manager/browse/<path:folder_path>')
+@login_required
 def pdf_manager(folder_path=''):
     conn = get_db_connection()
     view_mode = request.args.get('view', 'default')
     search_query = request.args.get('search', '')
     is_recursive = request.args.get('recursive') == 'true'
 
-    query_params = []
-    base_query = 'SELECT * FROM generated_pdfs'
+    query_params = [current_user.id]
+    base_query = 'SELECT * FROM generated_pdfs WHERE user_id = ?'
     where_clauses = []
 
     if search_query:
@@ -793,7 +1112,7 @@ def pdf_manager(folder_path=''):
             parts = folder_path.split('/')
             parent_id = None
             for i, part in enumerate(parts):
-                res = conn.execute("SELECT id FROM folders WHERE name = ? AND (parent_id = ? OR (? IS NULL AND parent_id IS NULL))", (part, parent_id, parent_id)).fetchone()
+                res = conn.execute("SELECT id FROM folders WHERE name = ? AND user_id = ? AND (parent_id = ? OR (? IS NULL AND parent_id IS NULL))", (part, current_user.id, parent_id, parent_id)).fetchone()
                 if not res:
                     return redirect(url_for('main.pdf_manager'))
                 parent_id = res['id']
@@ -802,6 +1121,8 @@ def pdf_manager(folder_path=''):
 
         if is_recursive and search_query:
             if folder_id:
+                # Note: get_all_descendant_folder_ids needs to be made user-aware if folders can be nested deeply
+                # For now, we assume it gets all children regardless of user, but the main query is user-filtered.
                 descendant_ids = get_all_descendant_folder_ids(conn, folder_id)
                 all_folder_ids = [folder_id] + descendant_ids
                 if all_folder_ids:
@@ -816,23 +1137,41 @@ def pdf_manager(folder_path=''):
                 where_clauses.append('folder_id IS NULL')
 
         if folder_id:
-            subfolders = conn.execute('SELECT * FROM folders WHERE parent_id = ? ORDER BY name', (folder_id,)).fetchall()
+            subfolders = conn.execute('SELECT * FROM folders WHERE parent_id = ? AND user_id = ? ORDER BY name', (folder_id, current_user.id)).fetchall()
         else:
-            subfolders = conn.execute('SELECT * FROM folders WHERE parent_id IS NULL ORDER BY name').fetchall()
+            subfolders = conn.execute('SELECT * FROM folders WHERE parent_id IS NULL AND user_id = ? ORDER BY name', (current_user.id,)).fetchall()
 
     if where_clauses:
-        base_query += ' WHERE ' + ' AND '.join(where_clauses)
+        base_query += ' AND ' + ' AND '.join(where_clauses)
     
     base_query += ' ORDER BY created_at DESC'
     
     pdfs = conn.execute(base_query, query_params).fetchall()
+    
+    pdfs_list = [dict(row) for row in pdfs]
+    subfolders_list = [dict(row) for row in subfolders]
 
-    folder_tree = get_folder_tree()
+    for pdf in pdfs_list:
+        if isinstance(pdf['created_at'], str):
+            try:
+                pdf['created_at'] = datetime.strptime(pdf['created_at'], '%Y-%m-%d %H:%M:%S')
+            except ValueError:
+                pass 
+
+    for folder in subfolders_list:
+        if isinstance(folder['created_at'], str):
+            try:
+                folder['created_at'] = datetime.strptime(folder['created_at'], '%Y-%m-%d %H:%M:%S')
+            except ValueError:
+                pass
+
+    # get_folder_tree also needs to be user-aware
+    folder_tree = get_folder_tree(user_id=current_user.id)
     conn.close()
     
     return render_template('pdf_manager.html', 
-                           pdfs=[dict(row) for row in pdfs],
-                           subfolders=[dict(row) for row in subfolders],
+                           pdfs=pdfs_list,
+                           subfolders=subfolders_list,
                            current_folder_id=folder_id,
                            breadcrumbs=breadcrumbs,
                            all_view=all_view,
@@ -841,19 +1180,26 @@ def pdf_manager(folder_path=''):
                            recursive=is_recursive)
 
 @main_bp.route('/get_pdf_details/<int:pdf_id>')
+@login_required
 def get_pdf_details(pdf_id):
     conn = get_db_connection()
-    pdf = conn.execute('SELECT * FROM generated_pdfs WHERE id = ?', (pdf_id,)).fetchone()
+    pdf = conn.execute('SELECT * FROM generated_pdfs WHERE id = ? AND user_id = ?', (pdf_id, current_user.id)).fetchone()
     conn.close()
     if pdf:
         return jsonify(dict(pdf))
     return jsonify({'error': 'PDF not found'}), 404
 
 @main_bp.route('/update_pdf_details/<int:pdf_id>', methods=[METHOD_POST])
+@login_required
 def update_pdf_details(pdf_id):
     data = request.json
     try:
         conn = get_db_connection()
+        pdf_owner = conn.execute('SELECT user_id FROM generated_pdfs WHERE id = ?', (pdf_id,)).fetchone()
+        if not pdf_owner or pdf_owner['user_id'] != current_user.id:
+            conn.close()
+            return jsonify({'error': 'Unauthorized'}), 403
+
         conn.execute(
             'UPDATE generated_pdfs SET subject = ?, tags = ?, notes = ? WHERE id = ?',
             (data.get('subject'), data.get('tags'), data.get('notes'), pdf_id)
@@ -865,6 +1211,7 @@ def update_pdf_details(pdf_id):
         return jsonify({'error': str(e)}), 500
 
 @main_bp.route('/rename_item', methods=[METHOD_POST])
+@login_required
 def rename_item():
     data = request.json
     item_type, item_id, new_name = data.get('item_type'), data.get('item_id'), data.get('new_name')
@@ -874,12 +1221,16 @@ def rename_item():
 
     conn = get_db_connection()
     if item_type == 'folder':
+        folder_owner = conn.execute('SELECT user_id FROM folders WHERE id = ?', (item_id,)).fetchone()
+        if not folder_owner or folder_owner['user_id'] != current_user.id:
+            conn.close(); return jsonify({'error': 'Unauthorized'}), 403
         conn.execute('UPDATE folders SET name = ? WHERE id = ?', (new_name, item_id))
     elif item_type == 'pdf':
-        pdf_info = conn.execute('SELECT filename FROM generated_pdfs WHERE id = ?', (item_id,)).fetchone()
-        if not pdf_info: conn.close(); return jsonify({'error': 'PDF not found'}), 404
+        pdf_owner = conn.execute('SELECT user_id, filename FROM generated_pdfs WHERE id = ?', (item_id,)).fetchone()
+        if not pdf_owner or pdf_owner['user_id'] != current_user.id:
+            conn.close(); return jsonify({'error': 'Unauthorized'}), 403
 
-        old_filename = pdf_info['filename']
+        old_filename = pdf_owner['filename']
         if not new_name.lower().endswith('.pdf'): new_name += '.pdf'
         new_filename = secure_filename(new_name)
 
@@ -901,26 +1252,25 @@ def rename_item():
     return jsonify({'success': True})
 
 @main_bp.route('/delete_folder/<int:folder_id>', methods=[METHOD_DELETE])
+@login_required
 def delete_folder(folder_id):
     conn = get_db_connection()
+    folder_owner = conn.execute('SELECT user_id FROM folders WHERE id = ?', (folder_id,)).fetchone()
+    if not folder_owner or folder_owner['user_id'] != current_user.id:
+        conn.close(); return jsonify({'error': 'Unauthorized'}), 403
     
-    def get_all_child_folders(f_id):
-        children = conn.execute('SELECT id FROM folders WHERE parent_id = ?', (f_id,)).fetchall()
-        folder_ids = [f['id'] for f in children]
-        for child_id in folder_ids:
-            folder_ids.extend(get_all_child_folders(child_id))
-        return folder_ids
-
-    folder_ids_to_delete = [folder_id] + get_all_child_folders(folder_id)
+    folder_ids_to_delete = [folder_id] + get_all_descendant_folder_ids(conn, folder_id, current_user.id)
     placeholders = ', '.join('?' * len(folder_ids_to_delete))
     
-    pdfs_to_delete = conn.execute(f'SELECT id, filename FROM generated_pdfs WHERE folder_id IN ({placeholders})', folder_ids_to_delete).fetchall()
+    pdfs_to_delete = conn.execute(f'SELECT id, filename FROM generated_pdfs WHERE folder_id IN ({placeholders}) AND user_id = ?', (*folder_ids_to_delete, current_user.id)).fetchall()
     
     for pdf in pdfs_to_delete:
         try: os.remove(os.path.join(current_app.config['OUTPUT_FOLDER'], pdf['filename']))
         except OSError: pass
     
-    conn.execute(f'DELETE FROM generated_pdfs WHERE folder_id IN ({placeholders})', folder_ids_to_delete)
+    if pdfs_to_delete:
+        conn.execute(f'DELETE FROM generated_pdfs WHERE id IN ({','.join(map(str, [p['id'] for p in pdfs_to_delete]))})')
+    
     conn.execute(f'DELETE FROM folders WHERE id IN ({placeholders})', folder_ids_to_delete)
     
     conn.commit()
@@ -928,11 +1278,12 @@ def delete_folder(folder_id):
     return jsonify({'success': True})
 
 @main_bp.route('/delete_generated_pdf/<int:pdf_id>', methods=[METHOD_DELETE])
+@login_required
 def delete_generated_pdf(pdf_id):
     try:
         conn = get_db_connection()
-        pdf_info = conn.execute('SELECT filename FROM generated_pdfs WHERE id = ?', (pdf_id,)).fetchone()
-        if pdf_info:
+        pdf_info = conn.execute('SELECT filename, user_id FROM generated_pdfs WHERE id = ?', (pdf_id,)).fetchone()
+        if pdf_info and pdf_info['user_id'] == current_user.id:
             try: os.remove(os.path.join(current_app.config['OUTPUT_FOLDER'], pdf_info['filename']))
             except OSError: pass
             conn.execute('DELETE FROM generated_pdfs WHERE id = ?', (pdf_id,))
@@ -943,18 +1294,23 @@ def delete_generated_pdf(pdf_id):
         return jsonify({'error': str(e)}), 500
 
 @main_bp.route('/toggle_persist_generated_pdf/<int:pdf_id>', methods=[METHOD_POST])
+@login_required
 def toggle_persist_generated_pdf(pdf_id):
     try:
         conn = get_db_connection()
-        current_status_res = conn.execute('SELECT persist, session_id FROM generated_pdfs WHERE id = ?', (pdf_id,)).fetchone()
+        pdf_info = conn.execute('SELECT persist, session_id, user_id FROM generated_pdfs WHERE id = ?', (pdf_id,)).fetchone()
         
-        if not current_status_res: conn.close(); return jsonify({'error': 'PDF not found'}), 404
+        if not pdf_info or pdf_info['user_id'] != current_user.id:
+            conn.close(); return jsonify({'error': 'Unauthorized'}), 403
 
-        new_status = 1 - current_status_res['persist']
-        session_id = current_status_res['session_id']
+        new_status = 1 - pdf_info['persist']
+        session_id = pdf_info['session_id']
 
         conn.execute('UPDATE generated_pdfs SET persist = ? WHERE id = ?', (new_status, pdf_id))
-        if session_id: conn.execute('UPDATE sessions SET persist = ? WHERE id = ?', (new_status, session_id))
+        if session_id:
+            session_owner = conn.execute('SELECT user_id FROM sessions WHERE id = ?', (session_id,)).fetchone()
+            if session_owner and session_owner['user_id'] == current_user.id:
+                conn.execute('UPDATE sessions SET persist = ? WHERE id = ?', (new_status, session_id))
 
         conn.commit()
         conn.close()
@@ -964,18 +1320,27 @@ def toggle_persist_generated_pdf(pdf_id):
         conn.rollback(); conn.close(); return jsonify({'error': str(e)}), 500
 
 @main_bp.route('/bulk_delete_pdfs', methods=[METHOD_POST])
+@login_required
 def bulk_delete_pdfs():
     data = request.json
     pdf_ids = data.get('ids', [])
     if not pdf_ids: return jsonify({'error': 'No PDF IDs provided'}), 400
     try:
         conn = get_db_connection()
-        for pdf_id in pdf_ids:
-            pdf_info = conn.execute('SELECT filename FROM generated_pdfs WHERE id = ?', (pdf_id,)).fetchone()
-            if pdf_info:
-                try: os.remove(os.path.join(current_app.config['OUTPUT_FOLDER'], pdf_info['filename']))
-                except OSError: pass
-                conn.execute('DELETE FROM generated_pdfs WHERE id = ?', (pdf_id,))
+        placeholders = ','.join('?' for _ in pdf_ids)
+        owned_pdfs = conn.execute(f'SELECT id, filename FROM generated_pdfs WHERE id IN ({placeholders}) AND user_id = ?', (*pdf_ids, current_user.id)).fetchall()
+        
+        owned_pdf_ids = [pdf['id'] for pdf in owned_pdfs]
+        if not owned_pdf_ids:
+            conn.close()
+            return jsonify({'success': True, 'message': 'No owned PDFs to delete.'})
+
+        for pdf in owned_pdfs:
+            try: os.remove(os.path.join(current_app.config['OUTPUT_FOLDER'], pdf['filename']))
+            except OSError: pass
+        
+        delete_placeholders = ','.join('?' for _ in owned_pdf_ids)
+        conn.execute(f'DELETE FROM generated_pdfs WHERE id IN ({delete_placeholders})', owned_pdf_ids)
         conn.commit()
         conn.close()
         return jsonify({'success': True})
@@ -983,20 +1348,22 @@ def bulk_delete_pdfs():
         return jsonify({'error': str(e)}), 500
 
 @main_bp.route('/bulk_toggle_persist', methods=[METHOD_POST])
+@login_required
 def bulk_toggle_persist():
     data = request.json
     pdf_ids = data.get('ids', [])
     if not pdf_ids: return jsonify({'error': 'No PDF IDs provided'}), 400
     try:
         conn = get_db_connection()
-        for pdf_id in pdf_ids:
-            current_status_res = conn.execute('SELECT persist, session_id FROM generated_pdfs WHERE id = ?', (pdf_id,)).fetchone()
-            if current_status_res:
-                new_status = 1 - current_status_res['persist']
-                session_id = current_status_res['session_id']
-                
-                conn.execute('UPDATE generated_pdfs SET persist = ? WHERE id = ?', (new_status, pdf_id))
-                if session_id: conn.execute('UPDATE sessions SET persist = ? WHERE id = ?', (new_status, session_id))
+        placeholders = ','.join('?' for _ in pdf_ids)
+        owned_pdfs = conn.execute(f'SELECT id, persist, session_id FROM generated_pdfs WHERE id IN ({placeholders}) AND user_id = ?', (*pdf_ids, current_user.id)).fetchall()
+
+        for pdf in owned_pdfs:
+            new_status = 1 - pdf['persist']
+            session_id = pdf['session_id']
+            conn.execute('UPDATE generated_pdfs SET persist = ? WHERE id = ?', (new_status, pdf['id']))
+            if session_id:
+                conn.execute('UPDATE sessions SET persist = ? WHERE id = ? AND user_id = ?', (new_status, session_id, current_user.id))
 
         conn.commit()
         conn.close()
@@ -1005,7 +1372,8 @@ def bulk_toggle_persist():
         print(f"Error in bulk_toggle_persist: {e}")
         conn.rollback(); conn.close(); return jsonify({'error': str(e)}), 500
 
-@main_bp.route('/bulk_download_pdfs', methods=['POST'])
+@main_bp.route('/bulk_download_pdfs', methods=[METHOD_POST])
+@login_required
 def bulk_download_pdfs():
     data = request.json
     pdf_ids = data.get('ids', [])
@@ -1016,11 +1384,11 @@ def bulk_download_pdfs():
     try:
         with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
             conn = get_db_connection()
-            for pdf_id in pdf_ids:
-                pdf_info = conn.execute('SELECT filename FROM generated_pdfs WHERE id = ?', (pdf_id,)).fetchone()
-                if pdf_info:
-                    pdf_path = os.path.join(current_app.config['OUTPUT_FOLDER'], pdf_info['filename'])
-                    if os.path.exists(pdf_path): zf.write(pdf_path, os.path.basename(pdf_path))
+            placeholders = ','.join('?' for _ in pdf_ids)
+            owned_pdfs = conn.execute(f'SELECT filename FROM generated_pdfs WHERE id IN ({placeholders}) AND user_id = ?', (*pdf_ids, current_user.id)).fetchall()
+            for pdf_info in owned_pdfs:
+                pdf_path = os.path.join(current_app.config['OUTPUT_FOLDER'], pdf_info['filename'])
+                if os.path.exists(pdf_path): zf.write(pdf_path, os.path.basename(pdf_path))
             conn.close()
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -1030,6 +1398,7 @@ def bulk_download_pdfs():
     return send_file(memory_file, mimetype='application/zip', as_attachment=True, download_name='pdfs.zip')
 
 @main_bp.route('/create_folder', methods=[METHOD_POST])
+@login_required
 def create_folder():
     data = request.json
     name, parent_id = data.get('new_folder_name'), data.get('parent_id')
@@ -1038,7 +1407,7 @@ def create_folder():
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("INSERT INTO folders (name, parent_id) VALUES (?, ?)", (name, parent_id))
+        cursor.execute("INSERT INTO folders (name, parent_id, user_id) VALUES (?, ?, ?)", (name, parent_id, current_user.id))
         new_folder_id = cursor.lastrowid
         conn.commit()
         conn.close()
@@ -1047,6 +1416,7 @@ def create_folder():
         return jsonify({'error': str(e)}), 500
 
 @main_bp.route('/bulk_move_pdfs', methods=[METHOD_POST])
+@login_required
 def bulk_move_pdfs():
     data = request.json
     pdf_ids, target_folder_id = data.get('ids', []), data.get('target_folder_id')
@@ -1054,15 +1424,21 @@ def bulk_move_pdfs():
 
     try:
         conn = get_db_connection()
+        if target_folder_id:
+            folder_owner = conn.execute('SELECT user_id FROM folders WHERE id = ?', (target_folder_id,)).fetchone()
+            if not folder_owner or folder_owner['user_id'] != current_user.id:
+                conn.close(); return jsonify({'error': 'Unauthorized target folder'}), 403
+        
         placeholders = ', '.join('?' * len(pdf_ids))
-        conn.execute(f'UPDATE generated_pdfs SET folder_id = ? WHERE id IN ({placeholders})', (target_folder_id, *pdf_ids))
+        conn.execute(f'UPDATE generated_pdfs SET folder_id = ? WHERE id IN ({placeholders}) AND user_id = ?', (target_folder_id, *pdf_ids, current_user.id))
         conn.commit()
         conn.close()
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@main_bp.route('/merge_pdfs', methods=['POST'])
+@main_bp.route('/merge_pdfs', methods=[METHOD_POST])
+@login_required
 def merge_pdfs():
     data = request.json
     pdf_ids = data.get('pdf_ids', [])
@@ -1072,10 +1448,11 @@ def merge_pdfs():
         conn = get_db_connection()
         safe_pdf_ids = [int(pid) for pid in pdf_ids]
         placeholders = ', '.join('?' * len(safe_pdf_ids))
-        query = f"SELECT filename FROM generated_pdfs WHERE id IN ({placeholders}) ORDER BY created_at"
-        pdfs_to_merge = conn.execute(query, safe_pdf_ids).fetchall()
+        query = f"SELECT filename FROM generated_pdfs WHERE id IN ({placeholders}) AND user_id = ?"
+        pdfs_to_merge = conn.execute(query, (*safe_pdf_ids, current_user.id)).fetchall()
 
-        if len(pdfs_to_merge) != len(safe_pdf_ids): conn.close(); return jsonify({'error': 'One or more selected PDFs not found.'}), 404
+        if len(pdfs_to_merge) != len(safe_pdf_ids):
+             conn.close(); return jsonify({'error': 'One or more selected PDFs not found or are unauthorized.'}), 404
 
         merged_doc = fitz.open()
         source_filenames = []
@@ -1093,14 +1470,14 @@ def merge_pdfs():
         merged_doc.close()
 
         session_id = str(uuid.uuid4())
-        conn.execute('INSERT INTO sessions (id, original_filename) VALUES (?, ?)', (session_id, f"Merged from {len(source_filenames)} files"))
+        conn.execute('INSERT INTO sessions (id, original_filename, user_id) VALUES (?, ?, ?)', (session_id, f"Merged from {len(source_filenames)} files", current_user.id))
 
         subject = "Merged Document"
         notes = f"This document was created by merging the following files:\n" + "\n".join(source_filenames)
         
         conn.execute(
-            'INSERT INTO generated_pdfs (session_id, filename, subject, tags, notes, source_filename) VALUES (?, ?, ?, ?, ?, ?)',
-            (session_id, new_filename, subject, 'merged', notes, ", ".join(source_filenames))
+            'INSERT INTO generated_pdfs (session_id, filename, subject, tags, notes, source_filename, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            (session_id, new_filename, subject, 'merged', notes, ", ".join(source_filenames), current_user.id)
         )
         conn.commit()
         conn.close()
@@ -1112,44 +1489,88 @@ def merge_pdfs():
         return jsonify({'error': str(e)}), 500
 
 @main_bp.route('/upload_final_pdf')
+@login_required
 def upload_final_pdf():
     return render_template('upload_final_pdf.html')
 
-@main_bp.route('/handle_final_pdf_upload', methods=[METHOD_POST])
-def handle_final_pdf_upload():
-    if 'pdf' not in request.files: return 'No PDF file part', 400
-    file = request.files['pdf']
-    if file.filename == '': return 'No selected file', 400
 
+@main_bp.route('/handle_final_pdf_upload', methods=[METHOD_POST])
+@login_required
+def handle_final_pdf_upload():
     subject = request.form.get('subject')
     if not subject: return 'Subject is required', 400
 
-    if file and file.filename.lower().endswith('.pdf'):
+    tags, notes = request.form.get('tags'), request.form.get('notes')
+    conn = get_db_connection()
+    
+    def process_and_save_pdf(file_content, original_filename):
         session_id = str(uuid.uuid4())
-        original_filename = secure_filename(file.filename)
-        
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute('INSERT INTO sessions (id, original_filename) VALUES (?, ?)', (session_id, original_filename))
-        
-        output_filename = f"{session_id}_{original_filename}"
+        # Associate session with user
+        conn.execute('INSERT INTO sessions (id, original_filename, user_id) VALUES (?, ?, ?)', 
+                     (session_id, original_filename, current_user.id))
+
+        secure_name = secure_filename(original_filename)
+        output_filename = f"{session_id}_{secure_name}"
         output_path = os.path.join(current_app.config['OUTPUT_FOLDER'], output_filename)
-        file.save(output_path)
 
-        tags, notes = request.form.get('tags'), request.form.get('notes')
+        with open(output_path, 'wb') as f:
+            f.write(file_content)
 
-        cursor.execute(
-            'INSERT INTO generated_pdfs (session_id, filename, subject, tags, notes, source_filename) VALUES (?, ?, ?, ?, ?, ?)',
-            (session_id, output_filename, subject, tags, notes, original_filename)
+        # Associate generated PDF with user
+        conn.execute(
+            'INSERT INTO generated_pdfs (session_id, filename, subject, tags, notes, source_filename, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            (session_id, output_filename, subject, tags, notes, original_filename, current_user.id)
         )
         conn.commit()
+
+    try:
+        if 'pdf' in request.files and request.files['pdf'].filename:
+            file = request.files['pdf']
+            if file and file.filename.lower().endswith('.pdf'):
+                process_and_save_pdf(file.read(), file.filename)
+            else:
+                return 'Invalid file type', 400
+
+        elif 'pdf_url' in request.form and request.form['pdf_url']:
+            pdf_url = request.form['pdf_url']
+            response = requests.get(pdf_url, allow_redirects=True)
+            response.raise_for_status()
+            original_filename = os.path.basename(urlparse(pdf_url).path)
+            if not original_filename.lower().endswith('.pdf'):
+                original_filename += '.pdf'
+            process_and_save_pdf(response.content, original_filename)
+
+        elif 'curl_command' in request.form and request.form['curl_command']:
+            curl_input = request.form['curl_command'].strip().replace('\n', ',')
+            curl_commands = [cmd.strip() for cmd in curl_input.split(',') if cmd.strip()]
+            
+            for command in curl_commands:
+                url, filename = _parse_curl_command(command)
+                if not url or not filename:
+                    current_app.logger.warning(f"Could not parse cURL command: {command}")
+                    continue
+                
+                response = requests.get(url, allow_redirects=True)
+                response.raise_for_status()
+                process_and_save_pdf(response.content, filename)
+        
+        else:
+            return 'No PDF file, URL, or cURL command provided', 400
+
+    except requests.RequestException as e:
+        current_app.logger.error(f"Failed to download PDF from URL: {e}")
+        return f"Failed to download PDF: {e}", 500
+    except Exception as e:
+        current_app.logger.error(f"An error occurred during PDF upload: {e}")
+        return "An internal error occurred.", 500
+    finally:
         conn.close()
-        return redirect(url_for('main.pdf_manager'))
-    else:
-        return 'Invalid file type', 400
+
+    return redirect(url_for('main.pdf_manager'))
 
 @main_bp.route('/resize/', defaults={'folder_path': ''}, methods=['GET', 'POST'])
 @main_bp.route('/resize/browse/<path:folder_path>', methods=['GET', 'POST'])
+@login_required
 def resize_pdf_route(folder_path):
     if request.method == 'POST':
         input_pdf_name, output_pdf_name = request.form.get('input_pdf'), request.form.get('output_pdf')
@@ -1159,6 +1580,12 @@ def resize_pdf_route(folder_path):
         add_space = 'add_space' in request.form
 
         if not input_pdf_name or not output_pdf_name: return "Missing input or output PDF name", 400
+        
+        conn = get_db_connection()
+        pdf_owner = conn.execute('SELECT user_id FROM generated_pdfs WHERE filename = ?', (input_pdf_name,)).fetchone()
+        if not pdf_owner or pdf_owner['user_id'] != current_user.id:
+            conn.close()
+            return "Unauthorized", 403
 
         def hex_to_rgb(h):
             h = h.lstrip('#')
@@ -1175,28 +1602,28 @@ def resize_pdf_route(folder_path):
                 pattern=pattern, pattern_color=pattern_color
             )
 
-            conn = get_db_connection()
             session_id = str(uuid.uuid4())
-            conn.execute('INSERT INTO sessions (id, original_filename) VALUES (?, ?)', (session_id, f"Resized from {input_pdf_name}"))
+            conn.execute('INSERT INTO sessions (id, original_filename, user_id) VALUES (?, ?, ?)', (session_id, f"Resized from {input_pdf_name}", current_user.id))
 
             subject = f"Resized - {os.path.basename(input_pdf_name)}"
             notes = f"Resized with options: mode={mode}, stitch_direction={stitch_direction}, add_space={add_space}, bg_color={bg_color_hex}, pattern={pattern}"
             
             conn.execute(
-                'INSERT INTO generated_pdfs (session_id, filename, subject, tags, notes, source_filename) VALUES (?, ?, ?, ?, ?, ?)',
-                (session_id, output_pdf_name, subject, 'resized', notes, input_pdf_name)
+                'INSERT INTO generated_pdfs (session_id, filename, subject, tags, notes, source_filename, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                (session_id, output_pdf_name, subject, 'resized', notes, input_pdf_name, current_user.id)
             )
             conn.commit()
             conn.close()
 
             return redirect(url_for('main.pdf_manager'))
         except Exception as e:
+            conn.close()
             return f"Error during resizing or database update: {e}", 500
 
     else:  # GET request
         conn = get_db_connection()
         search_query, is_recursive = request.args.get('search', ''), request.args.get('recursive') == 'true'
-        query_params, where_clauses = [], []
+        query_params, where_clauses = [current_user.id], ['user_id = ?']
 
         if search_query:
             where_clauses.append('(filename LIKE ? OR subject LIKE ? OR tags LIKE ?)')
@@ -1209,7 +1636,7 @@ def resize_pdf_route(folder_path):
             parts = folder_path.split('/')
             parent_id = None
             for i, part in enumerate(parts):
-                res = conn.execute("SELECT id FROM folders WHERE name = ? AND (parent_id = ? OR (? IS NULL AND parent_id IS NULL))", (part, parent_id, parent_id)).fetchone()
+                res = conn.execute("SELECT id FROM folders WHERE name = ? AND user_id = ? AND (parent_id = ? OR (? IS NULL AND parent_id IS NULL))", (part, current_user.id, parent_id, parent_id)).fetchone()
                 if not res: return redirect(url_for('main.resize_pdf_route'))
                 parent_id = res['id']
                 breadcrumbs.append({'name': part, 'path': '/'.join(parts[:i+1])})
@@ -1217,7 +1644,7 @@ def resize_pdf_route(folder_path):
 
         if is_recursive and search_query:
             if folder_id:
-                descendant_ids = get_all_descendant_folder_ids(conn, folder_id)
+                descendant_ids = get_all_descendant_folder_ids(conn, folder_id, current_user.id)
                 all_folder_ids = [folder_id] + descendant_ids
                 if all_folder_ids:
                     placeholders = ', '.join('?' * len(all_folder_ids))
@@ -1227,16 +1654,16 @@ def resize_pdf_route(folder_path):
             if folder_id: where_clauses.append('folder_id = ?'); query_params.append(folder_id)
             else: where_clauses.append('folder_id IS NULL')
 
-        if folder_id: subfolders = conn.execute('SELECT * FROM folders WHERE parent_id = ? ORDER BY name', (folder_id,)).fetchall()
-        else: subfolders = conn.execute('SELECT * FROM folders WHERE parent_id IS NULL ORDER BY name').fetchall()
+        if folder_id:
+            subfolders = conn.execute('SELECT * FROM folders WHERE parent_id = ? AND user_id = ? ORDER BY name', (folder_id, current_user.id)).fetchall()
+        else:
+            subfolders = conn.execute('SELECT * FROM folders WHERE parent_id IS NULL AND user_id = ? ORDER BY name', (current_user.id,)).fetchall()
 
-        if where_clauses: base_query = 'SELECT * FROM generated_pdfs WHERE ' + ' AND '.join(where_clauses)
-        else: base_query = 'SELECT * FROM generated_pdfs'
-        
+        base_query = 'SELECT * FROM generated_pdfs WHERE ' + ' AND '.join(where_clauses)
         base_query += ' ORDER BY created_at DESC'
         
         pdfs = conn.execute(base_query, query_params).fetchall()
-        folder_tree = get_folder_tree()
+        folder_tree = get_folder_tree(user_id=current_user.id)
         conn.close()
 
         return render_template('resize.html', pdfs=[dict(row) for row in pdfs], subfolders=[dict(row) for row in subfolders],
@@ -1244,16 +1671,22 @@ def resize_pdf_route(folder_path):
                                search_query=search_query, recursive=is_recursive)
 
 @main_bp.route('/print_pdfs', methods=['POST'])
+@login_required
 def print_pdfs():
     pdf_ids = request.form.getlist('pdf_ids')
-    if not pdf_ids: return "No PDFs selected", 400
+    current_app.logger.info(f"User {current_user.id} printing PDFs with IDs: {pdf_ids}")
+    if not pdf_ids:
+        return jsonify({'error': 'No PDFs selected'}), 400
 
     conn = get_db_connection()
-    query = f"SELECT filename, subject FROM generated_pdfs WHERE id IN ({','.join('?' for _ in pdf_ids)})"
-    pdfs_info = conn.execute(query, pdf_ids).fetchall()
+    placeholders = ','.join('?' for _ in pdf_ids)
+    query = f"SELECT filename, subject FROM generated_pdfs WHERE id IN ({placeholders}) AND user_id = ?"
+    pdfs_info = conn.execute(query, (*pdf_ids, current_user.id)).fetchall()
     conn.close()
 
-    if not pdfs_info: return "No valid PDFs found for the given IDs", 404
+    current_app.logger.info(f"Found {len(pdfs_info)} owned PDFs to print.")
+    if not pdfs_info:
+        return jsonify({'error': 'No valid PDFs found for the given IDs'}), 404
 
     merged_pdf = fitz.open()
     font_path = "arial.ttf"
@@ -1272,31 +1705,59 @@ def print_pdfs():
                 merged_pdf.insert_pdf(doc)
                 doc.close()
             except Exception as e:
-                print(f"ERROR processing PDF '{pdf_info['filename']}': {e}")
+                current_app.logger.error(f"ERROR processing PDF '{pdf_info['filename']}': {e}")
         else:
-            print(f"WARNING: PDF file not found at '{pdf_path}'")
+            current_app.logger.warning(f"PDF file not found at '{pdf_path}'")
 
-    output_stream = io.BytesIO()
-    merged_pdf.save(output_stream)
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    temp_filename = f'printed_documents_{timestamp}.pdf'
+    temp_filepath = os.path.join(current_app.config['TEMP_FOLDER'], temp_filename)
+    
+    os.makedirs(current_app.config['TEMP_FOLDER'], exist_ok=True)
+    merged_pdf.save(temp_filepath)
     merged_pdf.close()
-    output_stream.seek(0)
 
-    return send_file(output_stream, mimetype='application/pdf', as_attachment=False, download_name='printed_documents.pdf')
+    return jsonify({'success': True, 'url': url_for('main.view_generated_pdf', filename=temp_filename)})
+
+@main_bp.route('/view_generated_pdf/<filename>')
+def view_generated_pdf(filename):
+    """Serves a generated PDF from the temporary folder."""
+    safe_filename = secure_filename(filename)
+    filepath = os.path.join(current_app.config['TEMP_FOLDER'], safe_filename)
+    if not os.path.exists(filepath):
+        return "File not found.", 404
+    return send_file(filepath, mimetype='application/pdf', as_attachment=False)
 
 @main_bp.route('/redact_status/<session_id>')
+@login_required
 def redact_status(session_id):
+    conn = get_db_connection()
+    session_owner = conn.execute('SELECT user_id FROM sessions WHERE id = ?', (session_id,)).fetchone()
+    conn.close()
+    if not session_owner or session_owner['user_id'] != current_user.id:
+        return "Unauthorized", 403
     return render_template('redact_status.html', session_id=session_id)
 
 @main_bp.route('/redaction_stream/<session_id>')
+@login_required
 def redaction_stream(session_id):
     def generate():
+        conn = get_db_connection()
+        session_owner = conn.execute('SELECT user_id FROM sessions WHERE id = ?', (session_id,)).fetchone()
+        if not session_owner or session_owner['user_id'] != current_user.id:
+            conn.close()
+            yield f"data: {json.dumps({'error': 'Unauthorized'})}\n\n"
+            return
+
         if not NVIDIA_NIM_AVAILABLE:
             yield f"data: {json.dumps({'error': 'NVIDIA API Key is not configured.'})}\n\n"; return
 
-        conn = get_db_connection()
         images = conn.execute("SELECT id, filename FROM images WHERE session_id = ? AND image_type = 'original' ORDER BY image_index", (session_id,)).fetchall()
         
-        if not images: conn.close(); yield f"data: {json.dumps({'error': 'No images found for this session.'})}\n\n"; return
+        if not images: 
+            conn.close()
+            yield f"data: {json.dumps({'error': 'No images found for this session.'})}\n\n"
+            return
 
         redacted_image_paths, source_filenames_for_notes = [], []
         total_images = len(images)
@@ -1333,8 +1794,8 @@ def redaction_stream(session_id):
             notes = f"This document was automatically redacted."
             
             conn.execute(
-                'INSERT INTO generated_pdfs (session_id, filename, subject, tags, notes, source_filename) VALUES (?, ?, ?, ?, ?, ?)',
-                (session_id, final_pdf_filename, subject, 'redacted', notes, ", ".join(source_filenames_for_notes))
+                'INSERT INTO generated_pdfs (session_id, filename, subject, tags, notes, source_filename, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                (session_id, final_pdf_filename, subject, 'redacted', notes, ", ".join(source_filenames_for_notes), current_user.id)
             )
             conn.commit()
 
@@ -1347,3 +1808,32 @@ def redaction_stream(session_id):
             conn.close()
 
     return Response(generate(), mimetype='text/event-stream')
+
+@main_bp.route('/chart')
+@login_required
+def chart():
+    conn = get_db_connection()
+
+    total_sessions = conn.execute('SELECT COUNT(*) FROM sessions WHERE user_id = ?', (current_user.id,)).fetchone()[0]
+    total_pdfs = conn.execute('SELECT COUNT(*) FROM generated_pdfs WHERE user_id = ?', (current_user.id,)).fetchone()[0]
+    
+    total_questions = conn.execute("""
+        SELECT COUNT(q.id) FROM questions q
+        JOIN sessions s ON q.session_id = s.id
+        WHERE s.user_id = ?
+    """, (current_user.id,)).fetchone()[0]
+
+    total_classified_questions = conn.execute("""
+        SELECT COUNT(q.id) FROM questions q
+        JOIN sessions s ON q.session_id = s.id
+        WHERE s.user_id = ? AND q.subject IS NOT NULL AND q.chapter IS NOT NULL
+    """, (current_user.id,)).fetchone()[0]
+
+    conn.close()
+
+    return render_template('chart.html', 
+                           total_sessions=total_sessions,
+                           total_pdfs=total_pdfs,
+                           total_questions=total_questions,
+                           total_classified_questions=total_classified_questions)
+

@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <title>{{ pdf_title }}</title>
+    <style>
+        body {
+            background-color: #2b3035;
+            color: #fff;
+            margin: 0;
+            font-family: sans-serif;
+        }
+        .viewer-container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        .viewer-header {
+            padding: 10px;
+            background-color: #212529;
+            text-align: center;
+        }
+        .viewer-main {
+            flex-grow: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+        .viewer-main img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+        .viewer-footer {
+            padding: 10px;
+            background-color: #212529;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .viewer-footer button {
+            background-color: #0d6efd;
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            margin: 0 10px;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+        .viewer-footer button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div class="viewer-container">
+        <div class="viewer-header">
+            <h1>{{ pdf_title }}</h1>
+        </div>
+        <div class="viewer-main">
+            <img id="main-image" src="" alt="PDF Page">
+        </div>
+        <div class="viewer-footer">
+            <button id="prev-btn">Previous</button>
+            <span id="page-counter"></span>
+            <button id="next-btn">Next</button>
+        </div>
+    </div>
+
+    <script>
+        const imageUrls = {{ image_urls|tojson }};
+        let currentIndex = 0;
+
+        const mainImage = document.getElementById('main-image');
+        const prevBtn = document.getElementById('prev-btn');
+        const nextBtn = document.getElementById('next-btn');
+        const pageCounter = document.getElementById('page-counter');
+
+        function showImage(index) {
+            if (index >= 0 && index < imageUrls.length) {
+                mainImage.src = imageUrls[index];
+                currentIndex = index;
+                pageCounter.textContent = `${index + 1} / ${imageUrls.length}`;
+                prevBtn.disabled = index === 0;
+                nextBtn.disabled = index === imageUrls.length - 1;
+            }
+        }
+
+        prevBtn.addEventListener('click', () => {
+            showImage(currentIndex - 1);
+        });
+
+        nextBtn.addEventListener('click', () => {
+            showImage(currentIndex + 1);
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft') {
+                prevBtn.click();
+            } else if (e.key === 'ArrowRight') {
+                nextBtn.click();
+            }
+        });
+
+        // Initial load
+        showImage(0);
+    </script>
+</body>
+</html>

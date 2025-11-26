@@ -1,6 +1,63 @@
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+<style>
+    /* Modern Navbar Styling */
+    .modern-navbar {
+        background: linear-gradient(135deg, #1a1d20 0%, #212529 100%);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        padding: 0.8rem 1rem;
+    }
+
+    .navbar-brand {
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        color: #fff !important;
+    }
+
+    .nav-link {
+        font-weight: 500;
+        transition: all 0.3s ease;
+        border-radius: 5px;
+        padding: 8px 12px !important;
+        margin: 0 2px;
+    }
+
+    .nav-link:hover {
+        background-color: rgba(255, 255, 255, 0.1);
+        color: #0d6efd !important; /* Bootstrap primary blue */
+        transform: translateY(-1px);
+    }
+
+    .nav-link.active {
+        background-color: rgba(13, 110, 253, 0.15);
+        color: #0d6efd !important;
+    }
+
+    /* Mobile Toggler Styling */
+    .navbar-toggler {
+        border: none;
+        padding: 0.25rem 0.5rem;
+    }
+    
+    .navbar-toggler:focus {
+        box-shadow: none; 
+        outline: 2px solid rgba(13, 110, 253, 0.5);
+    }
+</style>
+
+<nav class="navbar navbar-expand-lg navbar-dark modern-navbar sticky-top">
     <div class="container-fluid">
-        <a class="navbar-brand" href="/"><i class="bi bi-file-earmark-pdf-fill me-2"></i>DocuPDF</a>
-        {% include '_nav_links.html' %}
+        <!-- Brand -->
+        <a class="navbar-brand" href="{{ url_for('main.index_v2') }}">
+            <i class="bi bi-file-earmark-pdf-fill me-2 text-primary"></i>DocuPDF
+        </a>
+
+        <!-- Toggler Button (Hamburger) -->
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        <!-- Collapsible Content -->
+        <div class="collapse navbar-collapse" id="navbarNav">
+            {% include '_nav_links.html' %}
+        </div>
     </div>
 </nav>

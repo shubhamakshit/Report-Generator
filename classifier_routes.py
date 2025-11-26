@@ -1,4 +1,5 @@
 from flask import Blueprint, jsonify, current_app, render_template, request
+from flask_login import login_required, current_user
 from utils import get_db_connection
 import os
 from processing import resize_image_if_needed, call_nim_ocr_api
@@ -10,10 +11,21 @@ NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 NVIDIA_NIM_AVAILABLE = bool(NVIDIA_API_KEY)
 
 @classifier_bp.route('/classified/edit')
+@login_required
 def edit_classified_questions():
     """Renders the page for editing classified questions."""
     conn = get_db_connection()
-    questions_from_db = conn.execute('SELECT id, question_text, chapter, subject FROM questions WHERE subject IS NOT NULL AND chapter IS NOT NULL ORDER BY id').fetchall()
+
+    AVAILABLE_SUBJECTS = ["Biology", "Chemistry", "Physics", "Mathematics"]
+    
+    # Security: Fetch questions belonging to the current user
+    questions_from_db = conn.execute("""
+        SELECT q.id, q.question_text, q.chapter, q.subject, q.tags 
+        FROM questions q
+        JOIN sessions s ON q.session_id = s.id
+        WHERE s.user_id = ? AND q.subject IS NOT NULL AND q.chapter IS NOT NULL 
+        ORDER BY q.id
+    """, (current_user.id,)).fetchall()
     
     questions = []
     for q in questions_from_db:
@@ -22,11 +34,23 @@ def edit_classified_questions():
         q_dict['question_text_plain'] = (plain_text[:100] + '...') if len(plain_text) > 100 else plain_text
         questions.append(q_dict)
 
-    chapters = conn.execute('SELECT DISTINCT chapter FROM questions WHERE chapter IS NOT NULL ORDER BY chapter').fetchall()
+    # Suggestions should also be user-specific
+    chapters = conn.execute('SELECT DISTINCT q.chapter FROM questions q JOIN sessions s ON q.session_id = s.id WHERE s.user_id = ? AND q.chapter IS NOT NULL ORDER BY q.chapter', (current_user.id,)).fetchall()
+    tags_query = conn.execute('SELECT DISTINCT q.tags FROM questions q JOIN sessions s ON q.session_id = s.id WHERE s.user_id = ? AND q.tags IS NOT NULL AND q.tags != \'\'', (current_user.id,)).fetchall()
+    all_tags = set()
+    for row in tags_query:
+        tags = [tag.strip() for tag in row['tags'].split(',')]
+        all_tags.update(tags)
+
     conn.close()
-    return render_template('classified_edit.html', questions=questions, chapters=[c['chapter'] for c in chapters])
+    return render_template('classified_edit.html', 
+                           questions=questions, 
+                           chapters=[c['chapter'] for c in chapters], 
+                           all_tags=sorted(list(all_tags)),
+                           available_subjects=AVAILABLE_SUBJECTS)
 
 @classifier_bp.route('/classified/update_question/<int:question_id>', methods=['POST'])
+@login_required
 def update_classified_question(question_id):
     """Handles updating a question's metadata."""
     data = request.json
@@ -38,6 +62,12 @@ def update_classified_question(question_id):
 
     try:
         conn = get_db_connection()
+        # Security: Check ownership before update
+        question_owner = conn.execute("SELECT s.user_id FROM questions q JOIN sessions s ON q.session_id = s.id WHERE q.id = ?", (question_id,)).fetchone()
+        if not question_owner or question_owner['user_id'] != current_user.id:
+            conn.close()
+            return jsonify({'error': 'Unauthorized'}), 403
+
         conn.execute(
             'UPDATE questions SET chapter = ?, subject = ? WHERE id = ?',
             (new_chapter, new_subject, question_id)
@@ -47,30 +77,22 @@ def update_classified_question(question_id):
         return jsonify({'success': True})
     except Exception as e:
         current_app.logger.error(f"Error updating question {question_id}: {repr(e)}")
+        return jsonify({'error': str(e)}), 500
+
 @classifier_bp.route('/classified/delete_question/<int:question_id>', methods=['DELETE'])
+@login_required
 def delete_classified_question(question_id):
     """Handles deleting a classified question."""
     try:
         conn = get_db_connection()
-        # First, get the image_id from the questions table
-        image_id_res = conn.execute('SELECT image_id FROM questions WHERE id = ?', (question_id,)).fetchone()
-        if not image_id_res:
+        # Security: Check ownership before delete
+        question_owner = conn.execute("SELECT s.user_id FROM questions q JOIN sessions s ON q.session_id = s.id WHERE q.id = ?", (question_id,)).fetchone()
+        if not question_owner or question_owner['user_id'] != current_user.id:
             conn.close()
-            return jsonify({'error': 'Question not found'}), 404
-        
-        image_id = image_id_res['image_id']
+            return jsonify({'error': 'Unauthorized'}), 403
 
-        # Get the image filename to delete from the filesystem
-        image_info = conn.execute('SELECT processed_filename FROM images WHERE id = ?', (image_id,)).fetchone()
-        if image_info and image_info['processed_filename']:
-            try:
-                os.remove(os.path.join(current_app.config['PROCESSED_FOLDER'], image_info['processed_filename']))
-            except OSError as e:
-                current_app.logger.error(f"Error deleting image file: {e}")
-
-        # Delete from questions and images tables
-        conn.execute('DELETE FROM questions WHERE id = ?', (question_id,))
-        conn.execute('DELETE FROM images WHERE id = ?', (image_id,))
+        # Update the question to remove classification
+        conn.execute('UPDATE questions SET subject = NULL, chapter = NULL WHERE id = ?', (question_id,))
         
         conn.commit()
         conn.close()
@@ -79,14 +101,59 @@ def delete_classified_question(question_id):
         current_app.logger.error(f"Error deleting question {question_id}: {repr(e)}")
         return jsonify({'error': str(e)}), 500
 
+@classifier_bp.route('/classified/delete_many', methods=['POST'])
+@login_required
+def delete_many_classified_questions():
+    """Handles bulk deleting classified questions."""
+    data = request.json
+    question_ids = data.get('ids', [])
+
+    if not question_ids:
+        return jsonify({'error': 'No question IDs provided.'}), 400
+
+    try:
+        conn = get_db_connection()
+        # Security: Filter IDs to only those owned by the user
+        placeholders = ','.join('?' for _ in question_ids)
+        owned_q_ids_rows = conn.execute(f"""
+            SELECT q.id FROM questions q
+            JOIN sessions s ON q.session_id = s.id
+            WHERE q.id IN ({placeholders}) AND s.user_id = ?
+        """, (*question_ids, current_user.id)).fetchall()
+        
+        owned_q_ids = [row['id'] for row in owned_q_ids_rows]
+
+        if not owned_q_ids:
+            conn.close()
+            return jsonify({'success': True, 'message': 'No owned questions to delete.'})
+
+        update_placeholders = ','.join('?' for _ in owned_q_ids)
+        conn.execute(f'UPDATE questions SET subject = NULL, chapter = NULL WHERE id IN ({update_placeholders})', owned_q_ids)
+        
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        current_app.logger.error(f"Error deleting questions: {repr(e)}")
+        return jsonify({'error': str(e)}), 500
+
+from rich.table import Table
+from rich.console import Console
 
 @classifier_bp.route('/extract_and_classify_all/<session_id>', methods=['POST'])
+@login_required
 def extract_and_classify_all(session_id):
     if not NVIDIA_NIM_AVAILABLE:
         return jsonify({'error': 'NVIDIA NIM feature is not available. Please set the NVIDIA_API_KEY environment variable.'}), 400
 
     try:
         conn = get_db_connection()
+        # Security: Check ownership of the session
+        session_owner = conn.execute('SELECT user_id FROM sessions WHERE id = ?', (session_id,)).fetchone()
+        if not session_owner or session_owner['user_id'] != current_user.id:
+            conn.close()
+            return jsonify({'error': 'Unauthorized'}), 403
+
         images = conn.execute(
             "SELECT id, processed_filename FROM images WHERE session_id = ? AND image_type = 'cropped' ORDER BY id", 
             (session_id,)
@@ -96,7 +163,7 @@ def extract_and_classify_all(session_id):
             conn.close()
             return jsonify({'error': 'No cropped images found in session'}), 404
 
-        current_app.logger.info(f"Found {len(images)} images to process.")
+        current_app.logger.info(f"Found {len(images)} images to process for user {current_user.id}.")
 
         question_texts = []
         image_ids = []
@@ -129,6 +196,7 @@ def extract_and_classify_all(session_id):
 
         conn.commit()
 
+        console = Console()
         current_app.logger.info(f"Extracted text for {len(question_texts)} questions. Now classifying with Gemini.")
         classification_result = classify_questions_with_gemini(question_texts)
         current_app.logger.info(f"Gemini classification result: {classification_result}")
@@ -143,21 +211,24 @@ def extract_and_classify_all(session_id):
             item_index = item.get('index')
             if item_index is not None and 1 <= item_index <= len(image_ids):
                 matched_id = image_ids[item_index - 1]
+                new_subject = item.get('subject') # Extract the subject
                 new_chapter = item.get('chapter_title')
-                if new_chapter and new_chapter != 'Non-Biology':
-                    conn.execute('UPDATE questions SET subject = ?, chapter = ? WHERE image_id = ?', ("Biology", new_chapter, matched_id))
-                    current_app.logger.info(f"Updated subject to 'Biology' and chapter to '{new_chapter}' for image_id: {matched_id}")
+                
+                # Only update if a valid subject AND chapter are returned
+                if new_subject and new_subject != 'Unclassified' and new_chapter and new_chapter != 'Unclassified':
+                    conn.execute('UPDATE questions SET subject = ?, chapter = ? WHERE image_id = ?', (new_subject, new_chapter, matched_id))
+                    current_app.logger.info(f"Updated subject to '{new_subject}' and chapter to '{new_chapter}' for image_id: {matched_id}")
                     update_count += 1
+                elif new_subject and new_subject != 'Unclassified' and (not new_chapter or new_chapter == 'Unclassified'):
+                    # Handle cases where subject is found but chapter is not (e.g., Gemini couldn't find a specific chapter)
+                    conn.execute('UPDATE questions SET subject = ?, chapter = ? WHERE image_id = ?', (new_subject, 'Unclassified', matched_id))
+                    current_app.logger.info(f"Updated subject to '{new_subject}' and chapter to 'Unclassified' for image_id: {matched_id}")
+                    update_count += 1
+                else:
+                    current_app.logger.info(f"Skipping update for image_id {matched_id}: No valid subject or chapter found by Gemini.")
 
         conn.commit()
         current_app.logger.info(f"Updated {update_count} questions in the database.")
-
-        # Add this for debugging
-        if image_ids:
-            test_image_id = image_ids[0]
-            res = conn.execute("SELECT * FROM questions WHERE image_id = ?", (test_image_id,)).fetchone()
-            current_app.logger.info(f"DEBUG: Question data for image_id {test_image_id}: {dict(res) if res else 'Not Found'}")
-
         conn.close()
 
         return jsonify({'success': True, 'message': f'Successfully extracted and classified {len(image_ids)} questions.'})

@@ -1,128 +1,205 @@
+
 {% extends "base.html" %}
 
-{% block title %}Dashboard - DocuPDF{% endblock %}
+{% block title %}Session Dashboard{% endblock %}
+
+{% block head %}
+<style>
+    .name-column {
+        word-wrap: break-word;
+        white-space: normal;
+        max-width: 250px; /* Default max-width for larger screens */
+    }
+    @media (max-width: 768px) { /* For medium and smaller devices */
+        .name-column {
+            max-width: 25%; /* No more than 1/4th of the screen */
+        }
+    }
+    .table-responsive {
+        overflow-x: auto;
+    }
+    th:first-child, td:first-child {
+        position: sticky;
+        left: 0;
+        z-index: 2;
+        background-color: #212529; /* Match table background */
+    }
+    th:nth-child(2), td:nth-child(2) {
+        position: sticky;
+        left: 40px; /* Adjust based on the width of the first column */
+        z-index: 2;
+        background-color: #212529;
+    }
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="container mt-4">
-    <!-- Editable Sessions -->
-    <div class="card bg-dark text-white mb-4">
-        <div class="card-header">
-            <h2 class="h4 mb-0">Editable Sessions</h2>
-        </div>
-        <div class="card-body">
-            <div class="table-responsive">
-                <table class="table table-dark table-striped">
-                    <thead>
-                        <tr>
-                            <th>File Name</th>
-                            <th>Created At</th>
-                            <th>Pages</th>
-                            <th>Questions</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for session in sessions if session.page_count > 0 %}
-                        <tr>
-                            <td>{{ session.pdf_name }}</td>
-                            <td>{{ session.created_at }}</td>
-                            <td>{{ session.page_count }}</td>
-                            <td>{{ session.question_count }}</td>
-                            <td>
-                                <div class="btn-group" role="group">
-                                    <a href="/cropv2/{{ session.id }}/0" class="btn btn-sm btn-outline-primary">Edit Files</a>
-                                    <a href="/redact_status/{{ session.id }}" class="btn btn-sm btn-outline-warning">Redact</a>
-                                    {% if session.question_count > 0 %}
-                                    <a href="/question_entry_v2/{{ session.id }}" class="btn btn-sm btn-outline-success">Edit Questions</a>
-                                    {% endif %}
-                                    <button class="btn btn-sm btn-outline-danger" onclick="deleteSession('{{ session.id }}')">Delete</button>
-                                    <button class="btn btn-sm {% if session.persist %}btn-success{% else %}btn-outline-secondary{% endif %}" onclick="togglePersist('{{ session.id }}')">
-                                        {% if session.persist %}Persisted{% else %}Persist{% endif %}
-                                    </button>
-                                </div>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
+<div class="container-fluid mt-4" style="width: 90%; margin: auto;">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <h2>Session Dashboard</h2>
+        <button id="delete-selected-btn" class="btn btn-danger" style="display: none;">Delete Selected</button>
     </div>
 
-    <!-- Final PDFs -->
-    <div class="card bg-dark text-white mb-4">
-        <div class="card-header">
-            <h2 class="h4 mb-0">Final PDFs</h2>
-        </div>
-        <div class="card-body">
-            <div class="table-responsive">
-                <table class="table table-dark table-striped">
-                    <thead>
-                        <tr>
-                            <th>File Name</th>
-                            <th>Created At</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for session in sessions if session.page_count == 0 %}
-                        <tr>
-                            <td>{{ session.pdf_name }}</td>
-                            <td>{{ session.created_at }}</td>
-                            <td>
-                                <div class="btn-group" role="group">
-                                    <button class="btn btn-sm btn-outline-danger" onclick="deleteSession('{{ session.id }}')">Delete</button>
-                                    <button class="btn btn-sm {% if session.persist %}btn-success{% else %}btn-outline-secondary{% endif %}" onclick="togglePersist('{{ session.id }}')">
-                                        {% if session.persist %}Persisted{% else %}Persist{% endif %}
-                                    </button>
-                                </div>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
+    <div class="table-responsive">
+        <table class="table table-hover table-striped">
+            <thead>
+                <tr>
+                    <th scope="col" style="width: 3%;">S.No.</th>
+                    <th scope="col" style="width: 3%;"><input type="checkbox" id="select-all-checkbox"></th>
+                    <th scope="col" class="name-column">Name</th>
+                    <th scope="col">Created At</th>
+                    <th scope="col">Pages</th>
+                    <th scope="col">Questions</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for session in sessions %}
+                <tr data-session-id="{{ session.id }}">
+                    <td>{{ loop.index }}</td>
+                    <td><input type="checkbox" class="session-checkbox"></td>
+                    <td class="editable-name name-column">
+                        <span class="session-name">{{ session.name or session.original_filename }}</span>
+                        <i class="fas fa-pencil-alt edit-name-icon ms-2" style="cursor: pointer;"></i>
+                        <input type="text" class="form-control form-control-sm d-none" value="{{ session.name or session.original_filename }}">
+                    </td>
+                    <td><span class="badge bg-secondary">{{ session.created_at | humanize }}</span></td>
+                    <td>{{ session.page_count }}</td>
+                    <td>{{ session.question_count }}</td>
+                    <td>
+                        {% if session.persist %}
+                            <span class="badge bg-success">Persisted</span>
+                        {% else %}
+                            <span class="badge bg-secondary">Not Persisted</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div class="btn-group" role="group">
+                            <a href="{{ url_for('main.question_entry_v2', session_id=session.id) }}" class="btn btn-sm btn-primary">View</a>
+                            <a href="{{ url_for('main.crop_interface_v2', session_id=session.id, image_index=0) }}" class="btn btn-sm btn-secondary">Crop</a>
+                            <button class="btn btn-sm btn-info toggle-persist-btn">Toggle Persist</button>
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="8" class="text-center">No sessions found.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
+{{ super() }}
 <script>
-    async function deleteSession(sessionId) {
-        if (confirm('Are you sure you want to delete this session? This action cannot be undone.')) {
-            try {
-                const response = await fetch(`/delete_session/${sessionId}`, {
-                    method: 'DELETE'
-                });
-                
-                if (response.ok) {
-                    location.reload();
-                } else {
-                    alert('Failed to delete session.');
-                }
-            } catch (error) {
-                console.error('Error:', error);
-                alert('An error occurred while deleting the session.');
-            }
-        }
+$(document).ready(function() {
+    // Checkbox selection logic
+    const deleteBtn = $('#delete-selected-btn');
+    const selectAllCheckbox = $('#select-all-checkbox');
+    const sessionCheckboxes = $('.session-checkbox');
+
+    function toggleDeleteButton() {
+        const anyChecked = sessionCheckboxes.is(':checked');
+        deleteBtn.css('display', anyChecked ? 'inline-block' : 'none');
     }
 
-    async function togglePersist(sessionId) {
-        try {
-            const response = await fetch(`/toggle_persist/${sessionId}`, {
-                method: 'POST'
-            });
-            
-            if (response.ok) {
-                location.reload();
-            } else {
-                alert('Failed to toggle persistence.');
-            }
-        } catch (error) {
-            console.error('Error:', error);
-            alert('An error occurred while toggling persistence.');
+    selectAllCheckbox.on('change', function() {
+        sessionCheckboxes.prop('checked', $(this).prop('checked'));
+        toggleDeleteButton();
+    });
+
+    sessionCheckboxes.on('change', function() {
+        if (!$(this).prop('checked')) {
+            selectAllCheckbox.prop('checked', false);
         }
-    }
+        toggleDeleteButton();
+    });
+
+    // Batch delete
+    deleteBtn.on('click', function() {
+        const selectedIds = [];
+        sessionCheckboxes.filter(':checked').each(function() {
+            selectedIds.push($(this).closest('tr').data('session-id'));
+        });
+
+        if (selectedIds.length > 0 && confirm('Are you sure you want to delete the selected sessions?')) {
+            $.ajax({
+                url: '/sessions/batch_delete',
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ ids: selectedIds }),
+                success: function(response) {
+                    if (response.success) {
+                        location.reload();
+                    } else {
+                        alert('Error deleting sessions: ' + response.error);
+                    }
+                }
+            });
+        }
+    });
+
+    // Editable name
+    $('.edit-name-icon').on('click', function() {
+        const icon = $(this);
+        const span = icon.prev('.session-name');
+        const input = icon.next('input');
+        span.addClass('d-none');
+        icon.addClass('d-none');
+        input.removeClass('d-none').focus();
+    });
+
+    $('.editable-name input').on('blur keyup', function(e) {
+        if (e.type === 'blur' || e.key === 'Enter') {
+            const input = $(this);
+            const span = input.siblings('.session-name');
+            const icon = input.siblings('.edit-name-icon');
+            const newName = input.val();
+            const oldName = span.text();
+            const sessionId = input.closest('tr').data('session-id');
+
+            if (newName && newName !== oldName) {
+                $.ajax({
+                    url: `/rename_session/${sessionId}`,
+                    type: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({ new_name: newName }),
+                    success: function(response) {
+                        if (response.success) {
+                            span.text(newName);
+                        } else {
+                            alert('Error renaming session: ' + response.error);
+                            input.val(oldName); // Revert on error
+                        }
+                    }
+                });
+            }
+            input.addClass('d-none');
+            span.removeClass('d-none');
+            icon.removeClass('d-none');
+        }
+    });
+
+    // Toggle persist
+    $('.toggle-persist-btn').on('click', function() {
+        const button = $(this);
+        const sessionId = button.closest('tr').data('session-id');
+        $.ajax({
+            url: `/toggle_persist/${sessionId}`,
+            type: 'POST',
+            success: function(response) {
+                if (response.success) {
+                    location.reload(); // Simple reload for now
+                } else {
+                    alert('Error toggling persistence: ' + response.error);
+                }
+            }
+        });
+    });
+});
 </script>
 {% endblock %}

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}User Statistics{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="card bg-dark text-white">
+        <div class="card-header text-center">
+            <h1 class="h3 mb-0">Your Application Statistics</h1>
+        </div>
+        <div class="card-body">
+            <div class="row text-center g-4">
+                <div class="col-md-6 col-lg-3">
+                    <div class="card bg-secondary h-100 p-3">
+                        <div class="card-body">
+                            <i class="bi bi-journal-album mb-3" style="font-size: 3rem; color: #0d6efd;"></i>
+                            <h5 class="card-title">Total Sessions</h5>
+                            <p class="card-text fs-2 fw-bold">{{ total_sessions }}</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-3">
+                    <div class="card bg-secondary h-100 p-3">
+                        <div class="card-body">
+                            <i class="bi bi-file-earmark-text mb-3" style="font-size: 3rem; color: #198754;"></i>
+                            <h5 class="card-title">Total PDFs Generated</h5>
+                            <p class="card-text fs-2 fw-bold">{{ total_pdfs }}</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-3">
+                    <div class="card bg-secondary h-100 p-3">
+                        <div class="card-body">
+                            <i class="bi bi-patch-question mb-3" style="font-size: 3rem; color: #ffc107;"></i>
+                            <h5 class="card-title">Total Questions</h5>
+                            <p class="card-text fs-2 fw-bold">{{ total_questions }}</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-3">
+                    <div class="card bg-secondary h-100 p-3">
+                        <div class="card-body">
+                            <i class="bi bi-tags mb-3" style="font-size: 3rem; color: #fd7e14;"></i>
+                            <h5 class="card-title">Total Classified Questions</h5>
+                            <p class="card-text fs-2 fw-bold">{{ total_classified_questions }}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

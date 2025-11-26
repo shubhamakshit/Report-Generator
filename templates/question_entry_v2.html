@@ -116,14 +116,15 @@
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">Status</label>
                                 <select class="form-select d-none" id="status_{{ loop.index0 }}" name="status_{{ loop.index0 }}">
-                                    <option value="correct" {% if image.status == 'correct' %}selected{% endif %}>Correct</option>
-                                    <option value="wrong" {% if image.status == 'wrong' %}selected{% endif %}>Wrong</option>
-                                    <option value="unattempted" {% if image.status == 'unattempted' or not image.status %}selected{% endif %}>Unattempted</option>
+                                    <option value="correct" {% if image.status and image.status.lower() == 'correct' %}selected{% endif %}>Correct</option>
+                                    <option value="wrong" {% if image.status and image.status.lower() == 'wrong' %}selected{% endif %}>Wrong</option>
+                                    <option value="unattempted" {% if image.status and image.status.lower() == 'unattempted' or not image.status %}selected{% endif %}>Unattempted</option>
                                 </select>
                                 <div class="status-buttons" data-index="{{ loop.index0 }}">
-                                    <button type="button" class="status-btn {% if image.status == 'correct' %}active{% endif %}" data-status="correct">✓ Correct</button>
-                                    <button type="button" class="status-btn {% if image.status == 'wrong' %}active{% endif %}" data-status="wrong">✗ Wrong</button>
-                        </div>
+                                    <button type="button" class="status-btn {% if image.status and image.status.lower() == 'correct' %}active{% endif %}" data-status="correct">✓ Correct</button>
+                                    <button type="button" class="status-btn {% if image.status and image.status.lower() == 'wrong' %}active{% endif %}" data-status="wrong">✗ Wrong</button>
+                                    <button type="button" class="status-btn {% if image.status and image.status.lower() == 'unattempted' or not image.status %}active{% endif %}" data-status="unattempted">? Unattempted</button>
+                                </div>
                     </div>
                     <div class="row mt-2">
                         <div class="col-md-6">
@@ -141,21 +142,21 @@
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label" for="pdf_subject">PDF Subject *</label>
-                            <input type="text" id="pdf_subject" class="form-control" value="{{ test_name or '' }}" required>
+                            <input type="text" id="pdf_subject" class="form-control" value="{{ session_data.subject or session_data.original_filename or '' }}" required>
                         </div>
                         <div class="col-md-6 mb-3" id="pdf-name-div">
                             <label class="form-label" for="pdf_name">PDF Name</label>
-                            <input type="text" id="pdf_name" class="form-control" value="{{ test_name or '' }}">
+                            <input type="text" id="pdf_name" class="form-control" value="{{ session_data.original_filename or '' }}">
                         </div>
                     </div>
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label" for="pdf_tags">Tags (comma-separated)</label>
-                            <input type="text" id="pdf_tags" class="form-control">
+                            <input type="text" id="pdf_tags" class="form-control" value="{{ session_data.tags or '' }}">
                         </div>
                         <div class="col-md-6 mb-3">
                             <label class="form-label" for="pdf_notes">Notes</label>
-                            <textarea id="pdf_notes" class="form-control" rows="1"></textarea>
+                            <textarea id="pdf_notes" class="form-control" rows="1">{{ session_data.notes or '' }}</textarea>
                         </div>
                     </div>
                     <hr>
@@ -295,8 +296,17 @@
     }
 
     function saveSettings() {
-        const settings = {
+        // Session-specific settings
+        const sessionSettings = {
+            pdf_subject: document.getElementById('pdf_subject').value,
+            pdf_tags: document.getElementById('pdf_tags').value,
+            pdf_notes: document.getElementById('pdf_notes').value,
             pdf_name: document.getElementById('pdf_name').value,
+        };
+        localStorage.setItem('pdfGeneratorSettings-{{ session_id }}', JSON.stringify(sessionSettings));
+
+        // Global layout settings
+        const globalLayoutSettings = {
             images_per_page: document.getElementById('images_per_page').value,
             orientation: document.getElementById('orientation').value,
             grid_rows: document.getElementById('grid_rows').value,
@@ -304,24 +314,46 @@
             filter_type: document.getElementById('filter_type').value,
             practice_mode: document.getElementById('practice_mode').value
         };
-        localStorage.setItem('pdfGeneratorSettings', JSON.stringify(settings));
+        localStorage.setItem('pdfGeneratorLayoutSettings', JSON.stringify(globalLayoutSettings));
     }
 
     function loadSettings() {
-        const settings = JSON.parse(localStorage.getItem('pdfGeneratorSettings'));
-        if (settings) {
-            const pdfNameInput = document.getElementById('pdf_name');
-            if (!pdfNameInput.value) { // Only set from local storage if the value is not already set
-                pdfNameInput.value = settings.pdf_name || 'My-Test-Analysis';
+        // Load session-specific settings (subject, tags, etc.)
+        const sessionSettings = JSON.parse(localStorage.getItem('pdfGeneratorSettings-{{ session_id }}'));
+        if (sessionSettings) {
+            const pdfSubjectInput = document.getElementById('pdf_subject');
+            if (!pdfSubjectInput.value) {
+                pdfSubjectInput.value = sessionSettings.pdf_subject || '';
             }
-            document.getElementById('images_per_page').value = settings.images_per_page || 4;
-            document.getElementById('orientation').value = settings.orientation || 'portrait';
-            document.getElementById('grid_rows').value = settings.grid_rows || 4;
-            document.getElementById('grid_cols').value = settings.grid_cols || 1;
-            document.getElementById('filter_type').value = settings.filter_type || 'all';
-            document.getElementById('practice_mode').value = settings.practice_mode || 'none';
-            handlePracticeModeChange(); // Apply visibility changes on load
+
+            const pdfNameInput = document.getElementById('pdf_name');
+            if (!pdfNameInput.value) {
+                pdfNameInput.value = sessionSettings.pdf_name || 'My-Test-Analysis';
+            }
+
+            const pdfTagsInput = document.getElementById('pdf_tags');
+            if (!pdfTagsInput.value) {
+                pdfTagsInput.value = sessionSettings.pdf_tags || '';
+            }
+
+            const pdfNotesInput = document.getElementById('pdf_notes');
+            if (!pdfNotesInput.value) {
+                pdfNotesInput.value = sessionSettings.pdf_notes || '';
+            }
         }
+
+        // Load global layout settings
+        const globalLayoutSettings = JSON.parse(localStorage.getItem('pdfGeneratorLayoutSettings'));
+        if (globalLayoutSettings) {
+            document.getElementById('images_per_page').value = globalLayoutSettings.images_per_page || 4;
+            document.getElementById('orientation').value = globalLayoutSettings.orientation || 'portrait';
+            document.getElementById('grid_rows').value = globalLayoutSettings.grid_rows || 4;
+            document.getElementById('grid_cols').value = globalLayoutSettings.grid_cols || 1;
+            document.getElementById('filter_type').value = globalLayoutSettings.filter_type || 'all';
+            document.getElementById('practice_mode').value = globalLayoutSettings.practice_mode || 'none';
+        }
+
+        handlePracticeModeChange(); // Apply visibility changes on load
     }
 
     function handlePracticeModeChange() {
@@ -398,17 +430,22 @@
                     question_number: fieldset.querySelector('input[name^="question_number_"]').value,
                     status: fieldset.querySelector('select[name^="status_"]').value,
                     marked_solution: fieldset.querySelector('input[name^="marked_solution_"]').value,
-                    actual_solution: fieldset.querySelector('input[name^="actual_solution_"]').value,
+                    actual_solution: fieldset.querySelector('input[name^="actual_solution_"]').value
                 });
             });
 
             try {
-                const saveResponse = await fetch('/save_questions', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ session_id: sessionId, questions: questions })
-                });
-                if (!saveResponse.ok) throw new Error((await saveResponse.json()).error || 'Failed to save questions.');
+                            const saveResponse = await fetch('/save_questions', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                    session_id: sessionId,
+                    questions: questions,
+                    pdf_subject: document.getElementById('pdf_subject').value,
+                    pdf_tags: document.getElementById('pdf_tags').value,
+                    pdf_notes: document.getElementById('pdf_notes').value
+                })
+            });                if (!saveResponse.ok) throw new Error((await saveResponse.json()).error || 'Failed to save questions.');
 
                 // Now, run the classification
                 const response = await fetch(`/extract_and_classify_all/${sessionId}`, {
@@ -597,7 +634,7 @@
                 question_number: fieldset.querySelector('input[name^="question_number_"]').value,
                 status: fieldset.querySelector('select[name^="status_"]').value,
                 marked_solution: fieldset.querySelector('input[name^="marked_solution_"]').value,
-                actual_solution: fieldset.querySelector('input[name^="actual_solution_"]').value,
+                actual_solution: fieldset.querySelector('input[name^="actual_solution_"]').value
             });
         });
 
@@ -606,7 +643,13 @@
             const saveResponse = await fetch('/save_questions', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ session_id: sessionId, questions: questions })
+                body: JSON.stringify({
+                    session_id: sessionId,
+                    questions: questions,
+                    pdf_subject: document.getElementById('pdf_subject').value,
+                    pdf_tags: document.getElementById('pdf_tags').value,
+                    pdf_notes: document.getElementById('pdf_notes').value
+                })
             });
             if (!saveResponse.ok) throw new Error((await saveResponse.json()).error || 'Failed to save questions.');
 

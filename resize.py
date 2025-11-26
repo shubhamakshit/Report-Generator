@@ -36,7 +36,7 @@ def expand_pdf_for_notes(input_pdf, output_pdf, bg_color=(1, 1, 1), mode='notes_
                 notes_rect = fitz.Rect(orig_width / 2, 0, orig_width, orig_height)
                 left_page.draw_rect(notes_rect, color=None, fill=bg_color)
                 if pattern:
-                    _draw_pattern(left_page, notes_rect, pattern, pattern_color)
+                    _draw_pattern(new_doc, left_page, notes_rect, pattern, pattern_color)
 
             # Create a new page for the right half
             right_page = new_doc.new_page(width=new_page_width, height=orig_height)
@@ -45,7 +45,7 @@ def expand_pdf_for_notes(input_pdf, output_pdf, bg_color=(1, 1, 1), mode='notes_
                 notes_rect = fitz.Rect(orig_width / 2, 0, orig_width, orig_height)
                 right_page.draw_rect(notes_rect, color=None, fill=bg_color)
                 if pattern:
-                    _draw_pattern(right_page, notes_rect, pattern, pattern_color)
+                    _draw_pattern(new_doc, right_page, notes_rect, pattern, pattern_color)
 
         elif mode == 'stitch':
             if stitch_direction == 'horizontal':
@@ -59,7 +59,7 @@ def expand_pdf_for_notes(input_pdf, output_pdf, bg_color=(1, 1, 1), mode='notes_
                     notes_rect = fitz.Rect(orig_width, 0, new_width, orig_height)
                     new_page.draw_rect(notes_rect, color=None, fill=bg_color)
                     if pattern:
-                        _draw_pattern(new_page, notes_rect, pattern, pattern_color)
+                        _draw_pattern(new_doc, new_page, notes_rect, pattern, pattern_color)
             
             else:  # vertical
                 new_width = orig_width / 2
@@ -73,7 +73,7 @@ def expand_pdf_for_notes(input_pdf, output_pdf, bg_color=(1, 1, 1), mode='notes_
                     notes_rect = fitz.Rect(orig_width / 2, 0, new_width, new_height)
                     new_page.draw_rect(notes_rect, color=None, fill=bg_color)
                     if pattern:
-                        _draw_pattern(new_page, notes_rect, pattern, pattern_color)
+                        _draw_pattern(new_doc, new_page, notes_rect, pattern, pattern_color)
 
         elif mode == 'notes_only':
             if add_space:
@@ -81,7 +81,7 @@ def expand_pdf_for_notes(input_pdf, output_pdf, bg_color=(1, 1, 1), mode='notes_
                 right_rect = fitz.Rect(orig_width, 0, orig_width * 2, orig_height)
                 new_page.draw_rect(right_rect, color=None, fill=bg_color)
                 if pattern:
-                    _draw_pattern(new_page, right_rect, pattern, pattern_color)
+                    _draw_pattern(new_doc, new_page, right_rect, pattern, pattern_color)
                 new_page.show_pdf_page(fitz.Rect(0, 0, orig_width, orig_height), doc, page_num)
             else:
                 new_doc.insert_pdf(doc, from_page=page_num, to_page=page_num)
@@ -96,11 +96,11 @@ def expand_pdf_for_notes(input_pdf, output_pdf, bg_color=(1, 1, 1), mode='notes_
     print(f"✓ Successfully created: {output_pdf}")
     print(f"  Pages processed: {total_pages}")
 
-def _draw_pattern(page, rect, pattern, color):
+def _draw_pattern(doc, page, rect, pattern, color):
     if pattern == 'grid':
         _draw_grid(page, rect, color=color)
     elif pattern == 'dots':
-        _draw_dots(page, rect, color=color)
+        _draw_dots(doc, page, rect, color=color)
 
 def _draw_grid(page, rect, spacing=20, color=(0.8, 0.8, 0.8)):
     # Draw vertical lines
@@ -110,7 +110,7 @@ def _draw_grid(page, rect, spacing=20, color=(0.8, 0.8, 0.8)):
     for y in range(int(rect.y0), int(rect.y1), spacing):
         page.draw_line(fitz.Point(rect.x0, y), fitz.Point(rect.x1, y), color=color, width=0.5)
 
-def _draw_dots(page, rect, spacing=20, radius=1, color=(0.8, 0.8, 0.8)):
+def _draw_dots(doc, page, rect, spacing=20, radius=1, color=(0.8, 0.8, 0.8)):
     """Creates a tileable dot pattern using a Form XObject for efficiency."""
     # Create a small rectangle for one pattern unit
     stamp_rect = fitz.Rect(0, 0, spacing, spacing)
@@ -121,14 +121,15 @@ def _draw_dots(page, rect, spacing=20, radius=1, color=(0.8, 0.8, 0.8)):
     # Draw a single dot in the corner of the stamp page
     stamp_page.draw_circle(fitz.Point(radius, radius), radius, color=color, fill=color)
 
-    # Convert the stamp page to a stamp (Form XObject)
-    stamp_xref = page.get_xref(stamp_doc.convert_to_pdf())
+    # Convert the stamp page to a stamp (Form XObject) and get its cross-reference number
+    stamp_xref = doc.get_xref(stamp_doc.convert_to_pdf())
     stamp_doc.close()
 
     # Tile the stamp across the target rectangle
     for x in range(int(rect.x0), int(rect.x1), spacing):
         for y in range(int(rect.y0), int(rect.y1), spacing):
             page.show_pdf_page(fitz.Rect(x, y, x + spacing, y + spacing), stamp_xref)
+
 
 
 def main():
