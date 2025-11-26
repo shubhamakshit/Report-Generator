@@ -2,20 +2,28 @@ import os
 import json
 import requests
 import sys
+from typing import List, Optional, Dict, Any
 
-def classify_questions_with_gemini(questions):
+def classify_questions_with_gemini(questions: List[str], batch_size: int = 7) -> Optional[Dict[Any, Any]]:
     """
     Classifies a batch of biology questions using the Gemini API.
     `questions` should be a list of strings.
+    `batch_size` controls how many questions to send in each API call to prevent overload.
     """
     api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     if not api_key:
         raise ValueError("Neither GEMINI_API_KEY nor GOOGLE_API_KEY environment variable is set.")
 
-    # Construct the input text with all questions
-    input_text = "\n".join([f"{i+1}. {q}" for i, q in enumerate(questions)])
+    # Process questions in batches to prevent API overload
+    all_results = {"data": [], "success": []}
 
-    prompt = f"""
+    for i in range(0, len(questions), batch_size):
+        batch = questions[i:i + batch_size]
+
+        # Construct the input text with the current batch of questions
+        input_text = "\n".join([f"{j+i+1}. {q}" for j, q in enumerate(batch)])
+
+        prompt = f"""
 **System Role:** You are a question classifier for NEET/JEE exams, specialized in mapping questions to their corresponding subjects and chapters from the NCERT syllabus.
 
 Your task is to analyze each question, first classify it into the most relevant subject, and then identify the most relevant chapter(s) from the official syllabus structures provided below.
@@ -220,37 +228,59 @@ Now classify the following question(s):
 ```
 """
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key={api_key}"
-    headers = {'Content-Type': 'application/json'}
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key={api_key}"
+        headers = {'Content-Type': 'application/json'}
 
-    request_body = {
-        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "responseMimeType": "application/json",
+        request_body = {
+            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "responseMimeType": "application/json",
+            }
         }
-    }
 
-    print(f"Sending request to Gemini API. Body: {json.dumps(request_body, indent=2)}")
+        print(f"Sending batch {i//batch_size + 1} of {(len(questions)-1)//batch_size + 1} to Gemini API with {len(batch)} questions.")
+        print(f"Sending request to Gemini API. Body: {json.dumps(request_body, indent=2)[:500]}...")  # Truncate for logging
 
-    try:
-        response = requests.post(url, headers=headers, json=request_body, timeout=300) # Increased timeout for larger batches
-        response.raise_for_status()
-        
-        print(f"Received raw response from Gemini: {response.text}")
-        
-        # The response text itself is the JSON data we need
-        response_json = response.json()
-        nested_json_string = response_json['candidates'][0]['content']['parts'][0]['text']
-        return json.loads(nested_json_string)
+        try:
+            response = requests.post(url, headers=headers, json=request_body, timeout=300)  # Increased timeout for larger batches
+            response.raise_for_status()
 
-    except requests.exceptions.RequestException as e:
-        print(f"Error during Gemini API call: {repr(e)}", file=sys.stderr)
-        print(f"Response body: {e.response.text if e.response else 'N/A'}", file=sys.stderr)
-        return None
-    except (json.JSONDecodeError, KeyError, IndexError) as e:
-        print(f"Error parsing Gemini response: {repr(e)}", file=sys.stderr)
-        print(f"Raw response text: {response.text if 'response' in locals() else 'N/A'}", file=sys.stderr)
-        return None
+            print(f"Received raw response from Gemini: {response.text[:500]}...")  # Truncate for logging
+
+            # Parse the response JSON
+            response_json = response.json()
+
+            # Check if the response has valid content and parts
+            candidate = response_json.get('candidates', [{}])[0]
+            content = candidate.get('content', {})
+            parts = content.get('parts', [])
+
+            if not parts:
+                print("Error: Model generated thoughts but no output text.")
+                # Handle retry or log error
+                return None
+            else:
+                text = parts[0]['text']
+                batch_result = json.loads(text)
+
+                # Adjust the indices to account for the batch position
+                for item in batch_result['data']:
+                    item['index'] = item['index'] + i  # Adjust index based on batch position
+
+                # Merge results
+                all_results['data'].extend(batch_result['data'])
+                all_results['success'].extend(batch_result.get('success', []))
+
+        except requests.exceptions.RequestException as e:
+            print(f"Error during Gemini API call: {repr(e)}", file=sys.stderr)
+            print(f"Response body: {e.response.text if e.response else 'N/A'}", file=sys.stderr)
+            return None
+        except (json.JSONDecodeError, KeyError, IndexError) as e:
+            print(f"Error parsing Gemini response: {repr(e)}", file=sys.stderr)
+            print(f"Raw response text: {response.text if 'response' in locals() else 'N/A'}", file=sys.stderr)
+            return None
+
+    return all_results
 
 if __name__ == '__main__':
     test_questions = [

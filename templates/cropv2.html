@@ -2,72 +2,111 @@
 <html lang="en" data-bs-theme="dark">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, maximum-scale=1">
+    <!-- Updated viewport: added viewport-fit=cover for notched phones -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, maximum-scale=1, viewport-fit=cover">
     <title>Step 2: Draw Boxes ({{ image_index + 1 }} / {{ total_pages }})</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <style>
-        /* GLOBAL LAYOUT RESET */
+        /* --- MOBILE FIRST CSS RESET --- */
+        :root {
+            --header-height: 60px;
+            --controls-height-mobile: 35vh;
+            --controls-width-desktop: 340px;
+        }
+
         html, body { 
             height: 100%; 
+            height: 100dvh; /* Dynamic viewport for mobile browsers */
             width: 100%; 
             margin: 0; 
             padding: 0; 
-            overflow: hidden; /* CRITICAL: Disable global scroll */
+            overflow: hidden; 
+            background-color: #181a1c;
+            /* Prevent iOS text size adjustment */
+            -webkit-text-size-adjust: 100%;
         }
 
         /* MAIN FLEX CONTAINER */
         .main-container { 
             display: flex; 
             flex-direction: column; 
-            height: 100vh; 
+            height: 100vh; /* Fallback */
+            height: 100dvh; 
             width: 100vw; 
             overflow: hidden; 
         }
 
         /* HEADER */
         .app-header { 
-            height: 56px; 
+            height: var(--header-height); 
             flex-shrink: 0; 
             display: flex; 
             align-items: center; 
             justify-content: space-between; 
-            padding: 0 1rem; 
+            padding: 0 16px; /* Touch friendly padding */
+            padding-top: env(safe-area-inset-top); /* Notch support */
+            padding-left: calc(16px + env(safe-area-inset-left));
+            padding-right: calc(16px + env(safe-area-inset-right));
             background: #2c3034; 
             border-bottom: 1px solid #495057; 
         }
-        .header-title { font-size: 1.1rem; font-weight: 500; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .header-actions { display: flex; gap: 0.5rem; }
+        
+        .header-title { 
+            font-size: 1rem; 
+            font-weight: 600; 
+            margin: 0; 
+            white-space: nowrap; 
+            overflow: hidden; 
+            text-overflow: ellipsis; 
+        }
 
-        /* CONTENT WRAPPER (Image + Controls) */
-        .content-wrapper { 
-            flex: 1; /* Fills remaining height after header */
+        /* Touch-friendly header buttons */
+        .header-actions { 
             display: flex; 
-            flex-direction: column; 
-            min-height: 0; /* CRITICAL: Allows flex child to shrink below content size */
+            gap: 12px; 
+        }
+        
+        /* Enforce min touch target size on buttons */
+        .header-actions .btn {
+            min-height: 44px;
+            min-width: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* CONTENT WRAPPER */
+        .content-wrapper { 
+            flex: 1; 
+            display: flex; 
+            flex-direction: column; /* Mobile Default: Stacked */
+            min-height: 0; 
             overflow: hidden; 
             position: relative;
         }
 
-        /* IMAGE PANE (The resize container) */
+        /* IMAGE PANE */
         .image-pane { 
             flex-grow: 1; 
             position: relative; 
             background: #181a1c; 
-            overflow: hidden; /* Clips anything that tries to stick out */
+            overflow: hidden; 
             display: flex; 
             align-items: center; 
             justify-content: center;
-            min-height: 0; /* CRITICAL for preventing scroll */
+            min-height: 0; 
             width: 100%;
+            touch-action: none; /* Disable browser zooming/panning here */
         }
 
-        /* CROP AREA (Wrapper for Img + Canvas) */
-        /* Width/Height set by JS to strictly fit */
         #crop-area { 
             position: relative; 
             line-height: 0; 
             box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            /* Prevent selection */
+            -webkit-user-select: none;
+            user-select: none;
         }
 
         #main-image { 
@@ -75,6 +114,7 @@
             width: 100%; 
             height: 100%; 
             pointer-events: none; 
+            -webkit-user-drag: none;
         }
 
         #draw-canvas {
@@ -83,39 +123,86 @@
             left: 0; 
             z-index: 10;
             cursor: crosshair;
-            touch-action: none;
+            touch-action: none; /* Crucial for custom drawing */
         }
 
-        /* CONTROLS PANE */
+        /* CONTROLS PANE - MOBILE BOTTOM SHEET STYLE */
         .controls-pane { 
             flex-shrink: 0; 
             background: #212529; 
             border-top: 1px solid #495057; 
-            height: 280px; /* Fixed height on mobile */
+            height: var(--controls-height-mobile); /* Percent based on mobile */
             overflow-y: auto; 
             z-index: 30; 
+            padding-bottom: env(safe-area-inset-bottom);
+            -webkit-overflow-scrolling: touch; /* Smooth scroll iOS */
         }
-        .controls-content { padding: 1rem; }
+        
+        .controls-content { 
+            padding: 20px 16px; 
+        }
 
-        /* DESKTOP MEDIA QUERY */
-        @media (min-width: 992px) { 
-            .content-wrapper { flex-direction: row; } 
-            .controls-pane { 
-                width: 320px; 
-                height: 100%; 
-                border-top: none; 
-                border-left: 1px solid #495057; 
-            } 
+        /* Larger touch targets for sliders */
+        .form-range {
+            height: 24px; 
+            margin-bottom: 24px; /* Spacing between touch targets */
+        }
+        
+        /* Spacing for labels */
+        .control-group {
+            margin-bottom: 12px;
         }
 
         /* FLOATING TOOLBAR */
-        #box-toolbar { position: absolute; background: rgba(44, 48, 52, 0.95); border: 1px solid #6c757d; border-radius: 6px; padding: 4px; display: none; z-index: 100; backdrop-filter: blur(5px); }
-        #box-toolbar button { background: transparent; border: none; color: #e9ecef; padding: 6px 8px; font-size: 1.1rem; }
-        #box-toolbar button:hover { color: #fff; background: rgba(255,255,255,0.2); border-radius: 4px; }
+        #box-toolbar { 
+            position: absolute; 
+            background: rgba(33, 37, 41, 0.95); 
+            border: 1px solid #6c757d; 
+            border-radius: 50px; /* Pill shape */
+            padding: 8px 16px; 
+            display: none; 
+            z-index: 100; 
+            backdrop-filter: blur(5px); 
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            gap: 16px;
+        }
+        
+        #box-toolbar button { 
+            background: transparent; 
+            border: none; 
+            color: #e9ecef; 
+            padding: 0;
+            width: 32px;
+            height: 32px;
+            font-size: 1.4rem; /* Larger icons */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.1s;
+        }
+        
+        #box-toolbar button:active {
+            transform: scale(0.9);
+            color: #fff;
+        }
+
+        /* DESKTOP MEDIA QUERY (Landscape Tablets & Desktop) */
+        @media (min-width: 992px) { 
+            .content-wrapper { flex-direction: row; } 
+            
+            .controls-pane { 
+                width: var(--controls-width-desktop); 
+                height: 100%; 
+                border-top: none; 
+                border-left: 1px solid #495057; 
+                padding-bottom: 0;
+            } 
+            
+            .header-title { font-size: 1.25rem; }
+        }
 
         /* UTILS */
         #loader-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 9999; display: none; align-items: center; justify-content: center; }
-        .status-message { position: fixed; top: 70px; left: 50%; transform: translateX(-50%); z-index: 1050; max-width: 90%; }
     </style>
 </head>
 <body>
@@ -129,15 +216,16 @@
         <header class="app-header">
              <h1 class="header-title"><i class="bi bi-bounding-box me-2"></i>Page {{ image_index + 1 }} / {{ total_pages }}</h1>
              <div class="header-actions">
-                <button id="backBtn" class="btn btn-secondary btn-sm"><i class="bi bi-arrow-left"></i> Back</button>
-                <button id="clearBtn" class="btn btn-info btn-sm"><i class="bi bi-eraser"></i> Clear</button>
-                <button id="processBtn" class="btn btn-success btn-sm">Process <i class="bi bi-check-lg"></i></button>
+                <!-- Removed btn-sm for larger touch targets, added explicit padding logic in CSS -->
+                <button id="backBtn" class="btn btn-secondary" aria-label="Back"><i class="bi bi-arrow-left"></i></button>
+                <button id="clearBtn" class="btn btn-outline-info" aria-label="Clear All"><i class="bi bi-eraser"></i></button>
+                <button id="processBtn" class="btn btn-success ps-3 pe-3">Next <i class="bi bi-chevron-right ms-1"></i></button>
             </div>
         </header>
 
         <div class="content-wrapper">
             <div class="image-pane" id="imagePane">
-                <div id="stitch-instructions" class="alert alert-warning position-absolute top-0 start-50 translate-middle-x mt-2" style="z-index: 20; display: none; font-size: 0.9rem; width: 90%;"></div>
+                <div id="stitch-instructions" class="alert alert-warning position-absolute top-0 start-50 translate-middle-x mt-2 shadow-lg" style="z-index: 20; display: none; font-size: 0.9rem; width: 90%; max-width: 400px; border-radius: 12px;"></div>
                 
                 <div id="crop-area">
                     <img id="main-image" src="/image/upload/{{ image_info.filename }}" alt="PDF Page" crossorigin="anonymous">
@@ -147,18 +235,31 @@
                         <button id="stitch-btn" title="Stitch"><i class="bi bi-scissors"></i></button>
                         <button id="move-up-btn" title="Move Up"><i class="bi bi-arrow-up-circle"></i></button>
                         <button id="move-down-btn" title="Move Down"><i class="bi bi-arrow-down-circle"></i></button>
-                        <button id="delete-btn" title="Delete Box"><i class="bi bi-trash"></i></button>
+                        <button id="delete-btn" title="Delete Box" class="text-danger"><i class="bi bi-trash"></i></button>
                     </div>
                 </div>
             </div>
 
             <div class="controls-pane">
                  <div class="controls-content">
-                    <div class="alert alert-info small p-2 mb-3"><i class="bi bi-info-circle me-2"></i>Draw boxes on the image.</div>
-                    <h6 class="text-white mb-3">Filters</h6>
-                    <div class="mb-2"><label class="small text-light d-flex justify-content-between">Brightness <span id="brightnessValue" class="text-primary">0</span></label><input type="range" class="form-range" id="brightness" min="-100" max="100" value="0" step="5"></div>
-                    <div class="mb-2"><label class="small text-light d-flex justify-content-between">Contrast <span id="contrastValue" class="text-primary">1.0</span></label><input type="range" class="form-range" id="contrast" min="0.5" max="2.5" value="1.0" step="0.05"></div>
-                    <div class="mb-2"><label class="small text-light d-flex justify-content-between">Gamma <span id="gammaValue" class="text-primary">1.0</span></label><input type="range" class="form-range" id="gamma" min="0.2" max="2.2" value="1.0" step="0.1"></div>
+                    <div class="alert alert-info small p-2 mb-3 rounded-3"><i class="bi bi-info-circle me-2"></i>Draw boxes on the image.</div>
+                    
+                    <h6 class="text-white mb-3 text-uppercase small ls-1">Image Filters</h6>
+                    
+                    <div class="control-group">
+                        <label class="small text-light d-flex justify-content-between mb-2">Brightness <span id="brightnessValue" class="text-primary fw-bold">0</span></label>
+                        <input type="range" class="form-range" id="brightness" min="-100" max="100" value="0" step="5">
+                    </div>
+                    
+                    <div class="control-group">
+                        <label class="small text-light d-flex justify-content-between mb-2">Contrast <span id="contrastValue" class="text-primary fw-bold">1.0</span></label>
+                        <input type="range" class="form-range" id="contrast" min="0.5" max="2.5" value="1.0" step="0.05">
+                    </div>
+                    
+                    <div class="control-group">
+                        <label class="small text-light d-flex justify-content-between mb-2">Gamma <span id="gammaValue" class="text-primary fw-bold">1.0</span></label>
+                        <input type="range" class="form-range" id="gamma" min="0.2" max="2.2" value="1.0" step="0.1">
+                    </div>
                 </div>
             </div>
         </div>
@@ -175,9 +276,11 @@
     
     // State
     const sessionId = '{{ session_id }}';
+    const userId = '{{ user_id }}';
     const imageIndex = parseInt('{{ image_index }}');
     const totalPages = parseInt('{{ total_pages }}');
-    const storageKey = `cropState_${sessionId}_${imageIndex}`;
+
+    const storageKey = userId ? `cropState_${userId}_${sessionId}_${imageIndex}` : `cropState_${sessionId}_${imageIndex}`;
     
     let boxes = [];
     let selectedBoxIndex = -1;
@@ -197,8 +300,11 @@
             image.onload = fitImageToPane;
         }
         
+        // Debounced resize for performance
+        let resizeTimer;
         window.addEventListener('resize', () => {
-            requestAnimationFrame(fitImageToPane);
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => requestAnimationFrame(fitImageToPane), 100);
         });
         
         loadSettings();
@@ -206,34 +312,30 @@
         setupListeners();
     }
 
-    // The core fix: Calculate exact dimensions to contain image in pane without overflow
+    // Exact dimension calculation preventing overflow
     function fitImageToPane() {
         if (!image.naturalWidth) return;
 
-        // Get exact available space from the container
         const rect = imagePane.getBoundingClientRect();
-        const availableW = rect.width - 20; // 10px padding buffer each side
-        const availableH = rect.height - 20; // 10px padding buffer top/bottom
+        // Use a safe padding buffer
+        const buffer = 32; 
+        const availableW = rect.width - buffer;
+        const availableH = rect.height - buffer;
 
         const naturalW = image.naturalWidth;
         const naturalH = image.naturalHeight;
 
-        // Calculate "Contain" scale
         const scale = Math.min(availableW / naturalW, availableH / naturalH);
 
-        // Compute final dimensions
         const finalW = Math.floor(naturalW * scale);
         const finalH = Math.floor(naturalH * scale);
 
-        // Apply to Wrapper
         cropArea.style.width = `${finalW}px`;
         cropArea.style.height = `${finalH}px`;
 
-        // Apply to Canvas (Coordinate space)
         drawCanvas.width = finalW;
         drawCanvas.height = finalH;
 
-        // Reposition toolbar if active and redraw
         if (selectedBoxIndex !== -1) updateToolbarPosition();
         drawBoxes();
     }
@@ -248,13 +350,12 @@
             const isDestination = index === destinationBoxIndex;
             const isStitched = box.is_destination_for_stitch || box.stitch_to !== null;
 
-            // Normalize to Canvas Pixels
             const p = (pt) => ({ x: pt.x * drawCanvas.width, y: pt.y * drawCanvas.height });
 
             drawCtx.lineWidth = isSelected ? 3 : 2;
-            drawCtx.strokeStyle = isSelected ? 'red' : (isDestination ? 'cyan' : 'gold');
-            drawCtx.fillStyle = isSelected ? 'rgba(255,0,0,0.1)' : 'rgba(255,215,0,0.1)';
-            if (isDestination) drawCtx.fillStyle = 'rgba(0,255,255,0.2)';
+            drawCtx.strokeStyle = isSelected ? '#ff4d4d' : (isDestination ? '#0dcaf0' : '#ffc107');
+            drawCtx.fillStyle = isSelected ? 'rgba(255, 77, 77, 0.15)' : 'rgba(255, 193, 7, 0.1)';
+            if (isDestination) drawCtx.fillStyle = 'rgba(13, 202, 240, 0.2)';
 
             drawCtx.beginPath();
             drawCtx.moveTo(p(box.tl).x, p(box.tl).y);
@@ -265,25 +366,25 @@
             drawCtx.stroke();
             drawCtx.fill();
 
-            // Handles
             if (isSelected) {
                 drawCtx.fillStyle = 'white';
+                // Larger visual handles for touch feedback (logic remains same, just visual radius)
+                const handleRad = 8;
                 ['tl','tr','bl','br'].forEach(k => {
                     drawCtx.beginPath();
-                    drawCtx.arc(p(box[k]).x, p(box[k]).y, 6, 0, Math.PI*2);
+                    drawCtx.arc(p(box[k]).x, p(box[k]).y, handleRad, 0, Math.PI*2);
                     drawCtx.fill();
                     drawCtx.stroke();
                 });
             }
             
-            // Label
             const cx = (p(box.tl).x + p(box.br).x)/2;
             const cy = (p(box.tl).y + p(box.br).y)/2;
-            drawCtx.font = "bold 20px sans-serif";
+            drawCtx.font = "bold 24px system-ui";
             drawCtx.fillStyle = "white";
-            drawCtx.shadowColor="black"; drawCtx.shadowBlur=4;
-            drawCtx.fillText(index + 1, cx - 5, cy + 5);
-            if(isStitched) drawCtx.fillText("🔗", p(box.tr).x - 25, p(box.tr).y + 20);
+            drawCtx.shadowColor="rgba(0,0,0,0.8)"; drawCtx.shadowBlur=6;
+            drawCtx.fillText(index + 1, cx - 6, cy + 8);
+            if(isStitched) drawCtx.fillText("🔗", p(box.tr).x - 28, p(box.tr).y + 24);
             drawCtx.shadowBlur=0;
         });
     }
@@ -292,14 +393,13 @@
 
     function getPointerPos(e) {
         const rect = drawCanvas.getBoundingClientRect();
-        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        // Handle touch vs mouse
+        const clientX = e.touches && e.touches.length > 0 ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches && e.touches.length > 0 ? e.touches[0].clientY : e.clientY;
         
-        // Normalized 0..1
         let x = (clientX - rect.left) / rect.width;
         let y = (clientY - rect.top) / rect.height;
         
-        // Clamp to bounds
         return { 
             x: Math.max(0, Math.min(1, x)), 
             y: Math.max(0, Math.min(1, y)) 
@@ -307,12 +407,15 @@
     }
 
     function hitTest(nx, ny) {
-        const radius = 15 / drawCanvas.width; // approximate pixel radius in norm coords
+        // Increase hit radius for touch (approx 24px visual equivalent)
+        const hitPadding = 24 / drawCanvas.width; 
+        
         for (let i = boxes.length - 1; i >= 0; i--) {
             const b = boxes[i];
             // Check corners
             for(let k of ['tl','tr','bl','br']) {
-                if (Math.hypot(b[k].x - nx, b[k].y - ny) < radius) return { type: 'corner', index: i, corner: k };
+                // Distance formula
+                if (Math.hypot(b[k].x - nx, b[k].y - ny) < hitPadding) return { type: 'corner', index: i, corner: k };
             }
             // Check body
             const minX = Math.min(b.tl.x, b.br.x);
@@ -325,7 +428,7 @@
     }
 
     function onPointerDown(e) {
-        e.preventDefault(); // Stop scroll
+        e.preventDefault(); 
         const {x, y} = getPointerPos(e);
         const hit = hitTest(x, y);
 
@@ -381,25 +484,26 @@
             const sy = startY * drawCanvas.height;
             const w = (x - startX) * drawCanvas.width;
             const h = (y - startY) * drawCanvas.height;
-            drawCtx.strokeStyle = 'rgba(255,0,0,0.5)';
+            drawCtx.strokeStyle = 'rgba(255, 77, 77, 0.5)';
             drawCtx.strokeRect(sx, sy, w, h);
         }
     }
 
     function onPointerUp(e) {
         if (isDrawing) {
-            // Use Changed touches if available
             const rect = drawCanvas.getBoundingClientRect();
-            const clientX = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
-            const clientY = e.changedTouches ? e.changedTouches[0].clientY : e.clientY;
+            // Handle touch end coordinates
+            const clientX = e.changedTouches && e.changedTouches.length ? e.changedTouches[0].clientX : e.clientX;
+            const clientY = e.changedTouches && e.changedTouches.length ? e.changedTouches[0].clientY : e.clientY;
+            
             let endX = (clientX - rect.left) / rect.width;
             let endY = (clientY - rect.top) / rect.height;
             
-            // Clamp
             endX = Math.max(0, Math.min(1, endX));
             endY = Math.max(0, Math.min(1, endY));
 
-            if (Math.abs(endX - startX) * drawCanvas.width > 15 && Math.abs(endY - startY) * drawCanvas.height > 15) {
+            // Minimum drag threshold to prevent accidental dots (20px)
+            if (Math.abs(endX - startX) * drawCanvas.width > 20 && Math.abs(endY - startY) * drawCanvas.height > 20) {
                 boxes.push({
                     id: Date.now(),
                     tl: { x: Math.min(startX, endX), y: Math.min(startY, endY) },
@@ -439,16 +543,29 @@
         if (selectedBoxIndex === -1) return;
         const b = boxes[selectedBoxIndex];
         const tb = document.getElementById('box-toolbar');
+        const containerRect = imagePane.getBoundingClientRect();
         
-        // Place at bottom-right of box
+        // Coordinates relative to canvas
         const x = Math.max(b.tl.x, b.br.x) * drawCanvas.width;
         const y = Math.min(b.tl.y, b.br.y) * drawCanvas.height;
         
-        // Clamp to screen
-        let left = x - tb.offsetWidth;
-        let top = y - tb.offsetHeight - 5;
+        // Calculate preferred position (Bottom Right of box)
+        let left = x - tb.offsetWidth + 10;
+        let top = y + 10;
+        
+        // Boundary Detection (Keep toolbar on screen)
+        // Canvas width/height might differ from screen CSS pixels, so we check against offset
+        const maxLeft = drawCanvas.offsetWidth - tb.offsetWidth;
+        const maxTop = drawCanvas.offsetHeight - tb.offsetHeight;
+
         if (left < 0) left = 0;
-        if (top < 0) top = y + 10;
+        if (left > maxLeft) left = maxLeft;
+        
+        // If bottom is clipped, flip to top
+        if (top > maxTop) {
+            top = (Math.min(b.tl.y, b.tr.y) * drawCanvas.height) - tb.offsetHeight - 10;
+        }
+        if (top < 0) top = 10; // Extreme fallback
         
         tb.style.left = left + 'px';
         tb.style.top = top + 'px';
@@ -474,7 +591,7 @@
             stitchingState = 'selecting_source';
             destinationBoxIndex = selectedBoxIndex;
             const instr = document.getElementById('stitch-instructions');
-            instr.innerHTML = 'Tap next box to stitch. <button class="btn-close btn-sm float-end" onclick="cancelStitch()"></button>';
+            instr.innerHTML = 'Tap the next box to stitch. <button class="btn-close btn-sm float-end" onclick="cancelStitch()"></button>';
             instr.style.display = 'block';
         });
 
@@ -495,7 +612,7 @@
     function updateFilters() {
         const b = document.getElementById('brightness').value;
         const c = document.getElementById('contrast').value;
-        const g = document.getElementById('gamma').value; // Visual approximation
+        const g = document.getElementById('gamma').value;
         
         image.style.filter = `brightness(${100 + parseFloat(b)}%) contrast(${c})`;
         
@@ -527,7 +644,6 @@
         btn.disabled = true;
         document.getElementById('loader-overlay').style.display = 'flex';
 
-        // Prepare Normalized Boxes
         const finalBoxes = boxes.map(b => {
             const minX = Math.min(b.tl.x, b.bl.x);
             const minY = Math.min(b.tl.y, b.tr.y);
@@ -536,7 +652,7 @@
             return { ...b, x: minX, y: minY, w: maxX - minX, h: maxY - minY };
         });
 
-        // Capture current filter state visually
+        // Capture current filter state
         const tempCv = document.createElement('canvas');
         tempCv.width = image.naturalWidth;
         tempCv.height = image.naturalHeight;
@@ -557,10 +673,9 @@
                 })
             });
             if(!res.ok) throw new Error('Server Error');
-            
-            localStorage.removeItem(storageKey);
-            window.location.href = (imageIndex + 1 < totalPages) 
-                ? `/cropv2/${sessionId}/${imageIndex+1}` 
+
+            window.location.href = (imageIndex + 1 < totalPages)
+                ? `/cropv2/${sessionId}/${imageIndex+1}`
                 : `/question_entry_v2/${sessionId}`;
                 
         } catch (err) {
@@ -576,7 +691,6 @@
             const s = localStorage.getItem(storageKey);
             if(s) {
                 boxes = JSON.parse(s);
-                // Ensure IDs
                 boxes.forEach((b,i) => { if(!b.id) b.id = Date.now()+i; });
                 drawBoxes();
             }

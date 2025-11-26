@@ -308,9 +308,10 @@ def crop_interface_v2(session_id, image_index):
     conn.close()
     
     return render_template(
-        'cropv2.html', 
-        session_id=session_id, 
-        image_index=image_index, 
+        'cropv2.html',
+        session_id=session_id,
+        user_id=current_user.id,  # Pass user ID to template
+        image_index=image_index,
         image_info=dict(image_info),
         total_pages=total_pages
     )
@@ -446,7 +447,7 @@ def process_crop_v2():
 @login_required
 def question_entry_v2(session_id):
     conn = get_db_connection()
-    
+
     # Fetch session metadata, ensuring it belongs to the current user
     session_data = conn.execute(
         'SELECT original_filename, subject, tags, notes FROM sessions WHERE id = ? AND user_id = ?', (session_id, current_user.id)
@@ -459,48 +460,44 @@ def question_entry_v2(session_id):
 
     # Fetch images and associated questions
     images = conn.execute(
-        """SELECT i.id, i.processed_filename, q.question_number, q.status, q.marked_solution, q.actual_solution 
-           FROM images i 
-           LEFT JOIN questions q ON i.id = q.image_id 
-           WHERE i.session_id = ? AND i.image_type = 'cropped' 
-           ORDER BY i.id""", 
+        """SELECT i.id, i.processed_filename, q.question_number, q.status, q.marked_solution, q.actual_solution
+           FROM images i
+           LEFT JOIN questions q ON i.id = q.image_id
+           WHERE i.session_id = ? AND i.image_type = 'cropped'
+           ORDER BY i.id""",
         (session_id,)
     ).fetchall()
+
+    # Count classified questions (those with both subject and chapter)
+    classification_count = conn.execute(
+        """SELECT COUNT(*) as count
+           FROM images i
+           LEFT JOIN questions q ON i.id = q.image_id
+           WHERE i.session_id = ? AND i.image_type = 'cropped'
+           AND q.subject IS NOT NULL AND q.chapter IS NOT NULL""",
+        (session_id,)
+    ).fetchone()['count']
+
+    classified_count = classification_count
+
     conn.close()
-    
+
     if not images:
         return "No questions were created from the PDF. Please go back and draw crop boxes.", 404
-        
-    return render_template('question_entry_v2.html', 
-                          session_id=session_id, 
+
+    return render_template('question_entry_v2.html',
+                          session_id=session_id,
                           images=[dict(img) for img in images],
                           session_data=dict(session_data) if session_data else {},
+                          classified_count=classified_count,
+                          total_questions=len(images),
                           nvidia_nim_available=NVIDIA_NIM_AVAILABLE)
 
 @main_bp.route('/old/dashboard')
 @login_required
 def old_dashboard():
-    conn = get_db_connection()
-    sessions = conn.execute("""
-        SELECT s.id, s.created_at, s.original_filename, s.persist,
-               COUNT(CASE WHEN i.image_type = 'original' THEN 1 END) as page_count,
-               COUNT(CASE WHEN i.image_type = 'cropped' THEN 1 END) as question_count
-        FROM sessions s
-        LEFT JOIN images i ON s.id = i.session_id
-        WHERE s.user_id = ?
-        GROUP BY s.id, s.created_at, s.original_filename, s.persist
-        ORDER BY s.created_at DESC
-    """, (current_user.id,)).fetchall()
-    
-    processed_sessions = []
-    for session in sessions:
-        session_dict = dict(session)
-        session_dict['pdf_name'] = session_dict['original_filename'] or 'Unknown'
-        processed_sessions.append(session_dict)
-    
-    conn.close()
-    
-    return render_template('dashboard.html', sessions=processed_sessions)
+    # Redirect to the main dashboard to avoid duplicate code
+    return redirect(url_for('dashboard.dashboard'))
 
 @main_bp.route('/delete_session/<session_id>', methods=[METHOD_DELETE])
 @login_required

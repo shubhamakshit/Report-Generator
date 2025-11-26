@@ -1,80 +1,282 @@
 {% extends "base.html" %}
 
-{% block title %}Upload PDF for Analysis{% endblock %}
+{% block title %}Upload PDF{% endblock %}
+
+{% block head %}
+<!-- Ensure mobile viewport settings are correct -->
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, maximum-scale=1, viewport-fit=cover">
+<style>
+    :root {
+        --app-bg: #181a1c;
+        --card-bg: #212529;
+        --input-bg: #2c3034;
+        --border-color: #495057;
+        --primary-color: #0d6efd;
+        --touch-target: 48px;
+    }
+
+    body {
+        background-color: var(--app-bg);
+        color: #e9ecef;
+    }
+
+    /* Full height container with dynamic viewport support */
+    .upload-wrapper {
+        min-height: calc(100vh - 56px);
+        min-height: calc(100dvh - 56px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+        padding-bottom: env(safe-area-inset-bottom);
+    }
+
+    .main-card {
+        background-color: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 16px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+        width: 100%;
+        max-width: 600px;
+        overflow: hidden;
+    }
+
+    /* Custom segmented tabs */
+    .nav-pills {
+        background: var(--input-bg);
+        padding: 4px;
+        border-radius: 12px;
+        gap: 4px;
+    }
+    
+    .nav-pills .nav-link {
+        border-radius: 8px;
+        color: #adb5bd !important;
+        font-size: 0.9rem;
+        padding: 10px;
+        transition: all 0.2s;
+    }
+
+    .nav-pills .nav-link.active {
+        background-color: var(--primary-color) !important;
+        color: white !important;
+        font-weight: 600;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    }
+
+    /* File Drop Zone Styling */
+    .file-drop-area {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        width: 100%;
+        max-width: 100%;
+        padding: 30px;
+        border: 2px dashed var(--border-color);
+        border-radius: 12px;
+        transition: 0.2s;
+        background: rgba(255,255,255,0.02);
+        cursor: pointer;
+    }
+
+    .file-drop-area:hover, .file-drop-area.drag-over {
+        border-color: var(--primary-color);
+        background: rgba(13, 110, 253, 0.05);
+    }
+
+    .fake-btn {
+        background: var(--input-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 8px 16px;
+        font-size: 0.9rem;
+        margin-top: 10px;
+    }
+
+    .file-msg {
+        font-size: 0.95rem;
+        font-weight: 500;
+        color: #dee2e6;
+        text-align: center;
+    }
+
+    .file-input {
+        position: absolute;
+        left: 0;
+        top: 0;
+        height: 100%;
+        width: 100%;
+        opacity: 0;
+        cursor: pointer;
+    }
+
+    /* Large touch-friendly inputs */
+    .form-control-lg {
+        background-color: var(--input-bg);
+        border-color: var(--border-color);
+        color: white;
+        font-size: 16px; /* Prevents iOS zoom */
+        min-height: var(--touch-target);
+    }
+    
+    .form-control-lg:focus {
+        background-color: var(--input-bg);
+        border-color: var(--primary-color);
+        color: white;
+        box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.25);
+    }
+
+    /* Main Action Button */
+    .btn-action {
+        min-height: 54px;
+        font-size: 1.1rem;
+        font-weight: 600;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        transition: transform 0.1s;
+    }
+    
+    .btn-action:active {
+        transform: scale(0.98);
+    }
+
+    /* List items for existing PDFs */
+    .list-group-item {
+        padding: 16px;
+        min-height: 54px; /* Touch target size */
+        border-color: var(--border-color);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    
+    .list-group-item:active {
+        background-color: rgba(255,255,255,0.1) !important;
+    }
+
+    /* Animations */
+    .fade-in-up {
+        animation: fadeInUp 0.4s ease-out forwards;
+    }
+    
+    @keyframes fadeInUp {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="d-flex align-items-center justify-content-center" style="min-height: calc(100vh - 56px);">
-    <div class="upload-container p-4" style="max-width: 600px; width: 100%;">
-        <div class="card bg-dark text-white">
-            <div class="card-header text-center">
-                <h1 class="h3"><i class="bi bi-file-earmark-pdf-fill me-2"></i>PDF Question Extractor</h1>
+<div class="upload-wrapper">
+    <div class="main-card fade-in-up">
+        
+        <!-- Header -->
+        <div class="p-4 border-bottom border-secondary" style="border-color: #495057 !important;">
+            <div class="text-center">
+                <div class="bg-primary bg-opacity-10 text-primary d-inline-flex align-items-center justify-content-center rounded-circle mb-3" style="width: 56px; height: 56px;">
+                    <i class="bi bi-file-earmark-pdf-fill fs-3"></i>
+                </div>
+                <h1 class="h4 mb-1">Analyze PDF</h1>
+                <p class="text-secondary small mb-0">Upload a document to extract questions</p>
             </div>
-            <div class="card-body">
-                <ul class="nav nav-tabs" id="uploadMethodTab" role="tablist">
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link active" id="file-tab" data-bs-toggle="tab" data-bs-target="#file-upload-pane" type="button" role="tab" aria-controls="file-upload-pane" aria-selected="true">Upload File</button>
-                    </li>
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="url-tab" data-bs-toggle="tab" data-bs-target="#url-upload-pane" type="button" role="tab" aria-controls="url-upload-pane" aria-selected="false">From URL</button>
-                    </li>
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="curl-tab" data-bs-toggle="tab" data-bs-target="#curl-upload-pane" type="button" role="tab" aria-controls="curl-upload-pane" aria-selected="false">From cURL</button>
-                    </li>
-                </ul>
+        </div>
 
-                <form id="upload-form">
-                    <div class="tab-content mt-3">
-                        <div class="tab-pane fade show active" id="file-upload-pane" role="tabpanel" aria-labelledby="file-tab">
-                            <div class="mb-3">
-                                <label for="pdf-upload" class="form-label">Select PDF File</label>
-                                <input type="file" class="form-control" id="pdf-upload" name="pdf" accept=".pdf">
-                            </div>
-                        </div>
-                        <div class="tab-pane fade" id="url-upload-pane" role="tabpanel" aria-labelledby="url-tab">
-                            <div class="mb-3">
-                                <label for="pdf-url" class="form-label">PDF URL</label>
-                                <input type="url" class="form-control" id="pdf-url" name="pdf_url" placeholder="https://example.com/document.pdf">
-                            </div>
-                        </div>
-                        <div class="tab-pane fade" id="curl-upload-pane" role="tabpanel" aria-labelledby="curl-tab">
-                            <div class="mb-3">
-                                <label for="curl-command" class="form-label">cURL Command</label>
-                                <input type="text" class="form-control" id="curl-command" name="curl_command" placeholder="curl -o 'report.pdf' https://example.com/...">
-                            </div>
+        <div class="card-body p-4">
+            
+            <!-- Navigation Tabs -->
+            <ul class="nav nav-pills nav-fill mb-4" id="uploadMethodTab" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="file-tab" data-bs-toggle="tab" data-bs-target="#file-upload-pane" type="button" role="tab" aria-controls="file-upload-pane" aria-selected="true">
+                        <i class="bi bi-folder2-open me-1"></i> File
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="url-tab" data-bs-toggle="tab" data-bs-target="#url-upload-pane" type="button" role="tab" aria-controls="url-upload-pane" aria-selected="false">
+                        <i class="bi bi-link-45deg me-1"></i> URL
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="curl-tab" data-bs-toggle="tab" data-bs-target="#curl-upload-pane" type="button" role="tab" aria-controls="curl-upload-pane" aria-selected="false">
+                        <i class="bi bi-code-slash me-1"></i> cURL
+                    </button>
+                </li>
+            </ul>
+
+            <form id="upload-form">
+                <div class="tab-content mb-4">
+                    
+                    <!-- File Upload Pane -->
+                    <div class="tab-pane fade show active" id="file-upload-pane" role="tabpanel" aria-labelledby="file-tab">
+                        <div class="file-drop-area" id="drop-zone">
+                            <span class="file-msg" id="file-label-text">Tap to select or drag PDF here</span>
+                            <span class="fake-btn">Choose File</span>
+                            <input class="file-input" type="file" id="pdf-upload" name="pdf" accept=".pdf">
                         </div>
                     </div>
-                    <button type="submit" class="btn btn-primary w-100">
-                        <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
-                        Upload and Start Cropping
-                    </button>
-                </form>
 
-                <div class="mt-3 text-center">
-                    <p class="text-muted">Or</p>
-                    <a href="/images" class="btn btn-outline-primary">Upload Images Instead</a>
-                </div>
-                <div id="status" class="mt-3"></div>
+                    <!-- URL Pane -->
+                    <div class="tab-pane fade" id="url-upload-pane" role="tabpanel" aria-labelledby="url-tab">
+                        <div class="mb-3">
+                            <label for="pdf-url" class="form-label small text-secondary">PDF URL Address</label>
+                            <input type="url" class="form-control form-control-lg" id="pdf-url" name="pdf_url" placeholder="https://example.com/doc.pdf" autocomplete="off">
+                        </div>
+                    </div>
 
-                <div class="mt-3 text-center">
-                    <p class="text-muted">Or</p>
-                    <button class="btn btn-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#existingPdfSection" aria-expanded="false" aria-controls="existingPdfSection">
-                        Process an Existing Final PDF
-                    </button>
-                </div>
-
-                <div class="collapse mt-3" id="existingPdfSection">
-                    <div class="card card-body bg-dark">
-                        <h5>Select an Existing PDF to Process</h5>
-                        <div class="list-group" style="max-height: 200px; overflow-y: auto;">
-                            {% for pdf in pdfs %}
-                                <a href="/process_final_pdf/{{ pdf.id }}" class="list-group-item list-group-item-action bg-dark text-white">
-                                    {{ pdf.filename }}
-                                </a>
-                            {% endfor %}
+                    <!-- cURL Pane -->
+                    <div class="tab-pane fade" id="curl-upload-pane" role="tabpanel" aria-labelledby="curl-tab">
+                        <div class="mb-3">
+                            <label for="curl-command" class="form-label small text-secondary">Paste cURL Command</label>
+                            <textarea class="form-control form-control-lg" id="curl-command" name="curl_command" placeholder="curl -o 'report.pdf' ..." rows="2" style="font-family: monospace; font-size: 14px;"></textarea>
                         </div>
                     </div>
                 </div>
+
+                <!-- Main Action Button -->
+                <button type="submit" class="btn btn-primary w-100 btn-action shadow">
+                    <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                    <span class="btn-text">Start Processing</span>
+                    <i class="bi bi-arrow-right-circle btn-icon"></i>
+                </button>
+            </form>
+
+            <div id="status" class="mt-3"></div>
+
+            <!-- Alternative Actions -->
+            <div class="mt-4 pt-3 border-top border-secondary" style="border-color: #343a40 !important;">
+                <div class="d-grid gap-2">
+                    <a href="/images" class="btn btn-outline-secondary d-flex align-items-center justify-content-center" style="min-height: 48px;">
+                        <i class="bi bi-images me-2"></i> Upload Images Instead
+                    </a>
+                    
+                    <button class="btn btn-dark d-flex align-items-center justify-content-between px-3" type="button" data-bs-toggle="collapse" data-bs-target="#existingPdfSection" aria-expanded="false" style="min-height: 48px; border: 1px solid var(--border-color);">
+                        <span><i class="bi bi-clock-history me-2"></i> Recent Files</span>
+                        <i class="bi bi-chevron-down small"></i>
+                    </button>
+                </div>
+
+                <div class="collapse mt-2" id="existingPdfSection">
+                    <div class="card card-body bg-dark border border-secondary p-0 overflow-hidden">
+                        <div class="list-group list-group-flush" style="max-height: 200px; overflow-y: auto;">
+                            {% if pdfs %}
+                                {% for pdf in pdfs %}
+                                    <a href="/process_final_pdf/{{ pdf.id }}" class="list-group-item list-group-item-action bg-transparent text-white border-secondary">
+                                        <div class="text-truncate me-2">{{ pdf.filename }}</div>
+                                        <i class="bi bi-chevron-right text-secondary small"></i>
+                                    </a>
+                                {% endfor %}
+                            {% else %}
+                                <div class="p-3 text-center text-muted small">No recent files found.</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
             </div>
+
         </div>
     </div>
 </div>
@@ -82,20 +284,75 @@
 
 {% block scripts %}
 <script>
+    // --- File Input UX ---
+    const fileInput = document.getElementById('pdf-upload');
+    const dropZone = document.getElementById('drop-zone');
+    const fileLabel = document.getElementById('file-label-text');
+
+    // Visual feedback for file selection
+    fileInput.addEventListener('change', function() {
+        if (this.files && this.files.length > 0) {
+            fileLabel.innerHTML = `<i class="bi bi-check-circle-fill text-success"></i> ${this.files[0].name}`;
+            dropZone.style.borderColor = '#198754';
+            dropZone.style.background = 'rgba(25, 135, 84, 0.1)';
+        } else {
+            fileLabel.textContent = "Tap to select or drag PDF here";
+            dropZone.style.borderColor = '';
+            dropZone.style.background = '';
+        }
+    });
+
+    // Drag and drop visual effects
+    ['dragenter', 'dragover'].forEach(eventName => {
+        dropZone.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.add('drag-over');
+        }, false);
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.remove('drag-over');
+        }, false);
+    });
+
+    // --- Tab Handling ---
+    const tabs = document.querySelectorAll('#uploadMethodTab .nav-link');
+    tabs.forEach(tab => {
+        tab.addEventListener('shown.bs.tab', function (event) {
+            const currentTabId = event.target.id;
+            document.getElementById('pdf-upload').required = (currentTabId === 'file-tab');
+            document.getElementById('pdf-url').required = (currentTabId === 'url-tab');
+            document.getElementById('curl-command').required = (currentTabId === 'curl-tab');
+        });
+    });
+    // Set initial required state
+    document.getElementById('pdf-upload').required = true;
+
+    // --- Form Submission ---
     document.getElementById('upload-form').addEventListener('submit', async function(e) {
         e.preventDefault();
         const form = e.target;
         const button = form.querySelector('button[type="submit"]');
         const spinner = button.querySelector('.spinner-border');
+        const btnText = button.querySelector('.btn-text');
+        const btnIcon = button.querySelector('.btn-icon');
         const statusDiv = document.getElementById('status');
 
+        // Reset UI
+        statusDiv.innerHTML = '';
         button.disabled = true;
         spinner.classList.remove('d-none');
-        statusDiv.innerHTML = '<div class="alert alert-info">Uploading and processing PDF... this may take a moment.</div>';
+        btnIcon.classList.add('d-none');
+        btnText.textContent = "Uploading...";
 
         const activeTab = document.querySelector('#uploadMethodTab .nav-link.active').id;
         const formData = new FormData();
 
+        // Validation & Data Prep
         let isValid = false;
         if (activeTab === 'file-tab') {
             const fileInput = document.getElementById('pdf-upload');
@@ -103,7 +360,7 @@
                 formData.append('pdf', fileInput.files[0]);
                 isValid = true;
             } else {
-                statusDiv.innerHTML = `<div class="alert alert-danger">Error: Please select a PDF file.</div>`;
+                statusDiv.innerHTML = `<div class="alert alert-danger d-flex align-items-center"><i class="bi bi-exclamation-triangle-fill me-2"></i> Please select a PDF file.</div>`;
             }
         } else if (activeTab === 'url-tab') {
             const urlInput = document.getElementById('pdf-url');
@@ -111,7 +368,7 @@
                 formData.append('pdf_url', urlInput.value);
                 isValid = true;
             } else {
-                statusDiv.innerHTML = `<div class="alert alert-danger">Error: Please enter a PDF URL.</div>`;
+                statusDiv.innerHTML = `<div class="alert alert-danger d-flex align-items-center"><i class="bi bi-exclamation-triangle-fill me-2"></i> Please enter a PDF URL.</div>`;
             }
         } else if (activeTab === 'curl-tab') {
             const curlInput = document.getElementById('curl-command');
@@ -119,16 +376,15 @@
                 formData.append('curl_command', curlInput.value);
                 isValid = true;
             } else {
-                statusDiv.innerHTML = `<div class="alert alert-danger">Error: Please enter a cURL command.</div>`;
+                statusDiv.innerHTML = `<div class="alert alert-danger d-flex align-items-center"><i class="bi bi-exclamation-triangle-fill me-2"></i> Please enter a cURL command.</div>`;
             }
         }
 
         if (!isValid) {
             button.disabled = false;
             spinner.classList.add('d-none');
-            if (!statusDiv.innerHTML.includes('Error')) {
-               statusDiv.innerHTML = '';
-            }
+            btnIcon.classList.remove('d-none');
+            btnText.textContent = "Start Processing";
             return;
         }
 
@@ -141,35 +397,41 @@
             const result = await response.json();
 
             if (response.ok) {
+                // Success State
+                button.className = "btn btn-success w-100 btn-action shadow";
+                btnText.textContent = "Upload Complete!";
+                spinner.classList.add('d-none');
+                btnIcon.className = "bi bi-check-lg";
+                btnIcon.classList.remove('d-none');
+                
                 statusDiv.innerHTML = `
-                    <div class="alert alert-success">Success! Found ${result.files.length} pages.</div>
-                    <div class="d-grid gap-2 mt-3">
-                        <a href="/cropv2/${result.session_id}/0" class="btn btn-primary">Start Cropping</a>
-                        <a href="/redact_status/${result.session_id}" class="btn btn-secondary">Redact Document</a>
+                    <div class="alert alert-success border-0 bg-success bg-opacity-10 text-success">
+                        <i class="bi bi-check-circle-fill me-2"></i> Found ${result.files.length} pages.
                     </div>
                 `;
-                 button.style.display = 'none';
+                
+                // Redirect immediately or show button? 
+                // UX Best practice: Show button to proceed or auto-redirect after short delay.
+                // Let's replace the button with a "Start Cropping" link to be safe.
+                setTimeout(() => {
+                    window.location.href = `/cropv2/${result.session_id}/0`;
+                }, 500); // 500ms delay to see the checkmark
+                
             } else {
                 throw new Error(result.error || 'Upload failed');
             }
         } catch (error) {
-            statusDiv.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
+            statusDiv.innerHTML = `
+                <div class="alert alert-danger border-0 bg-danger bg-opacity-10 text-danger">
+                    <i class="bi bi-x-circle-fill me-2"></i> ${error.message}
+                </div>
+            `;
             button.disabled = false;
+            button.className = "btn btn-primary w-100 btn-action shadow";
             spinner.classList.add('d-none');
+            btnIcon.classList.remove('d-none');
+            btnText.textContent = "Try Again";
         }
     });
-
-    // Optional: Reset required attribute on inactive tabs to allow form submission
-    const tabs = document.querySelectorAll('#uploadMethodTab .nav-link');
-    tabs.forEach(tab => {
-        tab.addEventListener('shown.bs.tab', function (event) {
-            const currentTabId = event.target.id;
-            document.getElementById('pdf-upload').required = (currentTabId === 'file-tab');
-            document.getElementById('pdf-url').required = (currentTabId === 'url-tab');
-            document.getElementById('curl-command').required = (currentTabId === 'curl-tab');
-        });
-    });
-    // Set initial required state
-    document.getElementById('pdf-upload').required = true;
 </script>
 {% endblock %}

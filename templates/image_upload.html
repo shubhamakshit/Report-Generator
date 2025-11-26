@@ -1,33 +1,180 @@
 {% extends "base.html" %}
 
-{% block title %}Upload Images for Analysis{% endblock %}
+{% block title %}Upload Images{% endblock %}
 
 {% block head %}
+<!-- Mobile viewport optimization -->
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, maximum-scale=1, viewport-fit=cover">
 <style>
-    body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
-    .upload-container { max-width: 600px; width: 100%; }
+    :root {
+        --app-bg: #181a1c;
+        --card-bg: #212529;
+        --border-color: #495057;
+        --primary-color: #0d6efd;
+        --primary-bg-subtle: rgba(13, 110, 253, 0.1);
+    }
+
+    body {
+        background-color: var(--app-bg);
+        color: #e9ecef;
+    }
+
+    /* Layout wrapper */
+    .upload-wrapper {
+        min-height: calc(100vh - 56px);
+        min-height: calc(100dvh - 56px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+        padding-bottom: env(safe-area-inset-bottom);
+    }
+
+    .main-card {
+        background-color: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 16px;
+        box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+        width: 100%;
+        max-width: 600px;
+        overflow: hidden;
+    }
+
+    /* Touch-friendly Drop Zone */
+    .file-drop-area {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        width: 100%;
+        min-height: 200px; /* Large target area */
+        padding: 30px;
+        border: 2px dashed var(--border-color);
+        border-radius: 12px;
+        transition: all 0.2s ease;
+        background: rgba(255,255,255,0.02);
+        cursor: pointer;
+    }
+
+    .file-drop-area:active, .file-drop-area.drag-over {
+        border-color: var(--primary-color);
+        background: var(--primary-bg-subtle);
+        transform: scale(0.99);
+    }
+
+    .file-drop-area.has-files {
+        border-color: #198754;
+        border-style: solid;
+        background: rgba(25, 135, 84, 0.1);
+    }
+
+    /* The invisible input covers the whole area */
+    .file-input {
+        position: absolute;
+        left: 0;
+        top: 0;
+        height: 100%;
+        width: 100%;
+        opacity: 0;
+        cursor: pointer;
+        z-index: 10;
+    }
+
+    /* Icon styling */
+    .upload-icon {
+        font-size: 3rem;
+        color: #adb5bd;
+        margin-bottom: 1rem;
+        transition: color 0.2s;
+    }
+    
+    .file-drop-area.has-files .upload-icon {
+        color: #198754;
+    }
+
+    .file-msg {
+        font-size: 1.1rem;
+        font-weight: 500;
+        color: #dee2e6;
+        text-align: center;
+        margin-bottom: 0.5rem;
+    }
+    
+    .file-hint {
+        font-size: 0.85rem;
+        color: #adb5bd;
+    }
+
+    /* Buttons */
+    .btn-action {
+        min-height: 54px;
+        font-size: 1.1rem;
+        font-weight: 600;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        transition: transform 0.1s;
+    }
+    
+    .btn-action:active {
+        transform: scale(0.98);
+    }
+
+    /* Animations */
+    .fade-in-up { animation: fadeInUp 0.4s ease-out forwards; }
+    @keyframes fadeInUp {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="upload-container p-4">
-    <div class="card bg-dark text-white">
-        <div class="card-header text-center">
-            <h1 class="h3"><i class="bi bi-file-earmark-image-fill me-2"></i>Image Question Extractor</h1>
+<div class="upload-wrapper">
+    <div class="main-card fade-in-up">
+        
+        <!-- Header -->
+        <div class="p-4 border-bottom border-secondary" style="border-color: #495057 !important;">
+            <div class="text-center">
+                <h1 class="h4 mb-1">Upload Images</h1>
+                <p class="text-secondary small mb-0">Select pages or screenshots to analyze</p>
+            </div>
         </div>
-        <div class="card-body">
+
+        <div class="card-body p-4">
             <form id="upload-form">
-                <div class="mb-3">
-                    <label for="images-upload" class="form-label">Select Image Files</label>
-                    <input type="file" class="form-control" id="images-upload" name="images" accept="image/*" multiple required>
-                    <div class="form-text">You can select multiple image files (PNG, JPG, JPEG, GIF, BMP)</div>
+                
+                <!-- Large Drop Zone -->
+                <div class="mb-4">
+                    <div class="file-drop-area" id="drop-zone">
+                        <i class="bi bi-images upload-icon" id="drop-icon"></i>
+                        <span class="file-msg" id="file-label-main">Tap to select images</span>
+                        <span class="file-hint" id="file-label-sub">Support for PNG, JPG, JPEG</span>
+                        
+                        <!-- Invisible Input -->
+                        <input type="file" class="file-input" id="images-upload" name="images" accept="image/*" multiple required>
+                    </div>
                 </div>
-                <button type="submit" class="btn btn-primary w-100">
+
+                <!-- Action Button -->
+                <button type="submit" class="btn btn-primary w-100 btn-action shadow" id="submitBtn">
                     <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
-                    Upload and Start Cropping
+                    <span class="btn-text">Start Processing</span>
+                    <i class="bi bi-arrow-right-circle btn-icon"></i>
                 </button>
             </form>
+
             <div id="status" class="mt-3"></div>
+
+            <!-- Back Link -->
+            <div class="mt-4 text-center">
+                <a href="/" class="text-decoration-none text-secondary d-inline-flex align-items-center py-2 px-3">
+                    <i class="bi bi-arrow-left me-2"></i> Back to PDF Upload
+                </a>
+            </div>
         </div>
     </div>
 </div>
@@ -35,18 +182,80 @@
 
 {% block scripts %}
 <script>
+    // UX Elements
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('images-upload');
+    const mainLabel = document.getElementById('file-label-main');
+    const subLabel = document.getElementById('file-label-sub');
+    const icon = document.getElementById('drop-icon');
+    const statusDiv = document.getElementById('status');
+
+    // Handle File Selection (Visual Feedback)
+    fileInput.addEventListener('change', function() {
+        const count = this.files ? this.files.length : 0;
+        
+        if (count > 0) {
+            dropZone.classList.add('has-files');
+            icon.className = 'bi bi-check-circle-fill upload-icon';
+            
+            if (count === 1) {
+                mainLabel.textContent = this.files[0].name;
+                subLabel.textContent = "1 image selected";
+            } else {
+                mainLabel.textContent = `${count} Images Selected`;
+                subLabel.textContent = "Ready to upload";
+            }
+        } else {
+            resetUI();
+        }
+    });
+
+    function resetUI() {
+        dropZone.classList.remove('has-files');
+        icon.className = 'bi bi-images upload-icon';
+        mainLabel.textContent = "Tap to select images";
+        subLabel.textContent = "Support for PNG, JPG, JPEG";
+        fileInput.value = ''; // Clear value
+    }
+
+    // Drag & Drop Visuals
+    ['dragenter', 'dragover'].forEach(eventName => {
+        dropZone.addEventListener(eventName, (e) => {
+            e.preventDefault(); e.stopPropagation();
+            dropZone.classList.add('drag-over');
+        }, false);
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, (e) => {
+            e.preventDefault(); e.stopPropagation();
+            dropZone.classList.remove('drag-over');
+        }, false);
+    });
+
+    // Form Submission
     document.getElementById('upload-form').addEventListener('submit', async function(e) {
         e.preventDefault();
-        const form = e.target;
-        const button = form.querySelector('button');
-        const spinner = button.querySelector('.spinner-border');
-        const statusDiv = document.getElementById('status');
+        
+        const btn = document.getElementById('submitBtn');
+        const spinner = btn.querySelector('.spinner-border');
+        const btnText = btn.querySelector('.btn-text');
+        const btnIcon = btn.querySelector('.btn-icon');
 
-        button.disabled = true;
+        // Check if files selected
+        if (!fileInput.files || fileInput.files.length === 0) {
+            statusDiv.innerHTML = `<div class="alert alert-warning d-flex align-items-center"><i class="bi bi-exclamation-triangle me-2"></i> Please select at least one image.</div>`;
+            return;
+        }
+
+        // Loading State
+        btn.disabled = true;
         spinner.classList.remove('d-none');
-        statusDiv.innerHTML = '<div class="alert alert-info">Uploading and processing images... this may take a moment.</div>';
+        btnIcon.classList.add('d-none');
+        btnText.textContent = "Uploading...";
+        statusDiv.innerHTML = '';
 
-        const formData = new FormData(form);
+        const formData = new FormData(e.target);
 
         try {
             const response = await fetch('/upload_images', {
@@ -57,15 +266,25 @@
             const result = await response.json();
 
             if (response.ok) {
-                statusDiv.innerHTML = `<div class="alert alert-success">Success! Uploaded ${result.files.length} images. Redirecting...</div>`;
-                window.location.href = `/cropv2/${result.session_id}/0`;
+                // Success State
+                btn.className = "btn btn-success w-100 btn-action shadow";
+                btnText.textContent = "Success!";
+                statusDiv.innerHTML = `<div class="alert alert-success border-0 bg-success bg-opacity-10 text-success"><i class="bi bi-check-lg me-2"></i> Uploaded ${result.files.length} images. Redirecting...</div>`;
+                
+                // Redirect
+                setTimeout(() => {
+                    window.location.href = `/cropv2/${result.session_id}/0`;
+                }, 800);
             } else {
                 throw new Error(result.error || 'Upload failed');
             }
         } catch (error) {
-            statusDiv.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
-            button.disabled = false;
+            // Error State
+            statusDiv.innerHTML = `<div class="alert alert-danger border-0 bg-danger bg-opacity-10 text-danger"><i class="bi bi-x-circle me-2"></i> Error: ${error.message}</div>`;
+            btn.disabled = false;
             spinner.classList.add('d-none');
+            btnIcon.classList.remove('d-none');
+            btnText.textContent = "Try Again";
         }
     });
 </script>

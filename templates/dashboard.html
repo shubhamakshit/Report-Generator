@@ -30,6 +30,85 @@
         z-index: 2;
         background-color: #212529;
     }
+
+    /* Enhanced table styling */
+    .table {
+        --bs-table-bg: transparent;
+        --bs-table-striped-bg: rgba(255, 255, 255, 0.03);
+        --bs-table-active-bg: rgba(255, 255, 255, 0.06);
+        --bs-table-hover-bg: rgba(13, 110, 253, 0.1);
+        color: #e9ecef;
+        border-color: #343a40;
+    }
+
+    .table th {
+        background-color: #212529;
+        color: #adb5bd;
+        font-weight: 600;
+        border-top: none;
+    }
+
+    .table td {
+        border-color: #343a40;
+        vertical-align: middle;
+    }
+
+    /* Enhanced badges */
+    .badge {
+        font-weight: 500;
+        padding: 0.5em 0.75em;
+    }
+
+    .badge.bg-success {
+        background-color: #198754 !important;
+        color: white;
+    }
+
+    .badge.bg-secondary {
+        background-color: #6c757d !important;
+        color: white;
+    }
+
+    /* Enhanced button styling */
+    .btn-group .btn {
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    }
+
+    .btn-primary {
+        background-color: #0d6efd;
+        border-color: #0d6efd;
+    }
+
+    .btn-primary:hover {
+        background-color: #0b5ed7;
+        border-color: #0a58ca;
+    }
+
+    .btn-secondary {
+        background-color: #6c757d;
+        border-color: #6c757d;
+    }
+
+    .btn-secondary:hover {
+        background-color: #5c636a;
+        border-color: #565e64;
+    }
+
+    .btn-info {
+        background-color: #17a2b8;
+        border-color: #17a2b8;
+    }
+
+    .btn-info:hover {
+        background-color: #138496;
+        border-color: #117a8b;
+    }
+
+    /* Size column styling */
+    .size-column {
+        font-weight: 600;
+        color: #4db8ff;
+    }
 </style>
 {% endblock %}
 
@@ -50,6 +129,9 @@
                     <th scope="col">Created At</th>
                     <th scope="col">Pages</th>
                     <th scope="col">Questions</th>
+                    {% if show_size %}
+                    <th scope="col">Size</th>
+                    {% endif %}
                     <th scope="col">Status</th>
                     <th scope="col">Actions</th>
                 </tr>
@@ -67,6 +149,9 @@
                     <td><span class="badge bg-secondary">{{ session.created_at | humanize }}</span></td>
                     <td>{{ session.page_count }}</td>
                     <td>{{ session.question_count }}</td>
+                    {% if show_size %}
+                    <td class="size-column">{{ session.total_size_formatted }}</td>
+                    {% endif %}
                     <td>
                         {% if session.persist %}
                             <span class="badge bg-success">Persisted</span>
@@ -79,13 +164,22 @@
                             <a href="{{ url_for('main.question_entry_v2', session_id=session.id) }}" class="btn btn-sm btn-primary">View</a>
                             <a href="{{ url_for('main.crop_interface_v2', session_id=session.id, image_index=0) }}" class="btn btn-sm btn-secondary">Crop</a>
                             <button class="btn btn-sm btn-info toggle-persist-btn">Toggle Persist</button>
+                            {% if show_size %}
+                            <button class="btn btn-sm btn-warning reduce-space-btn">Reduce Space</button>
+                            {% endif %}
                         </div>
                     </td>
                 </tr>
                 {% else %}
+                {% if show_size %}
                 <tr>
-                    <td colspan="8" class="text-center">No sessions found.</td>
+                    <td colspan="10" class="text-center">No sessions found.</td>
                 </tr>
+                {% else %}
+                <tr>
+                    <td colspan="9" class="text-center">No sessions found.</td>
+                </tr>
+                {% endif %}
                 {% endfor %}
             </tbody>
         </table>
@@ -200,6 +294,35 @@ $(document).ready(function() {
             }
         });
     });
+
+    // Reduce space - only bind event if the button exists
+    {% if show_size %}
+    $('.reduce-space-btn').on('click', function() {
+        const button = $(this);
+        const row = button.closest('tr');
+        const sessionId = row.data('session-id');
+
+        if (confirm('Are you sure you want to reduce space? This will truncate the original page images to save disk space, but you will still be able to view questions and generate reports.')) {
+            $.ajax({
+                url: `/sessions/reduce_space/${sessionId}`,
+                type: 'POST',
+                success: function(response) {
+                    if (response.success) {
+                        alert(response.message);
+                        // Refresh the page to update the size information
+                        location.reload();
+                    } else {
+                        alert('Error reducing space: ' + response.error);
+                    }
+                },
+                error: function(xhr) {
+                    const response = JSON.parse(xhr.responseText);
+                    alert('Error reducing space: ' + response.error);
+                }
+            });
+        }
+    });
+    {% endif %}
 });
 </script>
 {% endblock %}

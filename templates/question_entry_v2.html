@@ -41,10 +41,17 @@
             <div>
                 <h1 class="h3 mb-0">Step 3: Enter Question Details</h1>
                 <div class="keyboard-hint">Shortcuts: Shift+Q for Next | Shift+C (Correct) | Shift+W (Wrong) | Shift+U (Unattempted)</div>
+                {% if classified_count is defined and total_questions is defined %}
+                    <div class="d-flex align-items-center mt-1">
+                        <span class="badge bg-info">
+                            <i class="bi bi-tags me-1"></i>Classification:
+                            <strong>{{ classified_count }}</strong>/{{ total_questions }} questions
+                        </span>
+                    </div>
+                {% endif %}
             </div>
             <div>
                 <a href="/cropv2/{{ session_id }}/0" class="btn btn-secondary"><i class="bi bi-arrow-left me-1"></i> Go Back to Cropping</a>
-                {% include '_nav_links.html' %}
             </div>
         </div>
         <div class="card-body">
