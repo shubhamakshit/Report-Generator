@@ -13,7 +13,7 @@ def settings():
         
         # --- Handle DPI Setting ---
         try:
-            dpi = int(request.form.get('dpi', 300))
+            dpi = int(request.form.get('dpi', 100))
             if not (72 <= dpi <= 900):
                 flash('Invalid DPI value. Please enter a number between 72 and 900.', 'danger')
                 return redirect(url_for('settings.settings'))

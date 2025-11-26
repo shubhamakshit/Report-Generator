@@ -188,7 +188,7 @@ def setup_database():
     try:
         cursor.execute("SELECT dpi FROM users LIMIT 1")
     except sqlite3.OperationalError:
-        cursor.execute("ALTER TABLE users ADD COLUMN dpi INTEGER DEFAULT 300")
+        cursor.execute("ALTER TABLE users ADD COLUMN dpi INTEGER DEFAULT 100")
 
     conn.commit()
     conn.close()
