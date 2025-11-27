@@ -288,8 +288,9 @@
     let startX, startY;
     let dragTarget = null;
     let startPositions = {};
-    let stitchingState = 'inactive'; 
-    let destinationBoxIndex = -1;
+    
+    // Cross-Page Stitching State
+    let stitchBuffer = JSON.parse(localStorage.getItem('gemini_stitch_buffer') || 'null');
 
     // --- INITIALIZATION & RESIZING LOGIC ---
 
@@ -310,6 +311,7 @@
         loadSettings();
         loadBoxes();
         setupListeners();
+        updateStitchButtonState();
     }
 
     // Exact dimension calculation preventing overflow
@@ -347,15 +349,18 @@
         
         boxes.forEach((box, index) => {
             const isSelected = index === selectedBoxIndex;
-            const isDestination = index === destinationBoxIndex;
-            const isStitched = box.is_destination_for_stitch || box.stitch_to !== null;
+            // Visual cue for boxes that have a remote source attached
+            const isStitched = box.remote_stitch_source != null;
+            
+            // Debug log for the first box to check its state
+            if (index === 0) console.log(`Box 0: stitched=${isStitched}, val=${JSON.stringify(box.remote_stitch_source)}`);
 
             const p = (pt) => ({ x: pt.x * drawCanvas.width, y: pt.y * drawCanvas.height });
 
             drawCtx.lineWidth = isSelected ? 3 : 2;
-            drawCtx.strokeStyle = isSelected ? '#ff4d4d' : (isDestination ? '#0dcaf0' : '#ffc107');
+            drawCtx.strokeStyle = isSelected ? '#ff4d4d' : (isStitched ? '#0dcaf0' : '#ffc107');
             drawCtx.fillStyle = isSelected ? 'rgba(255, 77, 77, 0.15)' : 'rgba(255, 193, 7, 0.1)';
-            if (isDestination) drawCtx.fillStyle = 'rgba(13, 202, 240, 0.2)';
+            if (isStitched) drawCtx.fillStyle = 'rgba(13, 202, 240, 0.2)';
 
             drawCtx.beginPath();
             drawCtx.moveTo(p(box.tl).x, p(box.tl).y);
@@ -384,7 +389,17 @@
             drawCtx.fillStyle = "white";
             drawCtx.shadowColor="rgba(0,0,0,0.8)"; drawCtx.shadowBlur=6;
             drawCtx.fillText(index + 1, cx - 6, cy + 8);
-            if(isStitched) drawCtx.fillText("🔗", p(box.tr).x - 28, p(box.tr).y + 24);
+            
+            // Draw link icon if stitched
+            if(isStitched) {
+                drawCtx.font = "20px system-ui";
+                drawCtx.fillText("🔗", p(box.tr).x - 28, p(box.tr).y + 24);
+                // Add small text indicating source page
+                if (box.remote_stitch_source && box.remote_stitch_source.page_index !== undefined) {
+                    drawCtx.font = "12px system-ui";
+                    drawCtx.fillText(`Pg ${box.remote_stitch_source.page_index + 1}`, p(box.tr).x - 40, p(box.tr).y + 40);
+                }
+            }
             drawCtx.shadowBlur=0;
         });
     }
@@ -431,15 +446,6 @@
         e.preventDefault(); 
         const {x, y} = getPointerPos(e);
         const hit = hitTest(x, y);
-
-        if (stitchingState === 'selecting_source') {
-            if (hit && hit.type === 'body' && hit.index !== destinationBoxIndex) {
-                boxes[hit.index].stitch_to = boxes[destinationBoxIndex].id;
-                boxes[destinationBoxIndex].is_destination_for_stitch = true;
-            }
-            cancelStitch();
-            return;
-        }
 
         if (hit) {
             dragTarget = hit;
@@ -510,7 +516,7 @@
                     tr: { x: Math.max(startX, endX), y: Math.min(startY, endY) },
                     bl: { x: Math.min(startX, endX), y: Math.max(startY, endY) },
                     br: { x: Math.max(startX, endX), y: Math.max(startY, endY) },
-                    stitch_to: null, is_destination_for_stitch: false
+                    remote_stitch_source: null 
                 });
                 selectBox(boxes.length - 1);
             }
@@ -535,6 +541,7 @@
         } else {
             tb.style.display = 'flex';
             updateToolbarPosition();
+            updateStitchButtonState();
         }
         drawBoxes();
     }
@@ -571,6 +578,99 @@
         tb.style.top = top + 'px';
     }
 
+    function updateStitchButtonState() {
+        const btn = document.getElementById('stitch-btn');
+        const icon = btn.querySelector('i');
+        
+        const isBufferActive = stitchBuffer && stitchBuffer.session_id === sessionId;
+        // Check if current box is stitched
+        const isBoxStitched = selectedBoxIndex > -1 && boxes[selectedBoxIndex] && boxes[selectedBoxIndex].remote_stitch_source != null;
+
+        if (isBufferActive) {
+             // Mode: PASTE (Buffer Full)
+             btn.title = `Link to Box from Page ${stitchBuffer.page_index + 1}`;
+             icon.className = 'bi bi-link-45deg';
+             btn.style.color = '#0dcaf0'; // Cyan
+        } else if (isBoxStitched) {
+             // Mode: UNLINK (Buffer Empty + Box Stitched)
+             btn.title = "Remove Link";
+             icon.className = 'bi bi-x-lg';
+             btn.style.color = '#dc3545'; // Red
+        } else {
+             // Mode: COPY (Buffer Empty + Box Unstitched)
+             btn.title = "Copy to Stitch Buffer";
+             icon.className = 'bi bi-scissors';
+             btn.style.color = '#e9ecef'; // Default
+        }
+    }
+    
+    function handleStitchClick() {
+        if (selectedBoxIndex === -1) return;
+        
+        const isBufferActive = stitchBuffer && stitchBuffer.session_id === sessionId;
+        const isBoxStitched = boxes[selectedBoxIndex].remote_stitch_source != null;
+        
+        if (isBufferActive) {
+            // --- ACTION: PASTE LINK ---
+            boxes[selectedBoxIndex].remote_stitch_source = {
+                page_index: stitchBuffer.page_index,
+                box: stitchBuffer.box
+            };
+            // Auto-clear buffer to allow copying again immediately
+            stitchBuffer = null;
+            localStorage.removeItem('gemini_stitch_buffer');
+            // Visual feedback
+            alert(`Linked!`);
+        } else if (isBoxStitched) {
+            // --- ACTION: UNLINK ---
+            boxes[selectedBoxIndex].remote_stitch_source = null;
+        } else {
+            // --- ACTION: COPY SOURCE ---
+            const box = boxes[selectedBoxIndex];
+            // Normalize coordinates
+            const minX = Math.min(box.tl.x, box.bl.x);
+            const minY = Math.min(box.tl.y, box.tr.y);
+            const maxX = Math.max(box.tr.x, box.br.x);
+            const maxY = Math.max(box.bl.y, box.br.y);
+            
+            const cleanBox = { ...box, x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+            
+            stitchBuffer = {
+                session_id: sessionId,
+                page_index: imageIndex,
+                box: cleanBox
+            };
+            localStorage.setItem('gemini_stitch_buffer', JSON.stringify(stitchBuffer));
+            alert("Copied! Select the target box (on any page) and click the Link button.");
+        }
+        
+        saveBoxes();
+        updateStitchButtonState();
+        drawBoxes();
+    }
+
+    function moveBoxUp() {
+        if (selectedBoxIndex > -1 && selectedBoxIndex < boxes.length - 1) {
+            const [movedBox] = boxes.splice(selectedBoxIndex, 1);
+            boxes.splice(selectedBoxIndex + 1, 0, movedBox);
+            selectedBoxIndex++;
+            saveBoxes();
+            drawBoxes();
+            updateToolbarPosition();
+        }
+    }
+
+    function moveBoxDown() {
+        if (selectedBoxIndex > 0) {
+            const [movedBox] = boxes.splice(selectedBoxIndex, 1);
+            boxes.splice(selectedBoxIndex - 1, 0, movedBox);
+            selectedBoxIndex--;
+            saveBoxes();
+            drawBoxes();
+            updateToolbarPosition();
+        }
+    }
+
     function setupListeners() {
         drawCanvas.addEventListener('mousedown', onPointerDown);
         drawCanvas.addEventListener('touchstart', onPointerDown, {passive:false});
@@ -584,29 +684,30 @@
         });
 
         document.getElementById('delete-btn').addEventListener('click', () => {
-            if (selectedBoxIndex > -1) { boxes.splice(selectedBoxIndex, 1); selectBox(-1); saveBoxes(); }
+            if (selectedBoxIndex > -1) { 
+                const deletedBox = boxes[selectedBoxIndex];
+                // Clear buffer if we are deleting the source box currently in clipboard
+                if (stitchBuffer && stitchBuffer.session_id === sessionId && stitchBuffer.box.id === deletedBox.id) {
+                    stitchBuffer = null;
+                    localStorage.removeItem('gemini_stitch_buffer');
+                }
+                
+                boxes.splice(selectedBoxIndex, 1); 
+                selectBox(-1); 
+                saveBoxes(); 
+            }
         });
         
-        document.getElementById('stitch-btn').addEventListener('click', () => {
-            stitchingState = 'selecting_source';
-            destinationBoxIndex = selectedBoxIndex;
-            const instr = document.getElementById('stitch-instructions');
-            instr.innerHTML = 'Tap the next box to stitch. <button class="btn-close btn-sm float-end" onclick="cancelStitch()"></button>';
-            instr.style.display = 'block';
-        });
+        document.getElementById('stitch-btn').addEventListener('click', handleStitchClick);
+        
+        document.getElementById('move-up-btn').addEventListener('click', moveBoxUp);
+        document.getElementById('move-down-btn').addEventListener('click', moveBoxDown);
 
         document.getElementById('processBtn').addEventListener('click', processPage);
         
-        // Filter sliders
         ['brightness','contrast','gamma'].forEach(id => {
             document.getElementById(id).addEventListener('input', updateFilters);
         });
-    }
-    
-    window.cancelStitch = function() {
-        stitchingState = 'inactive';
-        document.getElementById('stitch-instructions').style.display = 'none';
-        drawBoxes();
     }
 
     function updateFilters() {
@@ -614,6 +715,10 @@
         const c = document.getElementById('contrast').value;
         const g = document.getElementById('gamma').value;
         
+        console.log(`Filters: Brightness ${b}, Contrast ${c}, Gamma ${g}`);
+        
+        // Note: Gamma is not supported in standard CSS filters, so it won't show visually here.
+        // It would require an SVG filter or Canvas manipulation to visualize.
         image.style.filter = `brightness(${100 + parseFloat(b)}%) contrast(${c})`;
         
         document.getElementById('brightnessValue').innerText = b;
@@ -672,14 +777,19 @@
                     imageData: imgData
                 })
             });
-            if(!res.ok) throw new Error('Server Error');
+            
+            if(!res.ok) {
+                const errText = await res.text();
+                throw new Error(`Server Error (${res.status}): ${errText}`);
+            }
 
             window.location.href = (imageIndex + 1 < totalPages)
                 ? `/cropv2/${sessionId}/${imageIndex+1}`
                 : `/question_entry_v2/${sessionId}`;
                 
         } catch (err) {
-            alert("Error processing: " + err.message);
+            console.error(err);
+            alert("Error processing page: " + err.message);
             btn.disabled = false;
             document.getElementById('loader-overlay').style.display = 'none';
         }
@@ -691,7 +801,11 @@
             const s = localStorage.getItem(storageKey);
             if(s) {
                 boxes = JSON.parse(s);
-                boxes.forEach((b,i) => { if(!b.id) b.id = Date.now()+i; });
+                boxes.forEach((b,i) => { 
+                    if(!b.id) b.id = Date.now()+i;
+                    // Sanitize: Ensure remote_stitch_source is null if undefined to prevent UI bugs
+                    if (b.remote_stitch_source === undefined) b.remote_stitch_source = null;
+                });
                 drawBoxes();
             }
         } catch(e){}

@@ -363,43 +363,130 @@ def process_crop_v2():
             (session_id, page_info['filename'])
         )
 
+        # Identify boxes on the current page that are acting as sources for other boxes
+        # This prevents them from being saved as standalone questions if they are merged
+        local_source_ids = set()
+        for box in boxes_data:
+            if box.get('remote_stitch_source'):
+                src = box['remote_stitch_source']
+                if src.get('page_index') == page_index:
+                    # The source box is on this page. Add its ID to the ignore list.
+                    # Note: src['box'] might handle ID as string or int, ensure consistency if needed
+                    local_source_ids.add(src['box']['id'])
+
         primary_boxes = [box for box in boxes_data if not box.get('stitch_to')]
         processed_boxes = []
 
         for i, primary_box in enumerate(primary_boxes):
-            children = [box for box in boxes_data if box.get('stitch_to') == primary_box['id']]
-            
-            points = [
-                {'x': primary_box['x'], 'y': primary_box['y']},
-                {'x': primary_box['x'] + primary_box['w'], 'y': primary_box['y']},
-                {'x': primary_box['x'] + primary_box['w'], 'y': primary_box['y'] + primary_box['h']},
-                {'x': primary_box['x'], 'y': primary_box['y'] + primary_box['h']}
-            ]
-            primary_crop = crop_image_perspective(temp_path, points)
+            # Skip if this box is being consumed by another box on the same page
+            if primary_box['id'] in local_source_ids:
+                continue
 
-            stitched_image = primary_crop
+            # --- CROSS-PAGE STITCHING LOGIC ---
+            if primary_box.get('remote_stitch_source'):
+                source_info = primary_box['remote_stitch_source']
+                source_page_index = source_info['page_index']
+                source_box = source_info['box']
+                
+                # Fetch source page filename
+                source_page_db = conn.execute(
+                    "SELECT filename FROM images WHERE session_id = ? AND image_index = ? AND image_type = 'original'",
+                    (session_id, source_page_index)
+                ).fetchone()
+                
+                if source_page_db:
+                    source_filename = source_page_db['filename']
+                    source_path = os.path.join(current_app.config['UPLOAD_FOLDER'], source_filename)
+                    
+                    if os.path.exists(source_path):
+                        # Crop Source (Parent)
+                        src_points = [
+                            {'x': source_box['x'], 'y': source_box['y']},
+                            {'x': source_box['x'] + source_box['w'], 'y': source_box['y']},
+                            {'x': source_box['x'] + source_box['w'], 'y': source_box['y'] + source_box['h']},
+                            {'x': source_box['x'], 'y': source_box['y'] + source_box['h']}
+                        ]
+                        # We use the original source file for the parent crop
+                        parent_crop = crop_image_perspective(source_path, src_points)
+                        
+                        # Crop Current (Child)
+                        child_points = [
+                            {'x': primary_box['x'], 'y': primary_box['y']},
+                            {'x': primary_box['x'] + primary_box['w'], 'y': primary_box['y']},
+                            {'x': primary_box['x'] + primary_box['w'], 'y': primary_box['y'] + primary_box['h']},
+                            {'x': primary_box['x'], 'y': primary_box['y'] + primary_box['h']}
+                        ]
+                        child_crop = crop_image_perspective(temp_path, child_points)
+                        
+                        # Stitch (Parent Top, Child Bottom)
+                        h1, w1 = parent_crop.shape[:2]
+                        h2, w2 = child_crop.shape[:2]
+                        max_width = max(w1, w2)
+                        
+                        stitched_image = np.full((h1 + h2, max_width, 3), 255, dtype=np.uint8)
+                        
+                        x_offset1 = (max_width - w1) // 2
+                        stitched_image[0:h1, x_offset1:x_offset1 + w1] = parent_crop
+                        
+                        x_offset2 = (max_width - w2) // 2
+                        stitched_image[h1:h1 + h2, x_offset2:x_offset2 + w2] = child_crop
+                    else:
+                        # Fallback if source file missing
+                        current_app.logger.error(f"Source file missing for stitch: {source_path}")
+                        # Just crop the child
+                        points = [
+                            {'x': primary_box['x'], 'y': primary_box['y']},
+                            {'x': primary_box['x'] + primary_box['w'], 'y': primary_box['y']},
+                            {'x': primary_box['x'] + primary_box['w'], 'y': primary_box['y'] + primary_box['h']},
+                            {'x': primary_box['x'], 'y': primary_box['y'] + primary_box['h']}
+                        ]
+                        stitched_image = crop_image_perspective(temp_path, points)
+                else:
+                     # Fallback if db lookup fails
+                    current_app.logger.error(f"Source page DB record missing: session {session_id} index {source_page_index}")
+                    points = [
+                        {'x': primary_box['x'], 'y': primary_box['y']},
+                        {'x': primary_box['x'] + primary_box['w'], 'y': primary_box['y']},
+                        {'x': primary_box['x'] + primary_box['w'], 'y': primary_box['y'] + primary_box['h']},
+                        {'x': primary_box['x'], 'y': primary_box['y'] + primary_box['h']}
+                    ]
+                    stitched_image = crop_image_perspective(temp_path, points)
 
-            if children:
-                child = children[0]
-                child_points = [
-                    {'x': child['x'], 'y': child['y']},
-                    {'x': child['x'] + child['w'], 'y': child['y']},
-                    {'x': child['x'] + child['w'], 'y': child['y'] + child['h']},
-                    {'x': child['x'], 'y': child['y'] + child['h']}
+            # --- STANDARD LOCAL STITCHING OR SINGLE BOX LOGIC ---
+            else:
+                children = [box for box in boxes_data if box.get('stitch_to') == primary_box['id']]
+                
+                points = [
+                    {'x': primary_box['x'], 'y': primary_box['y']},
+                    {'x': primary_box['x'] + primary_box['w'], 'y': primary_box['y']},
+                    {'x': primary_box['x'] + primary_box['w'], 'y': primary_box['y'] + primary_box['h']},
+                    {'x': primary_box['x'], 'y': primary_box['y'] + primary_box['h']}
                 ]
-                child_crop = crop_image_perspective(temp_path, child_points)
+                primary_crop = crop_image_perspective(temp_path, points)
 
-                h1, w1 = primary_crop.shape[:2]
-                h2, w2 = child_crop.shape[:2]
-                max_width = max(w1, w2)
+                stitched_image = primary_crop
 
-                stitched_image = np.full((h1 + h2, max_width, 3), 255, dtype=np.uint8)
+                if children:
+                    child = children[0]
+                    child_points = [
+                        {'x': child['x'], 'y': child['y']},
+                        {'x': child['x'] + child['w'], 'y': child['y']},
+                        {'x': child['x'] + child['w'], 'y': child['y'] + child['h']},
+                        {'x': child['x'], 'y': child['y'] + child['h']}
+                    ]
+                    child_crop = crop_image_perspective(temp_path, child_points)
 
-                x_offset1 = (max_width - w1) // 2
-                stitched_image[0:h1, x_offset1:x_offset1 + w1] = primary_crop
+                    h1, w1 = primary_crop.shape[:2]
+                    h2, w2 = child_crop.shape[:2]
+                    max_width = max(w1, w2)
 
-                x_offset2 = (max_width - w2) // 2
-                stitched_image[h1:h1 + h2, x_offset2:x_offset2 + w2] = child_crop
+                    stitched_image = np.full((h1 + h2, max_width, 3), 255, dtype=np.uint8)
+
+                    x_offset1 = (max_width - w1) // 2
+                    stitched_image[0:h1, x_offset1:x_offset1 + w1] = primary_crop
+
+                    x_offset2 = (max_width - w2) // 2
+                    stitched_image[h1:h1 + h2, x_offset2:x_offset2 + w2] = child_crop
 
             crop_filename = f"processed_{session_id}_page{page_index}_crop{i}.jpg"
             crop_path = os.path.join(current_app.config['PROCESSED_FOLDER'], crop_filename)
