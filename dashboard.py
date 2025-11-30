@@ -135,13 +135,13 @@ def dashboard():
 
     conn = get_db_connection()
     sessions_rows = conn.execute("""
-        SELECT s.id, s.created_at, s.original_filename, s.persist, s.name,
+        SELECT s.id, s.created_at, s.original_filename, s.persist, s.name, s.session_type,
                COUNT(CASE WHEN i.image_type = 'original' THEN 1 END) as page_count,
                COUNT(CASE WHEN i.image_type = 'cropped' THEN 1 END) as question_count
         FROM sessions s
         LEFT JOIN images i ON s.id = i.session_id
         WHERE s.user_id = ?
-        GROUP BY s.id, s.created_at, s.original_filename, s.persist, s.name
+        GROUP BY s.id, s.created_at, s.original_filename, s.persist, s.name, s.session_type
         ORDER BY s.created_at DESC
     """, (current_user.id,)).fetchall()
 

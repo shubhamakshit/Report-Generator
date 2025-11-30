@@ -12,24 +12,43 @@ def settings():
         neetprep_enabled = 1 if request.form.get('neetprep_enabled') else 0
         
         # --- Handle DPI Setting ---
-        try:
-            dpi = int(request.form.get('dpi', 100))
-            if not (72 <= dpi <= 900):
-                flash('Invalid DPI value. Please enter a number between 72 and 900.', 'danger')
+        dpi_input = request.form.get('dpi')
+        if not dpi_input:
+            dpi = 300
+        else:
+            try:
+                dpi = int(dpi_input)
+                if not (72 <= dpi <= 900):
+                    flash('Invalid DPI value. Please enter a number between 72 and 900.', 'danger')
+                    return redirect(url_for('settings.settings'))
+            except (ValueError, TypeError):
+                flash('Invalid DPI value. Please enter a valid number.', 'danger')
                 return redirect(url_for('settings.settings'))
-        except (ValueError, TypeError):
-            flash('Invalid DPI value. Please enter a valid number.', 'danger')
-            return redirect(url_for('settings.settings'))
+
+        # --- Handle Color RM DPI Setting ---
+        color_rm_dpi_input = request.form.get('color_rm_dpi')
+        if not color_rm_dpi_input:
+            color_rm_dpi = 200
+        else:
+            try:
+                color_rm_dpi = int(color_rm_dpi_input)
+                if not (72 <= color_rm_dpi <= 600):
+                    flash('Invalid Color Removal DPI value. Please enter a number between 72 and 600.', 'danger')
+                    return redirect(url_for('settings.settings'))
+            except (ValueError, TypeError):
+                flash('Invalid Color Removal DPI value. Please enter a valid number.', 'danger')
+                return redirect(url_for('settings.settings'))
 
         # --- Update Database ---
         conn = get_db_connection()
-        conn.execute('UPDATE users SET neetprep_enabled = ?, dpi = ? WHERE id = ?', (neetprep_enabled, dpi, current_user.id))
+        conn.execute('UPDATE users SET neetprep_enabled = ?, dpi = ?, color_rm_dpi = ? WHERE id = ?', (neetprep_enabled, dpi, color_rm_dpi, current_user.id))
         conn.commit()
         conn.close()
         
         # --- Update current_user object for the session ---
         current_user.neetprep_enabled = neetprep_enabled
         current_user.dpi = dpi
+        current_user.color_rm_dpi = color_rm_dpi
         
         flash('Settings saved successfully!', 'success')
         return redirect(url_for('settings.settings'))

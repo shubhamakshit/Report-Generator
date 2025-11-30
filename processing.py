@@ -135,19 +135,17 @@ def crop_image_perspective(image_path, points):
     matrix = cv2.getPerspectiveTransform(src_points, dst_points)
     return cv2.warpPerspective(img, matrix, (max_width, max_height))
 
-def create_pdf_from_full_images(image_paths, output_filename):
+def create_pdf_from_full_images(image_paths, output_filename, resolution=100.0):
     """Creates a PDF from a list of full-page images."""
     if not image_paths:
         return False
 
     try:
-        with Image.open(image_paths[0]) as img:
-            width, height = img.size
+        # Open first image to start the PDF
+        first_image = Image.open(image_paths[0]).convert('RGB')
     except Exception as e:
         print(f"Error opening first image to get dimensions: {e}")
         return False
-
-    pdf = Image.new('RGB', (width, height), 'white')
     
     pages_to_append = []
     for image_path in image_paths[1:]:
@@ -158,10 +156,10 @@ def create_pdf_from_full_images(image_paths, output_filename):
             print(f"Error opening image {image_path}: {e}")
 
     try:
-        pdf.save(
+        first_image.save(
             output_filename,
             "PDF",
-            resolution=300.0,
+            resolution=resolution,
             save_all=True,
             append_images=pages_to_append
         )
@@ -169,3 +167,125 @@ def create_pdf_from_full_images(image_paths, output_filename):
     except Exception as e:
         print(f"Error saving final PDF: {e}")
         return False
+
+def remove_color_from_image(image_path, target_colors, threshold, bg_mode, region_box=None):
+    """
+    Removes specific colors from an image using CIELAB Delta E distance.
+    Uses manual RGB->Lab conversion to strictly match frontend JS logic (Standard CIELAB).
+    """
+    # Read image (OpenCV loads as BGR)
+    img = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
+    if img is None:
+        raise ValueError(f"Could not read image: {image_path}")
+
+    # Handle Alpha Channel
+    if img.shape[2] == 3:
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2BGRA)
+    
+    # 1. PREPARE IMAGE (BGR -> RGB -> Normalized Float)
+    # We work on a copy for calculation
+    img_bgr = img[:, :, :3]
+    img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+    
+    # Normalize to 0-1 for formula consistency with typical JS/CSS definitions
+    # (Frontend JS might be using 0-255 raw, let's verify frontend code provided earlier)
+    # Frontend code: r = rgb[0] / 255 ...
+    # Yes, frontend normalizes.
+    rgb_norm = img_rgb.astype(np.float32) / 255.0
+    
+    # 2. RGB to XYZ (Vectorized)
+    # Formula matches JS: r = (r > 0.04045) ? ...
+    mask_linear = rgb_norm > 0.04045
+    rgb_linear = np.where(mask_linear, np.power((rgb_norm + 0.055) / 1.055, 2.4), rgb_norm / 12.92)
+    
+    R, G, B = rgb_linear[:,:,0], rgb_linear[:,:,1], rgb_linear[:,:,2]
+    
+    X = R * 0.4124 + G * 0.3576 + B * 0.1805
+    Y = R * 0.2126 + G * 0.7152 + B * 0.0722
+    Z = R * 0.0193 + G * 0.1192 + B * 0.9505
+    
+    # Scale XYZ
+    X /= 0.95047
+    Y /= 1.00000
+    Z /= 1.08883
+    
+    # 3. XYZ to Lab
+    # Formula: x = (x > 0.008856) ? ...
+    xyz_stack = np.stack([X, Y, Z], axis=-1)
+    mask_xyz = xyz_stack > 0.008856
+    f_xyz = np.where(mask_xyz, np.power(xyz_stack, 1/3), (7.787 * xyz_stack) + 16/116)
+    
+    fx, fy, fz = f_xyz[:,:,0], f_xyz[:,:,1], f_xyz[:,:,2]
+    
+    L_chn = (116.0 * fy) - 16.0
+    a_chn = 500.0 * (fx - fy)
+    b_chn = 200.0 * (fy - fz)
+    
+    # 4. CALCULATE DISTANCE
+    # Threshold mapping matches frontend
+    max_delta_e = 110.0 - (float(threshold) * 100.0)
+    max_dist_sq = max_delta_e ** 2 
+
+    final_keep_mask = np.zeros(L_chn.shape, dtype=bool)
+
+    if target_colors:
+        # Convert Targets (RGB -> Lab) using same math
+        # Since targets are few, we can do simple loop or small array
+        for c in target_colors:
+            # Normalize
+            r, g, b = c['r']/255.0, c['g']/255.0, c['b']/255.0
+            
+            # Linearize
+            r = ((r + 0.055) / 1.055) ** 2.4 if r > 0.04045 else r / 12.92
+            g = ((g + 0.055) / 1.055) ** 2.4 if g > 0.04045 else g / 12.92
+            b = ((b + 0.055) / 1.055) ** 2.4 if b > 0.04045 else b / 12.92
+            
+            # XYZ
+            x = (r * 0.4124 + g * 0.3576 + b * 0.1805) / 0.95047
+            y = (r * 0.2126 + g * 0.7152 + b * 0.0722) / 1.00000
+            z = (r * 0.0193 + g * 0.1192 + b * 0.9505) / 1.08883
+            
+            # Lab
+            fx = x ** (1/3) if x > 0.008856 else (7.787 * x) + 16/116
+            fy = y ** (1/3) if y > 0.008856 else (7.787 * y) + 16/116
+            fz = z ** (1/3) if z > 0.008856 else (7.787 * z) + 16/116
+            
+            tL = (116.0 * fy) - 16.0
+            ta = 500.0 * (fx - fy)
+            tb = 200.0 * (fy - fz)
+            
+            # Dist
+            dist_sq = (L_chn - tL)**2 + (a_chn - ta)**2 + (b_chn - tb)**2
+            final_keep_mask |= (dist_sq <= max_dist_sq)
+
+    # Handle Region Box
+    if region_box:
+        h, w = img.shape[:2]
+        rx = int(region_box['x'] * w)
+        ry = int(region_box['y'] * h)
+        rw = int(region_box['w'] * w)
+        rh = int(region_box['h'] * h)
+        
+        # Mask is TRUE everywhere EXCEPT the region (Keep outside)
+        region_protection_mask = np.ones(L_chn.shape, dtype=bool)
+        # Ensure coords are within bounds
+        ry = max(0, ry); rx = max(0, rx)
+        if rw > 0 and rh > 0:
+            region_protection_mask[ry:ry+rh, rx:rx+rw] = False
+        
+        final_keep_mask |= region_protection_mask
+    
+    # Apply Mask to Image
+    result = img.copy()
+    
+    if bg_mode == 'black':
+        bg_color = [0, 0, 0, 255]
+    elif bg_mode == 'white':
+        bg_color = [255, 255, 255, 255]
+    else: # transparent
+        bg_color = [0, 0, 0, 0]
+        
+    remove_mask = ~final_keep_mask
+    result[remove_mask] = bg_color
+
+    return result

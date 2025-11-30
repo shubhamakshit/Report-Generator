@@ -227,7 +227,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('keydown', e => {
         if(e.key === 'ArrowLeft') loadQ(currentQuestionIndex - 1);
         if(e.key === 'ArrowRight') loadQ(currentQuestionIndex + 1);
-        if(e.key === ' ' || e.key === 'Enter') spoilerBtn.click();
+        if(e.key === ' ' || e.key === 'Enter' || e.key === 'c') spoilerBtn.click();
     });
 
     if(questions.length) loadQ(0);

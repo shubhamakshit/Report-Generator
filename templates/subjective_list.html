@@ -1,0 +1,614 @@
+{% extends "base.html" %}
+
+{% block title %}Subjective Questions Manager{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    
+    <!-- Toolbar -->
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h2 class="mb-0">Subjective Questions</h2>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb mb-0">
+                    <li class="breadcrumb-item"><a href="{{ url_for('subjective.list_questions') }}">Home</a></li>
+                    {% for crumb in breadcrumbs %}
+                        <li class="breadcrumb-item"><a href="{{ url_for('subjective.list_questions', folder_path=crumb.path) }}">{{ crumb.name }}</a></li>
+                    {% endfor %}
+                </ol>
+            </nav>
+        </div>
+        <div class="btn-group">
+            <button type="button" class="btn btn-success" onclick="openAddQuestionModal()">
+                <i class="bi bi-plus-circle"></i> Add Question
+            </button>
+            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createFolderModal">
+                <i class="bi bi-folder-plus"></i> New Folder
+            </button>
+            <button type="button" class="btn btn-warning text-dark" id="moveBtn" disabled data-bs-toggle="modal" data-bs-target="#moveModal">
+                <i class="bi bi-arrow-right-square"></i> Move Selected
+            </button>
+            <a href="{{ url_for('subjective.generator') }}" class="btn btn-info">
+                <i class="bi bi-magic"></i> Generator
+            </a>
+        </div>
+    </div>
+
+    <!-- Flash Messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <!-- Folders Section -->
+    {% if subfolders %}
+    <div class="row row-cols-2 row-cols-md-4 row-cols-lg-6 g-3 mb-4">
+        {% for folder in subfolders %}
+        <div class="col">
+            <div class="card h-100 shadow-sm text-center folder-card position-relative bg-dark text-white border-secondary">
+                <!-- Selection Checkbox -->
+                <div class="position-absolute top-0 end-0 p-2">
+                    <input type="checkbox" class="form-check-input folder-checkbox" value="{{ folder.id }}">
+                </div>
+                
+                <a href="{{ url_for('subjective.list_questions', folder_path=(breadcrumbs|map(attribute='name')|join('/') + '/' + folder.name if breadcrumbs else folder.name)) }}" class="text-decoration-none text-white d-flex flex-column align-items-center justify-content-center h-100 pt-4">
+                    <div class="card-body w-100">
+                        <i class="bi bi-folder-fill text-primary display-4"></i>
+                        <h6 class="card-title mt-2" style="white-space: normal; overflow-wrap: break-word;">{{ folder.name }}</h6>
+                    </div>
+                </a>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Questions Section -->
+    {% if grouped_questions %}
+        {% for topic, questions_list in grouped_questions.items() %}
+        <div class="mb-5 topic-group">
+            <div class="topic-header p-2 rounded text-white mb-2 shadow-sm d-flex justify-content-between align-items-center">
+                <h5 class="mb-0 fw-bold"><i class="bi bi-bookmarks me-2"></i>{{ topic }}</h5>
+                <div class="d-flex align-items-center">
+                    <button class="btn btn-sm btn-outline-light me-2 border-0" title="Add Question to this Topic" onclick="addQuestionToTopic('{{ topic }}', this)">
+                        <i class="bi bi-plus-circle"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-light me-2 border-0" title="Rename Topic" onclick="renameTopic('{{ topic }}')">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-light me-2 border-0" title="Delete Topic" onclick="deleteTopic('{{ topic }}')">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                    <span class="badge bg-light text-dark me-3">{{ questions_list|length }} Questions</span>
+                    <div class="form-check">
+                        <input class="form-check-input group-select-all" type="checkbox" title="Select all in this topic">
+                    </div>
+                </div>
+            </div>
+            <div class="card shadow-sm border-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0 align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width: 40px;"></th>
+                                <th style="width: 60px;">#</th>
+                                <th>Question</th>
+                                <th style="width: 150px;" class="text-end">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for q in questions_list %}
+                            <tr>
+                                <td><input type="checkbox" class="question-checkbox" value="{{ q.id }}"></td>
+                                <td><span class="badge number-badge">{{ q.question_number_within_topic }}</span></td>
+                                <td><div class="text-break" style="max-width: 600px;">{{ q.question_html }}</div></td>
+                                <td class="text-end">
+                                    <button class="btn btn-sm btn-outline-primary border-0" onclick="editQuestion('{{ q.id }}', '{{ q.question_topic }}', '{{ q.question_number_within_topic }}', `{{ q.question_html|e }}`)">
+                                        <i class="bi bi-pencil-square"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger border-0" onclick="deleteQuestion('{{ q.id }}')">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    {% elif not subfolders %}
+    <div class="alert alert-info text-center p-5">
+        <h4>No Content</h4>
+        <p>This folder is empty. Generate new questions or create subfolders.</p>
+        <a href="{{ url_for('subjective.generator') }}" class="btn btn-primary">Generate Questions</a>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Create Folder Modal -->
+<div class="modal fade" id="createFolderModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Create New Folder</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="createFolderForm">
+                    <div class="mb-3">
+                        <label for="folderName" class="form-label">Folder Name</label>
+                        <input type="text" class="form-control" id="folderName" required>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="createFolder()">Create</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Move Items Modal -->
+<div class="modal fade" id="moveModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content bg-dark text-white">
+            <div class="modal-header">
+                <h5 class="modal-title">Move Selected Items</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Select destination folder:</p>
+                <div id="folder-tree-move" class="list-group" style="max-height: 300px; overflow-y: auto;"></div>
+                <hr>
+                <div class="input-group mb-3">
+                    <input type="text" class="form-control" placeholder="New subfolder name" id="new-subfolder-name">
+                    <button class="btn btn-outline-secondary" type="button" id="create-subfolder-btn">Create Subfolder</button>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="moveItems()">Move Here</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add/Edit Question Modal -->
+<div class="modal fade" id="questionModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="questionModalTitle">Add Question</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="q_id">
+                <div class="mb-3">
+                    <label class="form-label">Topic</label>
+                    <input type="text" class="form-control" id="q_topic" list="topicList">
+                    <datalist id="topicList">
+                        {% for t in grouped_questions.keys() %}
+                        <option value="{{ t }}">
+                        {% endfor %}
+                    </datalist>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Question Number</label>
+                    <input type="text" class="form-control" id="q_number">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Question Text/HTML</label>
+                    <textarea class="form-control" id="q_html" rows="4"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="saveQuestion()">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Rename Topic Modal -->
+<div class="modal fade" id="renameTopicModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Rename Topic</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="old_topic_name">
+                <div class="mb-3">
+                    <label class="form-label">New Topic Name</label>
+                    <input type="text" class="form-control" id="new_topic_name">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="performRenameTopic()">Rename</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Color generation for topics
+function stringToHslColor(str, s, l) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const h = hash % 360;
+    return 'hsl(' + h + ', ' + s + '%, ' + l + '%)';
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const folderTree = {{ folder_tree|tojson }};
+    let selectedFolderId = null;
+
+    // Apply colors to Topic Headers
+    document.querySelectorAll('.topic-header').forEach(header => {
+        // Use the text of the h5 element which contains the topic name
+        const topic = header.querySelector('h5').innerText.trim();
+        header.style.backgroundColor = stringToHslColor(topic, 70, 40);
+    });
+
+    // Apply consistent style to number badges
+    document.querySelectorAll('.number-badge').forEach(badge => {
+        badge.classList.remove('bg-secondary'); 
+        badge.style.backgroundColor = '#6c757d'; 
+        badge.style.color = 'white';
+    });
+
+    // Selection Logic
+    const selectAll = document.getElementById('selectAll');
+    const questionCheckboxes = document.querySelectorAll('.question-checkbox');
+    const folderCheckboxes = document.querySelectorAll('.folder-checkbox');
+    const moveBtn = document.getElementById('moveBtn');
+
+    function updateMoveBtn() {
+        const anyQuestionChecked = Array.from(questionCheckboxes).some(cb => cb.checked);
+        const anyFolderChecked = Array.from(folderCheckboxes).some(cb => cb.checked);
+        if (moveBtn) moveBtn.disabled = !(anyQuestionChecked || anyFolderChecked);
+    }
+
+    // Group Select All (Questions only)
+    document.querySelectorAll('.group-select-all').forEach(groupCb => {
+        groupCb.addEventListener('change', function() {
+            const group = this.closest('.topic-group');
+            const groupCheckboxes = group.querySelectorAll('.question-checkbox');
+            groupCheckboxes.forEach(cb => cb.checked = this.checked);
+            updateMoveBtn();
+        });
+    });
+
+    if (selectAll) {
+        selectAll.addEventListener('change', function() {
+            const isChecked = selectAll.checked;
+            questionCheckboxes.forEach(cb => cb.checked = isChecked);
+            folderCheckboxes.forEach(cb => cb.checked = isChecked);
+            // Also toggle group select alls for visual consistency
+            document.querySelectorAll('.group-select-all').forEach(cb => cb.checked = isChecked);
+            updateMoveBtn();
+        });
+    }
+
+    questionCheckboxes.forEach(cb => cb.addEventListener('change', updateMoveBtn));
+    folderCheckboxes.forEach(cb => cb.addEventListener('change', updateMoveBtn));
+
+    // Folder Tree Logic
+    function renderFolderTree(folders, container, level = 0) {
+        const ul = document.createElement('ul');
+        ul.className = 'list-group';
+        if (level > 0) ul.style.display = 'none';
+        container.appendChild(ul);
+        folders.forEach(folder => {
+            const li = document.createElement('li');
+            li.className = 'list-group-item list-group-item-action bg-dark text-white';
+            li.style.paddingLeft = `${level * 20 + 12}px`;
+            li.dataset.folderId = folder.id;
+            let icon = folder.children && folder.children.length > 0 ? '<i class="bi bi-chevron-right"></i>' : '<i class="bi bi-folder"></i>';
+            li.innerHTML = `${icon} ${folder.name}`;
+            li.style.cursor = 'pointer';
+            li.addEventListener('click', e => {
+                e.stopPropagation();
+                document.querySelectorAll('#folder-tree-move .list-group-item').forEach(item => item.classList.remove('active'));
+                li.classList.add('active');
+                selectedFolderId = folder.id;
+                const childUl = li.querySelector('ul');
+                if (childUl) {
+                    const iconEl = li.querySelector('i');
+                    if (childUl.style.display === 'none') {
+                        childUl.style.display = 'block';
+                        iconEl.classList.replace('bi-chevron-right', 'bi-chevron-down');
+                    } else {
+                        childUl.style.display = 'none';
+                        iconEl.classList.replace('bi-chevron-down', 'bi-chevron-right');
+                    }
+                }
+            });
+            ul.appendChild(li);
+            if (folder.children) renderFolderTree(folder.children, li, level + 1);
+        });
+    }
+
+    if (moveBtn) {
+        moveBtn.addEventListener('click', () => {
+            const folderTreeContainer = document.getElementById('folder-tree-move');
+            folderTreeContainer.innerHTML = '';
+            const rootItem = document.createElement('a');
+            rootItem.href = '#';
+            rootItem.className = 'list-group-item list-group-item-action bg-dark text-white';
+            rootItem.dataset.folderId = 'null';
+            rootItem.innerHTML = `<i class="bi bi-house-door"></i> Root`;
+            rootItem.addEventListener('click', e => {
+                e.preventDefault();
+                document.querySelectorAll('#folder-tree-move .list-group-item').forEach(item => item.classList.remove('active'));
+                rootItem.classList.add('active');
+                selectedFolderId = null;
+            });
+            folderTreeContainer.appendChild(rootItem);
+            renderFolderTree(folderTree, folderTreeContainer);
+        });
+    }
+
+    document.getElementById('create-subfolder-btn').addEventListener('click', () => {
+        const newFolderName = document.getElementById('new-subfolder-name').value;
+        if (!newFolderName) return alert('Please enter a name for the new subfolder.');
+        
+        fetch("{{ url_for('subjective.create_folder') }}", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": "{{ csrf_token() if csrf_token else '' }}"
+            },
+            body: JSON.stringify({
+                name: newFolderName,
+                parent_id: selectedFolderId
+            })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                document.getElementById('new-subfolder-name').value = '';
+                const newFolder = { id: data.id, name: data.name, parent_id: data.parent_id, children: [] };
+                function addFolderToTree(folders, parentId, newFolderItem) {
+                    if (!parentId) { folders.push(newFolderItem); return true; }
+                    for (let folder of folders) {
+                        if (folder.id === parentId) {
+                            if (!folder.children) folder.children = [];
+                            folder.children.push(newFolderItem);
+                            return true;
+                        }
+                        if (folder.children && addFolderToTree(folder.children, parentId, newFolderItem)) return true;
+                    }
+                    return false;
+                }
+                addFolderToTree(folderTree, selectedFolderId, newFolder);
+                const folderTreeContainer = document.getElementById('folder-tree-move');
+                folderTreeContainer.innerHTML = '';
+                const rootItem = document.createElement('a');
+                rootItem.href = '#';
+                rootItem.className = 'list-group-item list-group-item-action bg-dark text-white';
+                if (selectedFolderId === null) rootItem.classList.add('active');
+                rootItem.dataset.folderId = 'null';
+                rootItem.innerHTML = `<i class="bi bi-house-door"></i> Root`;
+                rootItem.addEventListener('click', e => {
+                    e.preventDefault();
+                    document.querySelectorAll('#folder-tree-move .list-group-item').forEach(item => item.classList.remove('active'));
+                    rootItem.classList.add('active');
+                    selectedFolderId = null;
+                });
+                folderTreeContainer.appendChild(rootItem);
+                renderFolderTree(folderTree, folderTreeContainer);
+            } else {
+                alert('Error: ' + data.error);
+            }
+        });
+    });
+
+    // Expose moveItems globally
+    window.moveItems = function() {
+        const questionIds = Array.from(document.querySelectorAll('.question-checkbox:checked')).map(cb => cb.value);
+        const folderIds = Array.from(document.querySelectorAll('.folder-checkbox:checked')).map(cb => cb.value);
+
+        if (questionIds.length === 0 && folderIds.length === 0) return;
+
+        fetch("{{ url_for('subjective.move_items') }}", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": "{{ csrf_token() if csrf_token else '' }}"
+            },
+            body: JSON.stringify({
+                question_ids: questionIds,
+                folder_ids: folderIds,
+                target_folder_id: selectedFolderId
+            })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error: ' + data.error);
+            }
+        });
+    };
+});
+
+function createFolder() {
+    const name = document.getElementById('folderName').value;
+    if (!name) return;
+
+    fetch("{{ url_for('subjective.create_folder') }}", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": "{{ csrf_token() if csrf_token else '' }}"
+        },
+        body: JSON.stringify({
+            name: name,
+            parent_id: {{ current_folder_id if current_folder_id else 'null' }}
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Error: ' + data.error);
+        }
+    });
+}
+
+// Manual Question Management Functions
+let questionModal;
+let renameTopicModal;
+
+function addQuestionToTopic(topic, btn) {
+    // Find the parent topic group container
+    const topicGroup = btn.closest('.topic-group');
+    let maxNum = 0;
+    
+    // Find all question number badges in this group
+    const badges = topicGroup.querySelectorAll('.number-badge');
+    badges.forEach(badge => {
+        // Extract number, handling potential non-numeric prefixes if any (though strictly they are just numbers in DB usually)
+        // Using regex to extract first sequence of digits
+        const text = badge.innerText;
+        const match = text.match(/(\d+)/);
+        if (match) {
+            const num = parseInt(match[0], 10);
+            if (num > maxNum) maxNum = num;
+        }
+    });
+
+    openAddQuestionModal(topic, maxNum + 1);
+}
+
+function openAddQuestionModal(prefillTopic = "", prefillNumber = "") {
+    if (!questionModal) questionModal = new bootstrap.Modal(document.getElementById('questionModal'));
+    document.getElementById('questionModalTitle').innerText = "Add Question";
+    document.getElementById('q_id').value = "";
+    
+    // Prefill or clear
+    document.getElementById('q_topic').value = prefillTopic;
+    document.getElementById('q_number').value = prefillNumber;
+    document.getElementById('q_html').value = "";
+    
+    questionModal.show();
+}
+
+function editQuestion(id, topic, number, html) {
+    if (!questionModal) questionModal = new bootstrap.Modal(document.getElementById('questionModal'));
+    document.getElementById('questionModalTitle').innerText = "Edit Question";
+    document.getElementById('q_id').value = id;
+    document.getElementById('q_topic').value = topic;
+    document.getElementById('q_number').value = number;
+    document.getElementById('q_html').value = html;
+    questionModal.show();
+}
+
+function saveQuestion() {
+    const id = document.getElementById('q_id').value;
+    const topic = document.getElementById('q_topic').value;
+    const number = document.getElementById('q_number').value;
+    const html = document.getElementById('q_html').value;
+    const folderId = {{ current_folder_id if current_folder_id else 'null' }};
+
+    const url = id ? `/subjective/question/update/${id}` : '/subjective/question/add';
+    const payload = id ? { topic, number, html } : { topic, number, html, folder_id: folderId };
+
+    fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': "{{ csrf_token() if csrf_token else '' }}"
+        },
+        body: JSON.stringify(payload)
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert("Error: " + data.error);
+        }
+    });
+}
+
+function deleteQuestion(id) {
+    if(!confirm("Are you sure you want to delete this question?")) return;
+    fetch(`/subjective/question/delete/${id}`, {
+        method: 'DELETE',
+        headers: {
+            'X-CSRFToken': "{{ csrf_token() if csrf_token else '' }}"
+        }
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) location.reload();
+        else alert("Error: " + data.error);
+    });
+}
+
+function renameTopic(oldName) {
+    if (!renameTopicModal) renameTopicModal = new bootstrap.Modal(document.getElementById('renameTopicModal'));
+    document.getElementById('old_topic_name').value = oldName;
+    document.getElementById('new_topic_name').value = oldName;
+    renameTopicModal.show();
+}
+
+function performRenameTopic() {
+    const oldTopic = document.getElementById('old_topic_name').value;
+    const newTopic = document.getElementById('new_topic_name').value;
+    const folderId = {{ current_folder_id if current_folder_id else 'null' }};
+
+    if (!newTopic) return;
+
+    fetch('/subjective/topic/rename', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': "{{ csrf_token() if csrf_token else '' }}"
+        },
+        body: JSON.stringify({ old_topic: oldTopic, new_topic: newTopic, folder_id: folderId })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) location.reload();
+        else alert("Error: " + data.error);
+    });
+}
+
+function deleteTopic(topic) {
+    if(!confirm(`Are you sure you want to delete ALL questions in topic "${topic}"?`)) return;
+    const folderId = {{ current_folder_id if current_folder_id else 'null' }};
+    
+    fetch('/subjective/topic/delete', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': "{{ csrf_token() if csrf_token else '' }}"
+        },
+        body: JSON.stringify({ topic: topic, folder_id: folderId })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) location.reload();
+        else alert("Error: " + data.error);
+    });
+}
+</script>
+{% endblock %}

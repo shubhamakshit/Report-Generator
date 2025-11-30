@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}Subjective Question Generator{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h3 class="mb-0"><i class="fas fa-magic me-2"></i>Subjective Question Generator</h3>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted">Upload an image of your written questions (handwritten or printed). AI will transcribe and organize them for you.</p>
+                    <form action="{{ url_for('subjective.generate') }}" method="POST" enctype="multipart/form-data" id="generateForm">
+                        <div class="mb-3">
+                            <label for="image" class="form-label">Upload Image</label>
+                            <input type="file" class="form-control" id="image" name="image" accept="image/*" required>
+                        </div>
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary btn-lg" id="generateBtn">
+                                <span id="btnText">Transcribe & Generate</span>
+                                <span id="btnSpinner" class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('generateForm').addEventListener('submit', function() {
+    document.getElementById('generateBtn').disabled = true;
+    document.getElementById('btnText').textContent = 'Generating... (This may take a moment)';
+    document.getElementById('btnSpinner').classList.remove('d-none');
+});
+</script>
+{% endblock %}

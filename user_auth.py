@@ -1,16 +1,18 @@
+import sqlite3
 from flask_login import LoginManager, UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
 from utils import get_db_connection
 
 class User(UserMixin):
     """User model for Flask-Login."""
-    def __init__(self, id, username, email, password_hash, neetprep_enabled, dpi):
+    def __init__(self, id, username, email, password_hash, neetprep_enabled, dpi, color_rm_dpi):
         self.id = id
         self.username = username
         self.email = email
         self.password_hash = password_hash
         self.neetprep_enabled = neetprep_enabled
         self.dpi = dpi
+        self.color_rm_dpi = color_rm_dpi
 
     @staticmethod
     def get(user_id):
@@ -18,7 +20,7 @@ class User(UserMixin):
         user_row = conn.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone()
         conn.close()
         if user_row:
-            return User(user_row['id'], user_row['username'], user_row['email'], user_row['password_hash'], user_row['neetprep_enabled'], user_row['dpi'])
+            return User(user_row['id'], user_row['username'], user_row['email'], user_row['password_hash'], user_row['neetprep_enabled'], user_row['dpi'], dict(user_row).get('color_rm_dpi', 200))
         return None
 
     @staticmethod
@@ -27,7 +29,7 @@ class User(UserMixin):
         user_row = conn.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
         conn.close()
         if user_row:
-            return User(user_row['id'], user_row['username'], user_row['email'], user_row['password_hash'], user_row['neetprep_enabled'], user_row['dpi'])
+            return User(user_row['id'], user_row['username'], user_row['email'], user_row['password_hash'], user_row['neetprep_enabled'], user_row['dpi'], dict(user_row).get('color_rm_dpi', 200))
         return None
     
     @staticmethod

@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+
+{% block title %}Generated Questions{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Generated Questions for "{{ topic }}"</h2>
+        <div>
+            <a href="{{ url_for('subjective.generator') }}" class="btn btn-outline-secondary me-2">Back</a>
+            <button onclick="saveQuestions()" class="btn btn-success">Save All Questions</button>
+        </div>
+    </div>
+
+    <div id="questions-container">
+        {% for topic_name, questions_list in grouped_questions.items() %}
+        <div class="mb-4 topic-group" data-topic="{{ topic_name }}">
+            <h4 class="mb-3 p-2 rounded shadow-sm text-white topic-header">{{ topic_name }}</h4>
+            <div class="table-responsive">
+                <table class="table table-striped table-hover question-table">
+                    <thead class="table-dark">
+                        <tr>
+                            <th style="width: 5%;">#</th>
+                            <th>Question</th>
+                            <th style="width: 10%;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for q in questions_list %}
+                        <tr class="question-row" data-topic="{{ topic_name }}" data-question-number="{{ q.question_number_within_topic }}">
+                            <td><span class="badge number-badge">{{ q.question_number_within_topic }}</span></td>
+                            <td><textarea class="form-control question-text" rows="2">{{ q.question_html }}</textarea></td>
+                            <td><button class="btn btn-sm btn-danger remove-question-btn">Remove</button></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<script>
+function stringToHslColor(str, s, l) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const h = hash % 360;
+    return 'hsl(' + h + ', ' + s + '%, ' + l + '%)';
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Apply dynamic colors to topic headers
+    document.querySelectorAll('.topic-header').forEach(header => {
+        const topic = header.innerText;
+        const color = stringToHslColor(topic, 70, 40); // Slightly darker for headers
+        header.style.backgroundColor = color;
+    });
+
+    // Apply consistent style to number badges
+    document.querySelectorAll('.number-badge').forEach(badge => {
+        badge.classList.remove('bg-secondary'); // Remove default Bootstrap class
+        badge.style.backgroundColor = '#6c757d'; // Keep numbers consistent grey
+        badge.style.color = 'white';
+    });
+
+    // Event listener for remove buttons
+    document.querySelectorAll('.remove-question-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            this.closest('.question-row').remove();
+            // Optionally, remove the parent table if it becomes empty
+            const tableBody = this.closest('.question-table').querySelector('tbody');
+            if (tableBody && tableBody.children.length === 0) {
+                this.closest('.topic-group').remove();
+            }
+        });
+    });
+});
+
+function saveQuestions() {
+    const questions = [];
+    document.querySelectorAll('.question-row').forEach(row => {
+        const topic = row.dataset.topic; // Get topic from data attribute on the row
+        const number = row.dataset.questionNumber;
+        const html = row.querySelector('.question-text').value;
+        
+        questions.push({
+            question_topic: topic,
+            question_number_within_topic: number,
+            question_html: html
+        });
+    });
+
+    if (questions.length === 0) {
+        alert("No questions to save!");
+        return;
+    }
+
+    fetch("{{ url_for('subjective.save') }}", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": "{{ csrf_token() if csrf_token else '' }}" 
+        },
+        body: JSON.stringify({ questions: questions })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            window.location.href = data.redirect_url;
+        } else {
+            alert("Error saving questions: " + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert("An error occurred while saving.");
+    });
+}
+</script>
+{% endblock %}

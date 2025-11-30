@@ -45,6 +45,13 @@
                                     Set the resolution for converting PDF pages to images. Higher values (e.g., 300) are better for quality and OCR but create larger files. Lower values (e.g., 150) are faster. Default: 300, Max: 900.
                                 </div>
                             </div>
+                            <div class="mb-3">
+                                <label for="color_rm_dpi" class="form-label">Color Removal Output DPI</label>
+                                <input type="number" class="form-control" id="color_rm_dpi" name="color_rm_dpi" min="72" max="600" value="{{ current_user.color_rm_dpi }}">
+                                <div class="form-text">
+                                    Set the output resolution (DPI) for processed images from the Color Removal tool when generating PDFs. Default: 200, Max: 600.
+                                </div>
+                            </div>
                         </fieldset>
                         <hr>
                         <button type="submit" class="btn btn-primary">Save Settings</button>

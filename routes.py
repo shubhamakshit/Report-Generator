@@ -4,6 +4,8 @@ import uuid
 import base64
 import io
 import zipfile
+import threading
+import copy
 from datetime import datetime, timedelta
 from flask import Blueprint, render_template, request, jsonify, current_app, url_for, send_from_directory, send_file, redirect
 from flask_login import login_required, current_user
@@ -22,17 +24,233 @@ from processing import (
     extract_question_number_from_ocr_result,
     crop_image_perspective,
     create_pdf_from_full_images,
+    remove_color_from_image
 )
-from utils import get_db_connection, create_a4_pdf_from_images
+
 from strings import *
+from utils import get_db_connection, create_a4_pdf_from_images
 from redact import redact_pictures_in_image
 from resize import expand_pdf_for_notes
 
-
+# Global dictionary to store async processing status
+# Key: session_id, Value: {'status': 'processing'|'completed'|'error', 'progress': int, 'total': int, 'message': str}
+upload_progress = {}
 
 main_bp = Blueprint('main', __name__)
 
-# ... (rest of the routes) ...
+@main_bp.route('/upload_progress/<session_id>')
+@login_required
+def get_upload_progress(session_id):
+    status = upload_progress.get(session_id)
+    if not status:
+        # Check if session exists in DB (maybe it finished and server restarted, or we missed it)
+        conn = get_db_connection()
+        exists = conn.execute('SELECT id FROM sessions WHERE id = ?', (session_id,)).fetchone()
+        conn.close()
+        if exists:
+            return jsonify({'status': 'completed', 'progress': 100})
+        return jsonify({'error': 'Session not found or processing not started'}), 404
+    return jsonify(status)
+
+def process_pdf_background(session_id, user_id, original_filename, pdf_content, app_config):
+    """Background task to process PDF splitting."""
+    upload_progress[session_id] = {'status': 'processing', 'progress': 0, 'message': 'Starting...'}
+    
+    try:
+        # We need to manually create a connection since we are in a thread
+        # And we can't use current_app context directly if not carefully managed, 
+        # but we passed app_config to reconstruct paths.
+        # Database connection needs to be fresh.
+        
+        conn = get_db_connection() # This creates a new connection
+        
+        pdf_filename = f"{session_id}_{original_filename}"
+        pdf_path = os.path.join(app_config['UPLOAD_FOLDER'], pdf_filename)
+        
+        with open(pdf_path, 'wb') as f:
+            f.write(pdf_content)
+            
+        doc = fitz.open(pdf_path)
+        total_pages = len(doc)
+        upload_progress[session_id]['total'] = total_pages
+        
+        # Fetch user DPI - we need to query it since current_user proxy might not work in thread
+        user_row = conn.execute("SELECT dpi FROM users WHERE id = ?", (user_id,)).fetchone()
+        dpi = user_row['dpi'] if user_row else 150
+        
+        for i, page in enumerate(doc):
+            pix = page.get_pixmap(dpi=dpi)
+            page_filename = f"{session_id}_page_{i}.png"
+            page_path = os.path.join(app_config['UPLOAD_FOLDER'], page_filename)
+            pix.save(page_path)
+            
+            conn.execute(
+                'INSERT INTO images (session_id, image_index, filename, original_name, image_type) VALUES (?, ?, ?, ?, ?)',
+                (session_id, i, page_filename, f"Page {i+1}", 'original')
+            )
+            
+            # Update progress
+            progress = int(((i + 1) / total_pages) * 100)
+            upload_progress[session_id].update({'progress': progress, 'message': f'Processed page {i+1}/{total_pages}'})
+            
+        conn.commit()
+        conn.close()
+        doc.close()
+        
+        upload_progress[session_id] = {'status': 'completed', 'progress': 100, 'message': 'Done'}
+        
+    except Exception as e:
+        print(f"Async processing error: {e}")
+        upload_progress[session_id] = {'status': 'error', 'message': str(e)}
+        if 'conn' in locals(): conn.close()
+
+# ... existing imports ...
+
+@main_bp.route('/process_color_rm_batch', methods=['POST'])
+@login_required
+def process_color_rm_batch():
+    data = request.json
+    session_id = data.get('session_id')
+    target_colors = data.get('colors', [])
+    threshold = data.get('threshold', 0.8)
+    bg_mode = data.get('bg_mode', 'black')
+    region_box = data.get('region', None)
+
+    conn = get_db_connection()
+    
+    # Check ownership
+    session_owner = conn.execute('SELECT user_id FROM sessions WHERE id = ?', (session_id,)).fetchone()
+    if not session_owner or session_owner['user_id'] != current_user.id:
+        conn.close()
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    # Get all original images
+    original_images = conn.execute(
+        "SELECT * FROM images WHERE session_id = ? AND image_type = 'original' ORDER BY image_index",
+        (session_id,)
+    ).fetchall()
+
+    processed_count = 0
+    
+    try:
+        for img in original_images:
+            original_path = os.path.join(current_app.config['UPLOAD_FOLDER'], img['filename'])
+            
+            if not os.path.exists(original_path):
+                continue
+                
+            # Process
+            processed_img_cv = remove_color_from_image(original_path, target_colors, threshold, bg_mode, region_box)
+            
+            # Save
+            processed_filename = f"color_rm_{session_id}_{img['image_index']}_{datetime.now().strftime('%H%M%S')}.png"
+            processed_path = os.path.join(current_app.config['PROCESSED_FOLDER'], processed_filename)
+            cv2.imwrite(processed_path, processed_img_cv)
+            
+            # Update DB (upsert logic roughly)
+            # Check if exists first
+            existing = conn.execute(
+                "SELECT id FROM images WHERE session_id = ? AND image_index = ? AND image_type = 'color_rm'",
+                (session_id, img['image_index'])
+            ).fetchone()
+            
+            if existing:
+                conn.execute(
+                    "UPDATE images SET processed_filename = ?, filename = ? WHERE id = ?",
+                    (processed_filename, img['filename'], existing['id'])
+                )
+            else:
+                conn.execute(
+                    'INSERT INTO images (session_id, image_index, filename, original_name, processed_filename, image_type) VALUES (?, ?, ?, ?, ?, ?)',
+                    (session_id, img['image_index'], img['filename'], img['original_name'], processed_filename, 'color_rm')
+                )
+            processed_count += 1
+            
+        conn.commit()
+        return jsonify({'success': True, 'count': processed_count})
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        conn.close()
+
+@main_bp.route('/generate_color_rm_pdf/<session_id>')
+@login_required
+def generate_color_rm_pdf(session_id):
+    conn = get_db_connection()
+    
+    # Check ownership
+    session_data = conn.execute('SELECT user_id, original_filename FROM sessions WHERE id = ?', (session_id,)).fetchone()
+    if not session_data or session_data['user_id'] != current_user.id:
+        conn.close()
+        return jsonify({'error': 'Unauthorized'}), 403
+        
+    # Range filtering
+    start_page = request.args.get('start', type=int)
+    end_page = request.args.get('end', type=int)
+    
+    query = "SELECT * FROM images WHERE session_id = ? AND image_type = 'original'"
+    params = [session_id]
+    
+    if start_page:
+        query += " AND image_index >= ?"
+        params.append(start_page - 1) # 0-based index
+    if end_page:
+        query += " AND image_index <= ?"
+        params.append(end_page - 1)
+        
+    query += " ORDER BY image_index"
+        
+    images = conn.execute(query, params).fetchall()
+    
+    pdf_image_paths = []
+    
+    for img in images:
+        # Check for processed version
+        processed = conn.execute(
+            "SELECT processed_filename FROM images WHERE session_id = ? AND image_index = ? AND image_type = 'color_rm'",
+            (session_id, img['image_index'])
+        ).fetchone()
+        
+        if processed and processed['processed_filename']:
+            path = os.path.join(current_app.config['PROCESSED_FOLDER'], processed['processed_filename'])
+        else:
+            # Fallback to original
+            path = os.path.join(current_app.config['UPLOAD_FOLDER'], img['filename'])
+            
+        if os.path.exists(path):
+            pdf_image_paths.append(path)
+            
+    if not pdf_image_paths:
+        conn.close()
+        return "No images found to generate PDF", 404
+        
+    # Generate PDF
+    range_suffix = ""
+    if start_page or end_page:
+        range_suffix = f"_pg{start_page or 1}-{end_page or 'end'}"
+        
+    pdf_filename = f"Color_Removed_{session_data['original_filename']}{range_suffix}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+    if not pdf_filename.lower().endswith('.pdf'): pdf_filename += ".pdf"
+    
+    output_path = os.path.join(current_app.config['OUTPUT_FOLDER'], pdf_filename)
+    
+    # Use user's preferred color_rm_dpi for PDF resolution
+    pdf_resolution = current_user.color_rm_dpi if hasattr(current_user, 'color_rm_dpi') else 200.0
+
+    success = create_pdf_from_full_images(pdf_image_paths, output_path, resolution=pdf_resolution)
+    
+    if success:
+        conn.execute(
+            'INSERT INTO generated_pdfs (session_id, filename, subject, user_id) VALUES (?, ?, ?, ?)',
+            (session_id, pdf_filename, "Color Removal Export", current_user.id)
+        )
+        conn.commit()
+        conn.close()
+        return redirect(url_for('main.pdf_manager')) # Redirect to manager or download directly
+    else:
+        conn.close()
+        return "Failed to generate PDF", 500
 
 @main_bp.route('/tmp/<path:filename>')
 @login_required  # Should still protect temp files if they are user-specific
@@ -195,9 +413,27 @@ def v2_upload():
         if not pdf_content or not original_filename:
             return jsonify({'error': 'Failed to retrieve PDF content or filename'}), 500
 
-        # --- Common processing logic (from original upload_pdf) ---
+        session_type = request.form.get('type', 'standard')
         conn = get_db_connection()
-        conn.execute('INSERT INTO sessions (id, original_filename, name, user_id) VALUES (?, ?, ?, ?)', (session_id, original_filename, original_filename, current_user.id))
+        conn.execute('INSERT INTO sessions (id, original_filename, name, user_id, session_type) VALUES (?, ?, ?, ?, ?)', (session_id, original_filename, original_filename, current_user.id, session_type))
+        conn.commit() # Commit session creation first
+        conn.close()
+
+        # Check for async request
+        is_async = request.args.get('async') == 'true'
+        
+        if is_async:
+            # Start background thread
+            # We pass app config copy to be safe
+            app_config = current_app.config.copy()
+            thread = threading.Thread(target=process_pdf_background, args=(session_id, current_user.id, original_filename, pdf_content, app_config))
+            thread.start()
+            
+            return jsonify({'session_id': session_id, 'status': 'processing'})
+
+        # --- Sync processing logic ---
+        # Re-open connection for sync processing
+        conn = get_db_connection()
         
         pdf_filename = f"{session_id}_{original_filename}"
         pdf_path = os.path.join(current_app.config['UPLOAD_FOLDER'], pdf_filename)
@@ -257,9 +493,10 @@ def upload_images():
         if not file or not any(file.filename.lower().endswith(ext) for ext in valid_extensions):
             return jsonify({'error': 'Invalid file type. Please upload only image files (PNG, JPG, JPEG, GIF, BMP)'}), 400
 
+    session_type = request.form.get('type', 'standard')
     conn = get_db_connection()
     original_filename = f"{len(files)} images" if len(files) > 1 else secure_filename(files[0].filename) if files else "images"
-    conn.execute('INSERT INTO sessions (id, original_filename, name, user_id) VALUES (?, ?, ?, ?)', (session_id, original_filename, original_filename, current_user.id))
+    conn.execute('INSERT INTO sessions (id, original_filename, name, user_id, session_type) VALUES (?, ?, ?, ?, ?)', (session_id, original_filename, original_filename, current_user.id, session_type))
     
     uploaded_files = []
     for i, file in enumerate(files):
@@ -278,6 +515,47 @@ def upload_images():
     conn.close()
     
     return jsonify({'session_id': session_id, 'files': uploaded_files})
+
+@main_bp.route('/api/session_images/<session_id>')
+@login_required
+def get_session_images(session_id):
+    conn = get_db_connection()
+    
+    # Security check
+    session_owner = conn.execute('SELECT user_id FROM sessions WHERE id = ?', (session_id,)).fetchone()
+    if not session_owner or session_owner['user_id'] != current_user.id:
+        conn.close()
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    # Get all original images
+    originals = conn.execute(
+        "SELECT image_index, filename FROM images WHERE session_id = ? AND image_type = 'original' ORDER BY image_index",
+        (session_id,)
+    ).fetchall()
+    
+    # Get processed status
+    processed = conn.execute(
+        "SELECT image_index, processed_filename FROM images WHERE session_id = ? AND image_type = 'color_rm'",
+        (session_id,)
+    ).fetchall()
+    
+    processed_map = {row['image_index']: row['processed_filename'] for row in processed}
+    
+    images_list = []
+    for img in originals:
+        idx = img['image_index']
+        p_filename = processed_map.get(idx)
+        
+        images_list.append({
+            'index': idx,
+            'page_number': idx + 1,
+            'original_url': url_for('main.serve_image', folder='uploads', filename=img['filename']),
+            'processed_url': url_for('main.serve_processed_file', filename=p_filename) if p_filename else None,
+            'is_processed': bool(p_filename)
+        })
+        
+    conn.close()
+    return jsonify({'images': images_list})
 
 @main_bp.route('/cropv2/<session_id>/<int:image_index>')
 @login_required
@@ -529,6 +807,101 @@ def process_crop_v2():
         conn.close()
         print(f"V2 Processing error: {e}")
         return jsonify({'error': f'Processing failed: {str(e)}'}), 500
+
+@main_bp.route('/color_rm')
+@login_required
+def color_rm_entry():
+    return render_template('color_rm_upload.html')
+
+@main_bp.route('/color_rm_interface/<session_id>/<int:image_index>')
+@login_required
+def color_rm_interface(session_id, image_index):
+    conn = get_db_connection()
+    
+    # Security: Check ownership of the session
+    session_owner = conn.execute('SELECT user_id FROM sessions WHERE id = ?', (session_id,)).fetchone()
+    if not session_owner or session_owner['user_id'] != current_user.id:
+        conn.close()
+        return "Unauthorized", 403
+
+    image_info = conn.execute(
+        "SELECT * FROM images WHERE session_id = ? AND image_index = ? AND image_type = 'original'",
+        (session_id, image_index)
+    ).fetchone()
+    
+    if not image_info:
+        conn.close()
+        return "Original page/image not found for this session and index.", 404
+
+    total_pages_result = conn.execute(
+        "SELECT COUNT(*) FROM images WHERE session_id = ? AND image_type = 'original'",
+        (session_id,)
+    ).fetchone()
+    total_pages = total_pages_result[0] if total_pages_result else 0
+    
+    conn.close()
+    
+    return render_template(
+        'color_rm.html',
+        session_id=session_id,
+        user_id=current_user.id,  # Pass user ID to template
+        image_index=image_index,
+        image_info=dict(image_info),
+        total_pages=total_pages
+    )
+
+@main_bp.route('/process_color_rm', methods=['POST'])
+@login_required
+def process_color_rm():
+    data = request.json
+    session_id = data.get('session_id')
+    image_index = data.get('image_index')
+    image_data_url = data.get('imageData')
+
+    conn = get_db_connection()
+    
+    # Security: Check ownership of the session
+    session_owner = conn.execute('SELECT user_id FROM sessions WHERE id = ?', (session_id,)).fetchone()
+    if not session_owner or session_owner['user_id'] != current_user.id:
+        conn.close()
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    page_info = conn.execute(
+        "SELECT filename, original_name FROM images WHERE session_id = ? AND image_index = ? AND image_type = 'original'", 
+        (session_id, image_index)
+    ).fetchone()
+
+    if not page_info:
+        conn.close()
+        return jsonify({'error': 'Original page not found'}), 404
+
+    try:
+        header, encoded = image_data_url.split(",", 1)
+        image_data = base64.b64decode(encoded)
+        
+        processed_filename = f"color_rm_{session_id}_{image_index}_{datetime.now().strftime('%H%M%S')}.png"
+        processed_path = os.path.join(current_app.config['PROCESSED_FOLDER'], processed_filename)
+        
+        with open(processed_path, "wb") as f:
+            f.write(image_data)
+            
+        # Insert into DB so serve_processed_file allows access
+        conn.execute(
+            'INSERT INTO images (session_id, image_index, filename, original_name, processed_filename, image_type) VALUES (?, ?, ?, ?, ?, ?)',
+            (session_id, image_index, page_info['filename'], page_info['original_name'], processed_filename, 'color_rm')
+        )
+        conn.commit()
+        
+        return jsonify({
+            'success': True, 
+            'filename': processed_filename, 
+            'url': url_for('main.serve_processed_file', filename=processed_filename)
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        conn.close()
 
 @main_bp.route('/question_entry_v2/<session_id>')
 @login_required
@@ -1157,7 +1530,20 @@ def view_pdf_legacy(pdf_id):
 
 @main_bp.route('/image/<folder>/<filename>')
 def serve_image(folder, filename):
-    folder_path = current_app.config.get(f'{folder.upper()}_FOLDER')
+    # Map common URL folder names to config keys
+    folder_map = {
+        'uploads': 'UPLOAD_FOLDER',
+        'processed': 'PROCESSED_FOLDER',
+        'output': 'OUTPUT_FOLDER'
+    }
+    
+    config_key = folder_map.get(folder)
+    if not config_key:
+        # Fallback to direct uppercase match (legacy behavior)
+        config_key = f'{folder.upper()}_FOLDER'
+        
+    folder_path = current_app.config.get(config_key)
+    
     if not folder_path or not os.path.exists(os.path.join(folder_path, filename)):
         return "Not found", 404
     return send_file(os.path.join(folder_path, filename))

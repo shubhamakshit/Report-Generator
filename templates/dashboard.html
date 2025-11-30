@@ -161,11 +161,19 @@
                     </td>
                     <td>
                         <div class="btn-group" role="group">
-                            <a href="{{ url_for('main.question_entry_v2', session_id=session.id) }}" class="btn btn-sm btn-primary">View</a>
-                            <a href="{{ url_for('main.crop_interface_v2', session_id=session.id, image_index=0) }}" class="btn btn-sm btn-secondary">Crop</a>
-                            <button class="btn btn-sm btn-info toggle-persist-btn">Toggle Persist</button>
-                            {% if show_size %}
-                            <button class="btn btn-sm btn-warning reduce-space-btn">Reduce Space</button>
+                            {% if session.session_type == 'color_rm' %}
+                                <a href="{{ url_for('main.color_rm_interface', session_id=session.id, image_index=0) }}" class="btn btn-sm btn-warning text-dark">Color RM</a>
+                                <button class="btn btn-sm btn-info toggle-persist-btn">Toggle Persist</button>
+                                {% if show_size %}
+                                <button class="btn btn-sm btn-warning reduce-space-btn">Reduce Space</button>
+                                {% endif %}
+                            {% else %}
+                                <a href="{{ url_for('main.question_entry_v2', session_id=session.id) }}" class="btn btn-sm btn-primary">View</a>
+                                <a href="{{ url_for('main.crop_interface_v2', session_id=session.id, image_index=0) }}" class="btn btn-sm btn-secondary">Crop</a>
+                                <button class="btn btn-sm btn-info toggle-persist-btn">Toggle Persist</button>
+                                {% if show_size %}
+                                <button class="btn btn-sm btn-warning reduce-space-btn">Reduce Space</button>
+                                {% endif %}
                             {% endif %}
                         </div>
                     </td>

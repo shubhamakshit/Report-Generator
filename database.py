@@ -26,7 +26,10 @@ def setup_database():
         id TEXT PRIMARY KEY,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         original_filename TEXT,
-        persist INTEGER DEFAULT 0
+        persist INTEGER DEFAULT 0,
+        name TEXT,
+        user_id INTEGER,
+        session_type TEXT DEFAULT 'standard'
     );
     """)
 
@@ -113,7 +116,40 @@ def setup_database():
     );
     """)
 
+    # Create subjective_folders table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS subjective_folders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        parent_id INTEGER,
+        user_id INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (parent_id) REFERENCES subjective_folders (id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users (id)
+    );
+    """)
+
+    # Create subjective_questions table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS subjective_questions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        question_topic TEXT NOT NULL,
+        question_html TEXT NOT NULL,
+        question_number_within_topic TEXT,
+        folder_id INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users (id),
+        FOREIGN KEY (folder_id) REFERENCES subjective_folders (id) ON DELETE SET NULL
+    );
+    """)
+
     # --- Migrations ---
+    try:
+        cursor.execute("SELECT folder_id FROM subjective_questions LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE subjective_questions ADD COLUMN folder_id INTEGER REFERENCES subjective_folders(id) ON DELETE SET NULL")
+
     try:
         cursor.execute("SELECT tags FROM questions LIMIT 1")
     except sqlite3.OperationalError:
@@ -190,6 +226,16 @@ def setup_database():
     except sqlite3.OperationalError:
         cursor.execute("ALTER TABLE users ADD COLUMN dpi INTEGER DEFAULT 100")
 
+    try:
+        cursor.execute("SELECT color_rm_dpi FROM users LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE users ADD COLUMN color_rm_dpi INTEGER DEFAULT 200")
+
+    try:
+        cursor.execute("SELECT session_type FROM sessions LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE sessions ADD COLUMN session_type TEXT DEFAULT 'standard'")
+
     conn.commit()
     conn.close()
 
@@ -252,6 +298,26 @@ def get_folder_tree(user_id=None):
     else:
         # Fallback for old behavior or admin views
         folders = conn.execute('SELECT id, name, parent_id FROM folders ORDER BY name').fetchall()
+    conn.close()
+    
+    folder_map = {f['id']: dict(f) for f in folders}
+    tree = []
+    
+    for folder_id, folder in folder_map.items():
+        if folder['parent_id']:
+            parent = folder_map.get(folder['parent_id'])
+            if parent:
+                if 'children' not in parent:
+                    parent['children'] = []
+                parent['children'].append(folder)
+        else:
+            tree.append(folder)
+            
+    return tree
+
+def get_subjective_folder_tree(user_id):
+    conn = get_db_connection()
+    folders = conn.execute('SELECT id, name, parent_id FROM subjective_folders WHERE user_id = ? ORDER BY name', (user_id,)).fetchall()
     conn.close()
     
     folder_map = {f['id']: dict(f) for f in folders}

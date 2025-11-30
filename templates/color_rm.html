@@ -1,0 +1,986 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, maximum-scale=1, viewport-fit=cover">
+    <title>Color Removal Tool ({{ image_index + 1 }} / {{ total_pages }})</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jscolor/2.5.2/jscolor.min.js"></script>
+    <style>
+        :root {
+            --header-height: 60px;
+            --controls-height-mobile: 40vh;
+            --controls-width-desktop: 340px;
+        }
+
+        html, body { 
+            height: 100%; 
+            height: 100dvh; 
+            width: 100%; 
+            margin: 0; 
+            padding: 0; 
+            overflow: hidden; 
+            background-color: #181a1c;
+            -webkit-text-size-adjust: 100%;
+        }
+
+        .main-container { 
+            display: flex; 
+            flex-direction: column; 
+            height: 100dvh; 
+            width: 100vw; 
+            overflow: hidden; 
+        }
+
+        .app-header { 
+            height: var(--header-height); 
+            flex-shrink: 0; 
+            display: flex; 
+            align-items: center; 
+            justify-content: space-between; 
+            padding: 0 16px;
+            padding-top: env(safe-area-inset-top);
+            padding-left: calc(16px + env(safe-area-inset-left));
+            padding-right: calc(16px + env(safe-area-inset-right));
+            background: #2c3034; 
+            border-bottom: 1px solid #495057; 
+        }
+        
+        .header-title { 
+            font-size: 1rem; 
+            font-weight: 600; 
+            margin: 0; 
+        }
+
+        .header-actions { 
+            display: flex; 
+            gap: 12px; 
+        }
+
+        .content-wrapper { 
+            flex: 1; 
+            display: flex; 
+            flex-direction: column; 
+            min-height: 0; 
+            overflow: hidden; 
+            position: relative;
+        }
+
+        .image-pane { 
+            flex-grow: 1; 
+            position: relative; 
+            background: #181a1c; 
+            overflow: hidden; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center;
+            width: 100%;
+        }
+
+        /* Canvas Container */
+        #canvas-container {
+            position: relative;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+
+
+        canvas {
+            display: block;
+            cursor: crosshair;
+        }
+
+        /* Controls */
+        .controls-pane { 
+            flex-shrink: 0; 
+            background: #212529; 
+            border-top: 1px solid #495057; 
+            height: var(--controls-height-mobile); 
+            overflow-y: auto; 
+            z-index: 30; 
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+        
+        .controls-content { 
+            padding: 20px 16px; 
+        }
+
+        @media (min-width: 992px) { 
+            .content-wrapper { flex-direction: row; } 
+            
+            .controls-pane { 
+                width: var(--controls-width-desktop); 
+                height: 100%; 
+                border-top: none; 
+                border-left: 1px solid #495057; 
+                padding-bottom: 0;
+            } 
+        }
+
+        /* Swatches */
+        .color-swatch-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+            min-height: 40px;
+        }
+
+        .swatch {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: 2px solid #fff;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            position: relative;
+            cursor: pointer;
+        }
+        
+        .swatch:hover::after {
+            content: "\F659"; /* bi-x-lg */
+            font-family: "bootstrap-icons";
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+        }
+
+        #loader-overlay { 
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            background: rgba(0,0,0,0.7); z-index: 9999; 
+            display: none; align-items: center; justify-content: center; 
+        }
+        /* Region Overlay and Handles */
+        #region-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: auto; /* Allow interaction */
+            border: 2px dashed #ffc107;
+            background: rgba(255, 193, 7, 0.1);
+            display: none;
+            cursor: grab; /* Default for moving the box */
+            touch-action: none; /* Prevent browser touch actions */
+        }
+        #region-overlay.drawing {
+            cursor: crosshair; /* When actively drawing a new box */
+        }
+        #region-overlay.resizing {
+            /* Cursor set by handle classes */
+            background: rgba(255, 193, 7, 0.2); /* Slightly darker when resizing/moving */
+        }
+        #region-overlay.moving {
+            cursor: grabbing;
+            background: rgba(255, 193, 7, 0.2); /* Slightly darker when resizing/moving */
+        }
+
+        .handle {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            background: #0d6efd; /* Blue handles */
+            border: 1px solid #fff;
+            box-sizing: border-box;
+            pointer-events: all; /* Make handles interactive */
+            border-radius: 2px; /* Slightly rounded squares */
+            z-index: 10; /* Above overlay body */
+        }
+
+        /* Specific handle positioning and cursors */
+        .handle.top-left { top: -6px; left: -6px; cursor: nwse-resize; }
+        .handle.top-center { top: -6px; left: calc(50% - 6px); cursor: ns-resize; }
+        .handle.top-right { top: -6px; right: -6px; cursor: nesw-resize; }
+        .handle.mid-left { top: calc(50% - 6px); left: -6px; cursor: ew-resize; }
+        .handle.mid-right { top: calc(50% - 6px); right: -6px; cursor: ew-resize; }
+        .handle.bottom-left { bottom: -6px; left: -6px; cursor: nesw-resize; }
+        .handle.bottom-center { bottom: -6px; left: calc(50% - 6px); cursor: ns-resize; }
+        .handle.bottom-right { bottom: -6px; right: -6px; cursor: nwse-resize; }
+    </style>
+</head>
+<body>
+    <div id="loader-overlay">
+        <div class="spinner-border text-light" role="status"><span class="visually-hidden">Loading...</span></div>
+    </div>
+
+    <div class="main-container">
+        <header class="app-header">
+             <h1 class="header-title"><i class="bi bi-palette me-2"></i>Color Remove</h1>
+             <div class="header-actions">
+                <a href="/" class="btn btn-secondary"><i class="bi bi-house"></i></a>
+                
+                <div class="input-group" style="width: 140px;">
+                    <span class="input-group-text bg-dark border-secondary text-light py-0 px-2 small">Pg</span>
+                    <input type="number" id="pageInput" class="form-control bg-dark border-secondary text-light text-center py-0" 
+                           min="1" max="{{ total_pages }}" value="{{ image_index + 1 }}">
+                    <span class="input-group-text bg-dark border-secondary text-light py-0 px-2 small">/ {{ total_pages }}</span>
+                </div>
+
+                <button id="regionBtn" class="btn btn-outline-warning" title="Select Region"><i class="bi bi-bounding-box"></i></button>
+                <div class="btn-group">
+                     <button id="saveBtn" class="btn btn-success">Save</button>
+                     <button type="button" class="btn btn-success dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown"></button>
+                     <ul class="dropdown-menu dropdown-menu-end">
+                        <li><button class="dropdown-item" id="applyAllBtn"><i class="bi bi-collection-fill me-2"></i>Apply to All Pages</button></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><h6 class="dropdown-header">Generate PDF</h6></li>
+                        <li class="px-3 py-1">
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text">Range</span>
+                                <input type="number" id="pdfStart" class="form-control" placeholder="1" min="1">
+                                <span class="input-group-text">-</span>
+                                <input type="number" id="pdfEnd" class="form-control" placeholder="End" min="1">
+                            </div>
+                        </li>
+                        <li><button class="dropdown-item mt-1" id="genPdfBtn"><i class="bi bi-file-pdf me-2"></i>Generate PDF</button></li>
+                     </ul>
+                </div>
+                <a href="/color_rm_interface/{{ session_id }}/{{ image_index + 1 }}" class="btn btn-secondary {% if image_index + 1 >= total_pages %}disabled{% endif %}"><i class="bi bi-chevron-right"></i></a>
+            </div>
+        </header>
+
+        <div class="content-wrapper">
+            <div class="image-pane" id="imagePane">
+                <div id="canvas-container">
+                    <canvas id="main-canvas"></canvas>
+                    <div id="region-overlay">
+                        <div class="handle top-left" data-handle="tl"></div>
+                        <div class="handle top-center" data-handle="tc"></div>
+                        <div class="handle top-right" data-handle="tr"></div>
+                        <div class="handle mid-left" data-handle="ml"></div>
+                        <div class="handle mid-right" data-handle="mr"></div>
+                        <div class="handle bottom-left" data-handle="bl"></div>
+                        <div class="handle bottom-center" data-handle="bc"></div>
+                        <div class="handle bottom-right" data-handle="br"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="controls-pane">
+                 <div class="controls-content">
+                    <div class="alert alert-info small p-2 mb-3 rounded-3">
+                        <i class="bi bi-info-circle me-2"></i>Click on the image to select colors to <b>keep</b>. All other colors will be removed.
+                        <br><span class="opacity-75 ms-4">Now using <b>LAB Color Space</b> for human-like perception.</span>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="small text-light mb-2">Manual Color Pick</label>
+                        <div class="input-group mb-2">
+                            <input id="manualColorInput" class="form-control text-center fw-bold" data-jscolor="{preset:'large dark', value:'#FFA500', position:'bottom', onInput:'onPickerInput(this)'}" readonly>
+                            <button class="btn btn-outline-light" type="button" id="addManualColorBtn" title="Add this color">
+                                <i class="bi bi-plus-lg"></i> Add
+                            </button>
+                        </div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="livePickerCheck">
+                            <label class="form-check-label small text-muted" for="livePickerCheck">Live Preview (drag to test)</label>
+                        </div>
+                    </div>
+                    
+                    <h6 class="text-white mb-2 text-uppercase small ls-1">Selected Colors</h6>
+                    <div id="colorList" class="color-swatch-list mb-3">
+                        <span class="text-muted small fst-italic" id="no-colors-msg">No colors selected</span>
+                    </div>
+                    
+                    <hr class="border-secondary my-3">
+                    
+                    <h6 class="text-white mb-3 text-uppercase small ls-1">Settings</h6>
+                    
+                    <div class="mb-3">
+                        <label class="small text-light d-flex justify-content-between mb-2">
+                            Match Strictness 
+                            <span id="thresholdValue" class="text-primary fw-bold">0.8</span>
+                        </label>
+                        <!-- Threshold mapped: 1.0 = Strict (Small DeltaE), 0.1 = Loose (Large DeltaE) -->
+                        <input type="range" class="form-range" id="threshold" min="0.1" max="1.0" value="0.8" step="0.05">
+                        <div class="d-flex justify-content-between text-muted small">
+                            <span>Loose</span>
+                            <span>Strict</span>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="small text-light mb-2">Background Fill</label>
+                        <div class="btn-group w-100" role="group">
+                            <input type="radio" class="btn-check" name="bgFill" id="bgBlack" value="black" checked>
+                            <label class="btn btn-outline-secondary" for="bgBlack">Black</label>
+
+                            <input type="radio" class="btn-check" name="bgFill" id="bgWhite" value="white">
+                            <label class="btn btn-outline-secondary" for="bgWhite">White</label>
+
+                            <input type="radio" class="btn-check" name="bgFill" id="bgTrans" value="transparent">
+                            <label class="btn btn-outline-secondary" for="bgTrans">None</label>
+                        </div>
+                    </div>
+                    
+                    <div class="d-grid gap-2 mt-4">
+                        <button id="previewBtn" class="btn btn-primary btn-lg">
+                            <i class="bi bi-eye me-2"></i>Preview Result
+                        </button>
+                        <button id="resetBtn" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-counterclockwise me-2"></i>Reset Image
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+    const sessionId = '{{ session_id }}';
+    const imageIndex = parseInt('{{ image_index }}');
+    const totalPages = parseInt('{{ total_pages }}');
+    const filename = '{{ image_info.filename }}';
+    
+    const canvas = document.getElementById('main-canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const imagePane = document.getElementById('imagePane');
+    const colorListEl = document.getElementById('colorList');
+    const noColorsMsg = document.getElementById('no-colors-msg');
+    
+    let originalImage = new Image();
+    let originalImageData = null;
+    let selectedColors = []; // Array of {r,g,b, lab:{l,a,b}}
+    let isPreviewing = false;
+    
+    // Region Logic
+    let isRegionMode = false;
+    let regionBox = null; // {x, y, w, h} (normalized 0-1)
+    let isDrawingRegion = false;
+    let rStartX, rStartY;
+    let dragHandle = null; // null, 'body', 'tl', 'tr', ...
+    let dragStartBox = null; // Copy of regionBox at start of drag
+
+    // Initialize
+    originalImage.crossOrigin = "anonymous";
+    originalImage.src = `/image/upload/${filename}`;
+    originalImage.onload = () => {
+        fitCanvas();
+        // Save original data
+        originalImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        setupOverlayInteractions();
+        
+        // Load Settings
+        loadSettings();
+        
+        // Apply settings automatically if they exist
+        if (selectedColors.length > 0) {
+            // Need a slight delay or ensure UI is updated
+            // renderSwatches already called in loadSettings
+            // processImage needs DOM elements to be ready (threshold, etc)
+            setTimeout(() => {
+                // If not previewing, we might just want to show it?
+                // User wants "Next page" to show result. 
+                // Let's enable preview automatically if settings exist.
+                if (selectedColors.length > 0) {
+                    isPreviewing = true;
+                    processImage();
+                    document.getElementById('previewBtn').innerHTML = '<i class="bi bi-arrow-repeat me-2"></i>Update Preview';
+                }
+            }, 100);
+        }
+    };
+
+    // --- SETTINGS PERSISTENCE ---
+    function saveSettings() {
+        const settings = {
+            colors: selectedColors, // Array of objects
+            threshold: document.getElementById('threshold').value,
+            bgMode: document.querySelector('input[name="bgFill"]:checked').value,
+            region: regionBox
+        };
+        localStorage.setItem(`color_rm_settings_${sessionId}`, JSON.stringify(settings));
+    }
+
+    function loadSettings() {
+        try {
+            const s = JSON.parse(localStorage.getItem(`color_rm_settings_${sessionId}`));
+            if (s) {
+                if (s.colors) {
+                    selectedColors = s.colors;
+                    renderSwatches();
+                }
+                if (s.threshold) {
+                    document.getElementById('threshold').value = s.threshold;
+                    document.getElementById('thresholdValue').textContent = s.threshold;
+                }
+                if (s.bgMode) {
+                    const rad = document.querySelector(`input[name="bgFill"][value="${s.bgMode}"]`);
+                    if (rad) rad.checked = true;
+                }
+                if (s.region) {
+                    regionBox = s.region;
+                    // Region overlay update happens in fitCanvas/processImage or we trigger it
+                    // fitCanvas calls updateRegionOverlay, but regionBox was null then.
+                    // Update it now.
+                    updateRegionOverlay();
+                }
+            }
+        } catch(e) { console.error("Error loading settings", e); }
+    }
+    
+    // Save settings whenever they change
+    function updateSettings() {
+        saveSettings();
+    }
+    
+    // Page Input Logic
+    document.getElementById('pageInput').addEventListener('change', function() {
+        let val = parseInt(this.value);
+        if (val < 1) val = 1;
+        if (val > totalPages) val = totalPages;
+        window.location.href = `/color_rm_interface/${sessionId}/${val - 1}`;
+    });
+
+    window.addEventListener('resize', () => {
+        if (originalImage.complete) fitCanvas(true); // true = keep current data if possible, but simplified here to redraw
+    });
+
+    function fitCanvas(redraw = false) {
+        const rect = imagePane.getBoundingClientRect();
+        const padding = 32;
+        const availableW = rect.width - padding;
+        const availableH = rect.height - padding;
+        
+        const scale = Math.min(availableW / originalImage.naturalWidth, availableH / originalImage.naturalHeight);
+        const w = Math.floor(originalImage.naturalWidth * scale);
+        const h = Math.floor(originalImage.naturalHeight * scale);
+        
+        canvas.width = w;
+        canvas.height = h;
+        
+        ctx.drawImage(originalImage, 0, 0, w, h);
+        
+        // Update overlay size if it exists
+        updateRegionOverlay();
+        
+        if (!isPreviewing) {
+            originalImageData = ctx.getImageData(0, 0, w, h);
+        } else if (redraw) {
+            // Re-apply preview if we were previewing (simplified: just reset to avoid complexity)
+            resetImage();
+        }
+    }
+    
+    function updateRegionOverlay() {
+        const overlay = document.getElementById('region-overlay');
+        if (regionBox) {
+            overlay.style.display = 'block';
+            overlay.style.left = (regionBox.x * canvas.width) + 'px';
+            overlay.style.top = (regionBox.y * canvas.height) + 'px';
+            overlay.style.width = (regionBox.w * canvas.width) + 'px';
+            overlay.style.height = (regionBox.h * canvas.height) + 'px';
+        } else {
+            overlay.style.display = 'none';
+        }
+    }
+
+    function setupOverlayInteractions() {
+        const overlay = document.getElementById('region-overlay');
+        
+        // Handle interactions on the overlay itself (body + handles)
+        overlay.addEventListener('mousedown', onOverlayDown);
+        overlay.addEventListener('touchstart', onOverlayDown, {passive:false});
+    }
+
+    function onOverlayDown(e) {
+        e.preventDefault();
+        e.stopPropagation(); // Prevent canvas from getting this
+        
+        const target = e.target;
+        if (target.classList.contains('handle')) {
+            dragHandle = target.dataset.handle;
+        } else {
+            dragHandle = 'body';
+        }
+        
+        const pos = getPointerPos(e);
+        rStartX = pos.x;
+        rStartY = pos.y;
+        dragStartBox = { ...regionBox };
+        
+        const overlay = document.getElementById('region-overlay');
+        overlay.classList.add(dragHandle === 'body' ? 'moving' : 'resizing');
+
+        document.addEventListener('mousemove', onOverlayMove);
+        document.addEventListener('touchmove', onOverlayMove, {passive:false});
+        document.addEventListener('mouseup', onOverlayUp);
+        document.addEventListener('touchend', onOverlayUp);
+    }
+
+    function onOverlayMove(e) {
+        e.preventDefault();
+        const pos = getPointerPos(e);
+        const dx = pos.x - rStartX;
+        const dy = pos.y - rStartY;
+        
+        let newBox = { ...dragStartBox };
+
+        if (dragHandle === 'body') {
+            newBox.x += dx;
+            newBox.y += dy;
+            // Clamp
+            newBox.x = Math.max(0, Math.min(1 - newBox.w, newBox.x));
+            newBox.y = Math.max(0, Math.min(1 - newBox.h, newBox.y));
+        } else {
+            // Resizing
+            // Helper: if handle has 'l', modify x & w. if 'r', modify w. if 't', modify y & h. if 'b', modify h.
+            
+            if (dragHandle.includes('l')) {
+                const right = dragStartBox.x + dragStartBox.w;
+                let newX = dragStartBox.x + dx;
+                newX = Math.min(right - 0.01, Math.max(0, newX)); // Min width 1%
+                newBox.x = newX;
+                newBox.w = right - newX;
+            }
+            if (dragHandle.includes('r')) {
+                let newW = dragStartBox.w + dx;
+                newW = Math.min(1 - dragStartBox.x, Math.max(0.01, newW));
+                newBox.w = newW;
+            }
+            if (dragHandle.includes('t')) {
+                const bottom = dragStartBox.y + dragStartBox.h;
+                let newY = dragStartBox.y + dy;
+                newY = Math.min(bottom - 0.01, Math.max(0, newY)); // Min height 1%
+                newBox.y = newY;
+                newBox.h = bottom - newY;
+            }
+            if (dragHandle.includes('b')) {
+                let newH = dragStartBox.h + dy;
+                newH = Math.min(1 - dragStartBox.y, Math.max(0.01, newH));
+                newBox.h = newH;
+            }
+        }
+        
+        regionBox = newBox;
+        updateRegionOverlay();
+        if (isPreviewing) processImage();
+    }
+
+    function onOverlayUp(e) {
+        dragHandle = null;
+        dragStartBox = null;
+        const overlay = document.getElementById('region-overlay');
+        overlay.classList.remove('moving', 'resizing');
+        
+        document.removeEventListener('mousemove', onOverlayMove);
+        document.removeEventListener('touchmove', onOverlayMove);
+        document.removeEventListener('mouseup', onOverlayUp);
+        document.removeEventListener('touchend', onOverlayUp);
+        
+        updateSettings();
+    }
+
+    // --- LAB COLOR SPACE HELPERS ---
+    function rgb2lab(rgb) {
+        let r = rgb[0] / 255, g = rgb[1] / 255, b = rgb[2] / 255;
+        r = (r > 0.04045) ? Math.pow((r + 0.055) / 1.055, 2.4) : r / 12.92;
+        g = (g > 0.04045) ? Math.pow((g + 0.055) / 1.055, 2.4) : g / 12.92;
+        b = (b > 0.04045) ? Math.pow((b + 0.055) / 1.055, 2.4) : b / 12.92;
+        
+        let x = (r * 0.4124 + g * 0.3576 + b * 0.1805) / 0.95047;
+        let y = (r * 0.2126 + g * 0.7152 + b * 0.0722) / 1.00000;
+        let z = (r * 0.0193 + g * 0.1192 + b * 0.9505) / 1.08883;
+        
+        x = (x > 0.008856) ? Math.pow(x, 1/3) : (7.787 * x) + 16/116;
+        y = (y > 0.008856) ? Math.pow(y, 1/3) : (7.787 * y) + 16/116;
+        z = (z > 0.008856) ? Math.pow(z, 1/3) : (7.787 * z) + 16/116;
+        
+        return [(116 * y) - 16, 500 * (x - y), 200 * (y - z)];
+    }
+
+    function deltaE(labA, labB) {
+        const dL = labA[0] - labB[0];
+        const dA = labA[1] - labB[1];
+        const dB = labA[2] - labB[2];
+        return Math.sqrt(dL * dL + dA * dA + dB * dB);
+    }
+    // -------------------------------
+
+    // Manual Color Picker Logic
+    document.getElementById('addManualColorBtn').addEventListener('click', () => {
+        const input = document.getElementById('manualColorInput');
+        if (input.jscolor) {
+            const c = input.jscolor.channels;
+            addColor({ r: c.r, g: c.g, b: c.b });
+        }
+    });
+
+    function onPickerInput(picker) {
+        // Only update if "Live Preview" is checked AND we are currently previewing
+        const live = document.getElementById('livePickerCheck').checked;
+        if (live && isPreviewing) {
+            processImage();
+        }
+    }
+    
+    document.getElementById('livePickerCheck').addEventListener('change', () => {
+        if (isPreviewing) processImage();
+    });
+
+    // Interaction Handling (Click & Drag)
+    document.getElementById('regionBtn').addEventListener('click', () => {
+        isRegionMode = !isRegionMode;
+        const btn = document.getElementById('regionBtn');
+        if (isRegionMode) {
+            btn.classList.replace('btn-outline-warning', 'btn-warning');
+            canvas.style.cursor = 'crosshair';
+        } else {
+            btn.classList.replace('btn-warning', 'btn-outline-warning');
+            canvas.style.cursor = 'default';
+            // If turning off, maybe clear region? For now, we keep it unless manually cleared.
+            // To clear: Click again while in region mode? Or a clear button? 
+            // Let's implement: Click region button to toggle drawing mode. 
+            // If box exists, button stays active. 
+        }
+    });
+
+    canvas.addEventListener('mousedown', onPointerDown);
+    canvas.addEventListener('touchstart', onPointerDown, {passive: false});
+
+    function getPointerPos(e) {
+        const rect = canvas.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        return {
+            x: (clientX - rect.left) / rect.width,
+            y: (clientY - rect.top) / rect.height
+        };
+    }
+
+    function onPointerDown(e) {
+        if (isPreviewing && !isRegionMode) return; // Block interaction during preview unless drawing region
+
+        const pos = getPointerPos(e);
+        
+        if (isRegionMode) {
+            e.preventDefault();
+            isDrawingRegion = true;
+            rStartX = pos.x;
+            rStartY = pos.y;
+            
+            // Reset box visually
+            regionBox = { x: pos.x, y: pos.y, w: 0, h: 0 };
+            updateRegionOverlay();
+            
+            document.addEventListener('mousemove', onPointerMove);
+            document.addEventListener('touchmove', onPointerMove, {passive: false});
+            document.addEventListener('mouseup', onPointerUp);
+            document.addEventListener('touchend', onPointerUp);
+        } else {
+            // If we clicked here, it means we missed the overlay (handled by onOverlayDown)
+            // So if a region exists, clear it (user clicked outside)
+            if (regionBox) {
+                regionBox = null;
+                updateRegionOverlay();
+                if (isPreviewing) processImage();
+                return; // Don't pick color if we just cleared box
+            }
+
+            // Normal Color Pick
+            const x = pos.x * canvas.width;
+            const y = pos.y * canvas.height;
+            const p = ctx.getImageData(x, y, 1, 1).data;
+            addColor({ r: p[0], g: p[1], b: p[2] });
+        }
+    }
+
+    function onPointerMove(e) {
+        if (!isDrawingRegion) return;
+        e.preventDefault();
+        const pos = getPointerPos(e);
+        
+        const currentX = Math.max(0, Math.min(1, pos.x));
+        const currentY = Math.max(0, Math.min(1, pos.y));
+        
+        const x = Math.min(rStartX, currentX);
+        const y = Math.min(rStartY, currentY);
+        const w = Math.abs(currentX - rStartX);
+        const h = Math.abs(currentY - rStartY);
+        
+        regionBox = { x, y, w, h };
+        updateRegionOverlay();
+    }
+
+    function onPointerUp(e) {
+        isDrawingRegion = false;
+        document.removeEventListener('mousemove', onPointerMove);
+        document.removeEventListener('touchmove', onPointerMove);
+        document.removeEventListener('mouseup', onPointerUp);
+        document.removeEventListener('touchend', onPointerUp);
+        
+        // If box is tiny, clear it (click to clear)
+        if (regionBox && (regionBox.w < 0.01 || regionBox.h < 0.01)) {
+            regionBox = null;
+            updateRegionOverlay();
+        }
+        
+        // Turn off draw mode after drawing one box (User preference usually)
+        isRegionMode = false;
+        document.getElementById('regionBtn').classList.replace('btn-warning', 'btn-outline-warning');
+        canvas.style.cursor = 'default';
+        
+        if (isPreviewing) processImage();
+    }
+
+    function addColor(color) {
+        // Convert to LAB for storage
+        const lab = rgb2lab([color.r, color.g, color.b]);
+        
+        // Check duplicates using Delta E (Threshold ~5 is very close)
+        const exists = selectedColors.some(c => deltaE(c.lab, lab) < 5);
+        if (exists) return;
+
+        selectedColors.push({ ...color, lab: lab });
+        renderSwatches();
+        updateSettings();
+    }
+
+    function renderSwatches() {
+        if (selectedColors.length === 0) {
+            noColorsMsg.style.display = 'block';
+            colorListEl.innerHTML = '';
+            colorListEl.appendChild(noColorsMsg);
+            return;
+        }
+        
+        noColorsMsg.style.display = 'none';
+        colorListEl.innerHTML = '';
+        
+        selectedColors.forEach((c, i) => {
+            const el = document.createElement('div');
+            el.className = 'swatch';
+            el.style.backgroundColor = `rgb(${c.r},${c.g},${c.b})`;
+            el.onclick = () => removeColor(i);
+            colorListEl.appendChild(el);
+        });
+    }
+
+    function removeColor(index) {
+        selectedColors.splice(index, 1);
+        renderSwatches();
+        updateSettings();
+        if (isPreviewing) processImage(); // Update preview immediately
+    }
+
+    // Processing Logic
+    document.getElementById('threshold').addEventListener('input', (e) => {
+        document.getElementById('thresholdValue').textContent = e.target.value;
+        updateSettings();
+        if (isPreviewing) processImage();
+    });
+    
+    document.querySelectorAll('input[name="bgFill"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+             updateSettings();
+             if (isPreviewing) processImage();
+        });
+    });
+
+    document.getElementById('previewBtn').addEventListener('click', () => {
+        if (isPreviewing) {
+            processImage(); // Refresh
+        } else {
+            isPreviewing = true;
+            processImage();
+            document.getElementById('previewBtn').innerHTML = '<i class="bi bi-arrow-repeat me-2"></i>Update Preview';
+        }
+    });
+
+    document.getElementById('resetBtn').addEventListener('click', resetImage);
+
+    function resetImage() {
+        isPreviewing = false;
+        ctx.putImageData(originalImageData, 0, 0);
+        document.getElementById('previewBtn').innerHTML = '<i class="bi bi-eye me-2"></i>Preview Result';
+        document.getElementById('downloadBtn').disabled = true;
+    }
+
+    function processImage() {
+        if (!originalImageData) return;
+        
+        const threshold = parseFloat(document.getElementById('threshold').value);
+        const maxDeltaE = 110 - (threshold * 100); 
+        
+        // Get BG Mode
+        const bgMode = document.querySelector('input[name="bgFill"]:checked').value;
+        
+        const imgData = ctx.createImageData(originalImageData);
+        const data = imgData.data;
+        const source = originalImageData.data;
+        const width = imgData.width;
+        const height = imgData.height;
+        
+        // Calculate Region Bounds
+        let startX = 0, startY = 0, endX = width, endY = height;
+        if (regionBox) {
+            startX = Math.floor(regionBox.x * width);
+            startY = Math.floor(regionBox.y * height);
+            endX = Math.floor((regionBox.x + regionBox.w) * width);
+            endY = Math.floor((regionBox.y + regionBox.h) * height);
+        }
+
+        // Prepare target colors
+        const activeColors = selectedColors.map(c => c.lab);
+        
+        // Add Live Picker Color if enabled
+        if (document.getElementById('livePickerCheck').checked) {
+             const input = document.getElementById('manualColorInput');
+             if (input.jscolor) {
+                 const c = input.jscolor.channels;
+                 activeColors.push(rgb2lab([c.r, c.g, c.b]));
+             }
+        }
+        
+        // Loop through ALL pixels to copy source first (so outside region stays intact)
+        data.set(source);
+        
+        // Only process pixels inside the region
+        for (let y = startY; y < endY; y++) {
+            for (let x = startX; x < endX; x++) {
+                const i = (y * width + x) * 4;
+                
+                if (source[i+3] === 0) continue;
+
+                const r = source[i];
+                const g = source[i+1];
+                const b = source[i+2];
+                const pxLab = rgb2lab([r, g, b]);
+
+                let keep = false;
+
+                if (activeColors.length === 0) {
+                    keep = false; 
+                } else {
+                    for (let j = 0; j < activeColors.length; j++) {
+                        const targetLab = activeColors[j];
+                        const dist = deltaE(pxLab, targetLab);
+                        if (dist <= maxDeltaE) {
+                            keep = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (keep) {
+                    // Pixel already set by data.set(source)
+                } else {
+                    // Apply Background Fill
+                    if (bgMode === 'black') {
+                        data[i] = 0; data[i+1] = 0; data[i+2] = 0; data[i+3] = 255;
+                    } else if (bgMode === 'white') {
+                        data[i] = 255; data[i+1] = 255; data[i+2] = 255; data[i+3] = 255;
+                    } else {
+                        // Transparent
+                        data[i] = 255; data[i+1] = 255; data[i+2] = 255; data[i+3] = 0;
+                    }
+                }
+            }
+        }
+        
+        ctx.putImageData(imgData, 0, 0);
+        document.getElementById('downloadBtn').disabled = false;
+    }
+
+    document.getElementById('genPdfBtn').addEventListener('click', () => {
+        const start = document.getElementById('pdfStart').value;
+        const end = document.getElementById('pdfEnd').value;
+        
+        let url = `/generate_color_rm_pdf/${sessionId}`;
+        if (start || end) {
+            url += `?start=${start || 1}&end=${end || totalPages}`;
+        }
+        window.location.href = url;
+    });
+
+    // Actions
+    document.getElementById('saveBtn').addEventListener('click', async () => {
+        await saveCurrentPage();
+        // Navigate to next if available
+        if (imageIndex + 1 < totalPages) {
+            window.location.href = `/color_rm_interface/${sessionId}/${imageIndex+1}`;
+        }
+    });
+    
+    async function saveCurrentPage() {
+        if (!isPreviewing) {
+            if (!confirm("You haven't previewed the changes. Save original image?")) return;
+        }
+        
+        document.getElementById('loader-overlay').style.display = 'flex';
+        const dataUrl = canvas.toDataURL('image/png');
+        
+        try {
+            const res = await fetch('/process_color_rm', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    session_id: sessionId,
+                    image_index: imageIndex,
+                    imageData: dataUrl
+                })
+            });
+            
+            const result = await res.json();
+            if (!result.success) alert("Error: " + result.error);
+        } catch (e) {
+            console.error(e);
+            alert("Failed to save.");
+        } finally {
+            document.getElementById('loader-overlay').style.display = 'none';
+        }
+    }
+    
+    document.getElementById('applyAllBtn').addEventListener('click', async () => {
+        if (!confirm("This will process ALL pages in the session using the current settings (Colors, Threshold, Region, Background). This may take a while. Continue?")) return;
+        
+        document.getElementById('loader-overlay').style.display = 'flex';
+        
+        // Gather Settings
+        const threshold = parseFloat(document.getElementById('threshold').value);
+        const bgMode = document.querySelector('input[name="bgFill"]:checked').value;
+        
+        // Send RGB colors to backend (backend converts to Lab)
+        // We just send the raw RGBs we collected
+        const rgbColors = selectedColors.map(c => ({r: c.r, g: c.g, b: c.b}));
+        
+        try {
+            const res = await fetch('/process_color_rm_batch', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    session_id: sessionId,
+                    colors: rgbColors,
+                    threshold: threshold,
+                    bg_mode: bgMode,
+                    region: regionBox // null or {x,y,w,h}
+                })
+            });
+            
+            const result = await res.json();
+            
+            if (result.success) {
+                alert(`Successfully processed ${result.count} pages!`);
+                // Maybe redirect to PDF generation or just reload
+                if(confirm("Batch processing done. Generate PDF now?")) {
+                    window.location.href = `/generate_color_rm_pdf/${sessionId}`;
+                }
+            } else {
+                alert("Batch Error: " + result.error);
+            }
+        } catch(e) {
+            console.error(e);
+            alert("Batch request failed.");
+        } finally {
+            document.getElementById('loader-overlay').style.display = 'none';
+        }
+    });
+
+</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
