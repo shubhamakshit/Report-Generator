@@ -194,6 +194,10 @@
                                 <option value="unattempted">Unattempted Only</option>
                             </select>
                         </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label" for="font_size_scale">Font Size Scale: <span id="font_size_val">1.0</span>x</label>
+                            <input type="range" class="form-range" id="font_size_scale" min="0.5" max="2.0" step="0.1" value="1.0" oninput="document.getElementById('font_size_val').innerText = this.value">
+                        </div>
                     </div>
                     <div id="standard-layout-options">
                         <div class="row">
@@ -319,7 +323,8 @@
             grid_rows: document.getElementById('grid_rows').value,
             grid_cols: document.getElementById('grid_cols').value,
             filter_type: document.getElementById('filter_type').value,
-            practice_mode: document.getElementById('practice_mode').value
+            practice_mode: document.getElementById('practice_mode').value,
+            font_size_scale: document.getElementById('font_size_scale').value
         };
         localStorage.setItem('pdfGeneratorLayoutSettings', JSON.stringify(globalLayoutSettings));
     }
@@ -358,6 +363,10 @@
             document.getElementById('grid_cols').value = globalLayoutSettings.grid_cols || 1;
             document.getElementById('filter_type').value = globalLayoutSettings.filter_type || 'all';
             document.getElementById('practice_mode').value = globalLayoutSettings.practice_mode || 'none';
+            if (globalLayoutSettings.font_size_scale) {
+                document.getElementById('font_size_scale').value = globalLayoutSettings.font_size_scale;
+                document.getElementById('font_size_val').innerText = globalLayoutSettings.font_size_scale;
+            }
         }
 
         handlePracticeModeChange(); // Apply visibility changes on load
@@ -608,6 +617,7 @@
                     grid_rows: parseInt(document.getElementById('grid_rows').value, 10),
                     grid_cols: parseInt(document.getElementById('grid_cols').value, 10),
                     practice_mode: document.getElementById('practice_mode').value,
+                    font_size_scale: parseFloat(document.getElementById('font_size_scale').value),
                     miscellaneous_questions: miscellaneousQuestions,
                     questions: questions // Pass the main questions too
                 })
@@ -676,6 +686,7 @@
                     grid_rows: parseInt(document.getElementById('grid_rows').value, 10),
                     grid_cols: parseInt(document.getElementById('grid_cols').value, 10),
                     practice_mode: document.getElementById('practice_mode').value,
+                    font_size_scale: parseFloat(document.getElementById('font_size_scale').value),
                     miscellaneous_questions: miscellaneousQuestions
                 })
             });

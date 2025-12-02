@@ -61,13 +61,19 @@ def draw_dashed_rectangle(draw, box, fill, width, dash_length, gap_length):
     # Left
     draw_dashed_line(draw, (x0, y1), (x0, y0), fill, width, dash_length, gap_length)
 
-def create_a4_pdf_from_images(image_info, base_folder, output_filename, images_per_page, output_folder=None, orientation='portrait', grid_rows=None, grid_cols=None, practice_mode='none', return_bytes=False):
+def create_a4_pdf_from_images(image_info, base_folder, output_filename, images_per_page, output_folder=None, orientation='portrait', grid_rows=None, grid_cols=None, practice_mode='none', return_bytes=False, font_size_scale=1.0):
     if not image_info:
         return False
 
     A4_WIDTH_PX, A4_HEIGHT_PX = 4960, 7016
-    font_large = get_or_download_font(font_size=60)
-    font_small = get_or_download_font(font_size=45)
+    
+    # Base font sizes
+    base_large = 60
+    base_small = 45
+    
+    # Apply scaling
+    font_large = get_or_download_font(font_size=int(base_large * font_size_scale))
+    font_small = get_or_download_font(font_size=int(base_small * font_size_scale))
 
     pages = []
     info_chunks = [image_info[i:i + images_per_page] for i in range(0, len(image_info), images_per_page)]

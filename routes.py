@@ -1372,6 +1372,8 @@ def generate_preview():
         grid_rows = int(data.get('grid_rows')) if data.get('grid_rows') else None
         grid_cols = int(data.get('grid_cols')) if data.get('grid_cols') else None
 
+    font_size_scale = float(data.get('font_size_scale', 1.0))
+
     pdf_bytes = create_a4_pdf_from_images(
         preview_questions, 
         current_app.config['PROCESSED_FOLDER'], 
@@ -1382,7 +1384,8 @@ def generate_preview():
         grid_rows=grid_rows, 
         grid_cols=grid_cols, 
         practice_mode=practice_mode,
-        return_bytes=True
+        return_bytes=True,
+        font_size_scale=font_size_scale
     )
 
     if pdf_bytes:
@@ -1459,7 +1462,9 @@ def generate_pdf():
         grid_rows = int(data.get('grid_rows')) if data.get('grid_rows') else None
         grid_cols = int(data.get('grid_cols')) if data.get('grid_cols') else None
 
-    if create_a4_pdf_from_images(filtered_questions, current_app.config['PROCESSED_FOLDER'], pdf_filename, images_per_page, current_app.config['OUTPUT_FOLDER'], orientation, grid_rows, grid_cols, practice_mode):
+    font_size_scale = float(data.get('font_size_scale', 1.0))
+
+    if create_a4_pdf_from_images(filtered_questions, current_app.config['PROCESSED_FOLDER'], pdf_filename, images_per_page, current_app.config['OUTPUT_FOLDER'], orientation, grid_rows, grid_cols, practice_mode, font_size_scale=font_size_scale):
         session_info = conn.execute('SELECT original_filename FROM sessions WHERE id = ?', (session_id,)).fetchone()
         source_filename = session_info['original_filename'] if session_info else 'Unknown'
         
