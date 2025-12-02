@@ -43,6 +43,7 @@ def setup_database():
         original_name TEXT NOT NULL,
         processed_filename TEXT,
         image_type TEXT DEFAULT 'original',
+        box_id TEXT,
         FOREIGN KEY (session_id) REFERENCES sessions (id)
     );
     """)
@@ -236,6 +237,11 @@ def setup_database():
         cursor.execute("SELECT color_rm_dpi FROM users LIMIT 1")
     except sqlite3.OperationalError:
         cursor.execute("ALTER TABLE users ADD COLUMN color_rm_dpi INTEGER DEFAULT 200")
+
+    try:
+        cursor.execute("SELECT box_id FROM images LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE images ADD COLUMN box_id TEXT")
 
     try:
         cursor.execute("SELECT session_type FROM sessions LIMIT 1")

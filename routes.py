@@ -666,6 +666,24 @@ def process_crop_v2():
                 source_page_index = source_info['page_index']
                 source_box = source_info['box']
                 
+                # Attempt to delete the original source image/question to prevent duplicates
+                # We use the unique box ID provided by the frontend
+                if 'id' in source_box:
+                    source_box_id = str(source_box['id'])
+                    # Find the image entry
+                    source_img_row = conn.execute(
+                        "SELECT id, processed_filename FROM images WHERE session_id = ? AND box_id = ?", 
+                        (session_id, source_box_id)
+                    ).fetchone()
+                    
+                    if source_img_row:
+                        # Delete associated question if any
+                        conn.execute("DELETE FROM questions WHERE image_id = ?", (source_img_row['id'],))
+                        # Delete the image entry
+                        conn.execute("DELETE FROM images WHERE id = ?", (source_img_row['id'],))
+                        # Optionally delete the file, but might be risky if logic is flawed. 
+                        # Leaving file cleanup to general cleanup or overwrite.
+
                 # Fetch source page filename
                 source_page_db = conn.execute(
                     "SELECT filename FROM images WHERE session_id = ? AND image_index = ? AND image_type = 'original'",
@@ -773,7 +791,8 @@ def process_crop_v2():
             processed_boxes.append({
                 'original_filename': page_info['filename'],
                 'original_name': f"Page {page_index + 1} - Q{i + 1}",
-                'processed_filename': crop_filename
+                'processed_filename': crop_filename,
+                'box_id': str(primary_box['id']) # Store box ID for future stitching reference
             })
 
         max_index_result = conn.execute('SELECT MAX(image_index) FROM images WHERE session_id = ?', (session_id,)).fetchone()
@@ -787,12 +806,13 @@ def process_crop_v2():
                 p_box['original_filename'],
                 p_box['original_name'],
                 p_box['processed_filename'],
-                'cropped'
+                'cropped',
+                p_box['box_id']
             ))
         
         if images_to_insert:
             conn.executemany(
-                'INSERT INTO images (session_id, image_index, filename, original_name, processed_filename, image_type) VALUES (?, ?, ?, ?, ?, ?)',
+                'INSERT INTO images (session_id, image_index, filename, original_name, processed_filename, image_type, box_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
                 images_to_insert
             )
         
