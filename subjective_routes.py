@@ -58,7 +58,7 @@ def generate():
             for topic_name in grouped_questions:
                 grouped_questions[topic_name] = sorted(
                     grouped_questions[topic_name],
-                    key=lambda q: int(q['question_number_within_topic']) if q['question_number_within_topic'].isdigit() else q['question_number_within_topic']
+                    key=lambda q: natural_sort_key(q.get('question_number_within_topic'))
                 )
                 
             page_title_topic = "Extracted Questions"
