@@ -24,16 +24,31 @@ def generator():
 @subjective_bp.route('/generate_subjective', methods=['POST'])
 @login_required
 def generate():
-    if 'image' not in request.files:
-        flash('No image file provided.', 'danger')
-        return redirect(url_for('subjective.generator'))
+    json_input = request.form.get('json_data')
+    file = request.files.get('image')
     
-    file = request.files['image']
-    if file.filename == '':
-        flash('No selected file.', 'danger')
-        return redirect(url_for('subjective.generator'))
-        
-    if file:
+    result = None
+    
+    if json_input and json_input.strip():
+        try:
+            parsed_data = json.loads(json_input)
+            # Ensure we have a list of questions
+            if isinstance(parsed_data, dict) and 'data' in parsed_data:
+                parsed_data = parsed_data['data']
+            elif not isinstance(parsed_data, list):
+                # Try to wrap single object in list if it looks like a question
+                if isinstance(parsed_data, dict) and 'question_topic' in parsed_data:
+                    parsed_data = [parsed_data]
+                else:
+                    flash('Invalid JSON: Expected a list of question objects.', 'danger')
+                    return redirect(url_for('subjective.generator'))
+            
+            result = {'success': True, 'data': parsed_data}
+        except json.JSONDecodeError:
+             flash('Invalid JSON syntax.', 'danger')
+             return redirect(url_for('subjective.generator'))
+
+    elif file and file.filename != '':
         filename = secure_filename(file.filename)
         temp_path = os.path.join(current_app.config['TEMP_FOLDER'], filename)
         file.save(temp_path)
@@ -45,33 +60,34 @@ def generate():
             os.remove(temp_path)
         except OSError:
             pass
-            
-        if result and result.get('success'):
-            grouped_questions = {}
-            for q in result.get('data', []):
-                topic = q.get('question_topic', 'Uncategorized')
-                if topic not in grouped_questions:
-                    grouped_questions[topic] = []
-                grouped_questions[topic].append(q)
-            
-            # Sort questions within each topic group by question_number_within_topic
-            for topic_name in grouped_questions:
-                grouped_questions[topic_name] = sorted(
-                    grouped_questions[topic_name],
-                    key=lambda q: natural_sort_key(q.get('question_number_within_topic'))
-                )
-                
-            page_title_topic = "Extracted Questions"
-            if result.get('data') and len(result.get('data')) > 0:
-                # Use the topic of the first question as a general page title, or keep 'Extracted Questions'
-                page_title_topic = result.get('data')[0].get('question_topic', "Extracted Questions")
+    else:
+        flash('Please upload an image or provide JSON data.', 'danger')
+        return redirect(url_for('subjective.generator'))
 
-            return render_template('subjective_results.html', grouped_questions=grouped_questions, topic=page_title_topic)
-        else:
-            flash('Failed to generate questions from image. Please try again.', 'danger')
-            return redirect(url_for('subjective.generator'))
-    
-    return redirect(url_for('subjective.generator'))
+    if result and result.get('success'):
+        grouped_questions = {}
+        for q in result.get('data', []):
+            topic = q.get('question_topic', 'Uncategorized')
+            if topic not in grouped_questions:
+                grouped_questions[topic] = []
+            grouped_questions[topic].append(q)
+        
+        # Sort questions within each topic group by question_number_within_topic
+        for topic_name in grouped_questions:
+            grouped_questions[topic_name] = sorted(
+                grouped_questions[topic_name],
+                key=lambda q: natural_sort_key(q.get('question_number_within_topic'))
+            )
+            
+        page_title_topic = "Extracted Questions"
+        if result.get('data') and len(result.get('data')) > 0:
+            # Use the topic of the first question as a general page title, or keep 'Extracted Questions'
+            page_title_topic = result.get('data')[0].get('question_topic', "Extracted Questions")
+
+        return render_template('subjective_results.html', grouped_questions=grouped_questions, topic=page_title_topic)
+    else:
+        flash('Failed to generate questions. Please try again.', 'danger')
+        return redirect(url_for('subjective.generator'))
 
 @subjective_bp.route('/save_subjective', methods=['POST'])
 @login_required

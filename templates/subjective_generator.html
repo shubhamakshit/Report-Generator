@@ -173,7 +173,24 @@
                             <div class="zone-subtext" id="sub-text">Supports JPG, PNG (Max 10MB)</div>
                         </div>
 
-                        <input type="file" class="file-input" id="images-upload" name="image" accept="image/*" required>
+                        <input type="file" class="file-input" id="images-upload" name="image" accept="image/*">
+                    </div>
+                </div>
+
+                <!-- Manual JSON Input (Accordion) -->
+                <div class="accordion mb-4" id="manualInputAccordion">
+                    <div class="accordion-item bg-transparent border-secondary">
+                        <h2 class="accordion-header" id="headingManual">
+                            <button class="accordion-button collapsed bg-transparent text-secondary shadow-none" type="button" data-bs-toggle="collapse" data-bs-target="#collapseManual" aria-expanded="false" aria-controls="collapseManual">
+                                <i class="bi bi-code-square me-2"></i> Or Paste JSON Manually
+                            </button>
+                        </h2>
+                        <div id="collapseManual" class="accordion-collapse collapse" aria-labelledby="headingManual" data-bs-parent="#manualInputAccordion">
+                            <div class="accordion-body text-secondary">
+                                <p class="small mb-2">If Gemini is unavailable, paste the raw JSON response here.</p>
+                                <textarea class="form-control bg-dark text-light border-secondary font-monospace small" name="json_data" id="json_data" rows="5" placeholder='[{"question_number_within_topic": "1", "question_topic": "Topic", "question_html": "..."}]'></textarea>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -262,10 +279,12 @@
 
     // --- Form Submission State ---
     form.addEventListener('submit', function(e) {
-        // Basic client-side validation
-        if (!fileInput.files || fileInput.files.length === 0) {
+        const hasFile = fileInput.files && fileInput.files.length > 0;
+        const hasJson = document.getElementById('json_data').value.trim().length > 0;
+
+        if (!hasFile && !hasJson) {
             e.preventDefault();
-            alert("Please select an image first.");
+            alert("Please select an image or provide JSON data.");
             return;
         }
 
