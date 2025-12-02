@@ -1738,8 +1738,10 @@ def delete_folder(folder_id):
         try: os.remove(os.path.join(current_app.config['OUTPUT_FOLDER'], pdf['filename']))
         except OSError: pass
     
-    if pdfs_to_delete:
-        conn.execute(f'DELETE FROM generated_pdfs WHERE id IN ({','.join(map(str, [p['id'] for p in pdfs_to_delete]))})')
+    pdf_ids = [p['id'] for p in pdfs_to_delete]
+    if pdf_ids:
+        placeholders = ','.join(map(str, pdf_ids))
+        conn.execute(f'DELETE FROM generated_pdfs WHERE id IN ({placeholders})')
     
     conn.execute(f'DELETE FROM folders WHERE id IN ({placeholders})', folder_ids_to_delete)
     
