@@ -1,0 +1,142 @@
+<div class="card bg-dark text-white mb-3 border-secondary" id="camera-receiver-component" style="display: none;">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-camera-video me-2"></i>Remote Camera</h5>
+        <button type="button" class="btn-close btn-close-white" aria-label="Close" onclick="toggleCameraReceiver()"></button>
+    </div>
+    <div class="card-body text-center">
+        <div class="mb-3">
+            <div class="d-inline-block p-2 bg-white rounded mb-2">
+                <!-- QR Code Placeholder - In real app, generate this dynamically -->
+                <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={{ request.url_root }}camera_mobile" alt="Scan to connect mobile camera">
+            </div>
+            <p class="small text-muted mb-0">Scan with your phone or open <code>/camera_mobile</code></p>
+        </div>
+        
+        <div class="position-relative d-inline-block w-100" style="max-width: 640px; min-height: 240px; background: #000; border-radius: 8px; overflow: hidden;">
+            <video id="webcamFeed" autoplay playsinline style="width: 100%; height: 100%; object-fit: contain;"></video>
+            <div id="cam-status" class="position-absolute top-50 start-50 translate-middle text-white bg-dark bg-opacity-75 p-2 rounded">
+                Waiting for connection...
+            </div>
+        </div>
+
+        <div class="mt-3">
+            <button type="button" class="btn btn-success btn-lg" id="captureBtn" disabled>
+                <i class="bi bi-camera me-2"></i>Capture & Add
+            </button>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+<script>
+    let socket;
+    let peerConnection;
+    let receiverStream;
+    const videoEl = document.getElementById('webcamFeed');
+    const captureBtn = document.getElementById('captureBtn');
+    const statusEl = document.getElementById('cam-status');
+    const room = 'stream_room';
+    const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+
+    function initCameraReceiver() {
+        if (socket) return; // Already initialized
+
+        socket = io();
+
+        socket.on('connect', () => {
+            console.log("Receiver connected");
+            socket.emit('join', { room: room });
+            statusEl.textContent = "Waiting for mobile camera...";
+        });
+
+        socket.on('offer', async (offer) => {
+            console.log("Received offer");
+            statusEl.textContent = "Connecting...";
+            
+            if (peerConnection) peerConnection.close();
+            peerConnection = new RTCPeerConnection(config);
+
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) socket.emit('candidate', { candidate: event.candidate, room: room });
+            };
+
+            peerConnection.ontrack = (event) => {
+                console.log("Received track");
+                receiverStream = event.streams[0];
+                videoEl.srcObject = receiverStream;
+                statusEl.style.display = 'none';
+                captureBtn.disabled = false;
+            };
+
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+            socket.emit('answer', { answer: answer, room: room });
+        });
+
+        socket.on('candidate', async (candidate) => {
+            if (peerConnection) {
+                try { await peerConnection.addIceCandidate(new RTCIceCandidate(candidate)); }
+                catch (e) { console.error(e); }
+            }
+        });
+
+        socket.on('trigger_capture', () => {
+            console.log("Remote capture triggered");
+            if (!captureBtn.disabled) {
+                captureBtn.click();
+            }
+        });
+    }
+
+    // Capture Logic
+    captureBtn.addEventListener('click', () => {
+        if (!receiverStream) return;
+        
+        const canvas = document.createElement('canvas');
+        canvas.width = videoEl.videoWidth;
+        canvas.height = videoEl.videoHeight;
+        canvas.getContext('2d').drawImage(videoEl, 0, 0);
+        
+        canvas.toBlob(blob => {
+            const file = new File([blob], `capture_${Date.now()}.png`, { type: 'image/png' });
+            
+            // Add to the main upload form's FileList logic
+            // Since we can't programmatically modify file input value directly to add files easily without DataTransfer,
+            // we will handle this by creating a "virtual" file list or uploading immediately.
+            // Strategy: Upload immediately to a temporary staging area or just use the upload_images route directly for single file?
+            // The user wants to "reuse this component".
+            // Let's assume we just append it to a global list or upload it.
+            
+            // We'll hook into the existing file processing logic of the parent page if possible.
+            // Or simpler: Add to a DataTransfer object and update the file input.
+            
+            addFileToInput(file);
+            
+            // Visual feedback
+            const originalText = captureBtn.innerHTML;
+            captureBtn.innerHTML = '<i class="bi bi-check-lg"></i> Added';
+            setTimeout(() => captureBtn.innerHTML = originalText, 1000);
+        }, 'image/png');
+    });
+
+    // Helper to add file to the main input
+    function addFileToInput(file) {
+        const input = document.getElementById('images-upload');
+        const dt = new DataTransfer();
+        
+        // Add existing files
+        if (input.files) {
+            for (let i = 0; i < input.files.length; i++) {
+                dt.items.add(input.files[i]);
+            }
+        }
+        
+        // Add new file
+        dt.items.add(file);
+        input.files = dt.files;
+        
+        // Trigger change event to update UI
+        input.dispatchEvent(new Event('change'));
+    }
+</script>

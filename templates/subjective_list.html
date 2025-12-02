@@ -28,6 +28,9 @@
             <button type="button" class="btn btn-warning text-dark" id="moveBtn" disabled data-bs-toggle="modal" data-bs-target="#moveModal">
                 <i class="bi bi-arrow-right-square"></i> Move Selected
             </button>
+            <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#reorderTopicsModal">
+                <i class="bi bi-sort-down"></i> Reorder
+            </button>
             <a href="{{ url_for('subjective.generator') }}" class="btn btn-info">
                 <i class="bi bi-magic"></i> Generator
             </a>
@@ -107,7 +110,7 @@
                             <tr>
                                 <td><input type="checkbox" class="question-checkbox" value="{{ q.id }}"></td>
                                 <td><span class="badge number-badge">{{ q.question_number_within_topic }}</span></td>
-                                <td><div class="text-break" style="max-width: 600px;">{{ q.question_html }}</div></td>
+                                <td><div class="text-break" style="max-width: 600px;">{{ q.question_html | safe }}</div></td>
                                 <td class="text-end">
                                     <button class="btn btn-sm btn-outline-primary border-0" onclick="editQuestion('{{ q.id }}', '{{ q.question_topic }}', '{{ q.question_number_within_topic }}', `{{ q.question_html|e }}`)">
                                         <i class="bi bi-pencil-square"></i>
@@ -181,6 +184,8 @@
         </div>
     </div>
 </div>
+
+{% include 'reorder_modal.html' %}
 
 <!-- Add/Edit Question Modal -->
 <div class="modal fade" id="questionModal" tabindex="-1">

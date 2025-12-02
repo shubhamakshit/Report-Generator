@@ -1,0 +1,85 @@
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/dragula/3.7.3/dragula.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dragula/3.7.3/dragula.min.js"></script>
+
+<div class="modal fade" id="reorderTopicsModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark text-white">
+            <div class="modal-header">
+                <h5 class="modal-title">Reorder Topics</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="small text-muted">Drag and drop to reorder topics.</p>
+                <div id="topic-sortable-list" class="list-group">
+                    {% for topic in grouped_questions.keys() %}
+                    <div class="list-group-item bg-dark text-white border-secondary d-flex align-items-center" 
+                         data-topic="{{ topic }}">
+                        <i class="bi bi-grip-vertical me-2 text-muted"></i>
+                        {{ topic }}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="saveTopicOrderBtn">Save Order</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    let drake = null;
+    const modal = document.getElementById('reorderTopicsModal');
+    const container = document.getElementById('topic-sortable-list');
+    
+    modal.addEventListener('shown.bs.modal', function() {
+        if (drake) drake.destroy();
+        
+        drake = dragula([container], {
+            direction: 'vertical',
+            mirrorContainer: container
+        });
+    });
+    
+    modal.addEventListener('hidden.bs.modal', function() {
+        if (drake) {
+            drake.destroy();
+            drake = null;
+        }
+    });
+    
+    document.getElementById('saveTopicOrderBtn').addEventListener('click', function() {
+        const items = container.querySelectorAll('[data-topic]');
+        const order = Array.from(items).map(item => item.dataset.topic);
+        
+        const folderId = {{ current_folder_id if current_folder_id else 'null' }};
+        
+        fetch('/subjective/topic/reorder', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': "{{ csrf_token() if csrf_token else '' }}"
+            },
+            body: JSON.stringify({ topic_order: order, folder_id: folderId })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) location.reload();
+            else alert('Error: ' + data.error);
+        });
+    });
+});
+</script>
+
+<style>
+#topic-sortable-list > div { cursor: grab; }
+#topic-sortable-list > div:active { cursor: grabbing; }
+.gu-mirror {
+    background: #495057 !important;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+    opacity: 0.9;
+}
+.gu-transit { opacity: 0.4; }
+</style>

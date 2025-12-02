@@ -1,9 +1,16 @@
 import os
+import sys
 from flask import Flask
 from flask_cors import CORS
+from flask_socketio import SocketIO
 from datetime import datetime, date
 
+# Ensure the current directory is in the Python path
+sys.path.append(os.path.abspath(os.path.dirname(__file__)))
+
 from database import setup_database
+
+socketio = SocketIO()
 
 def humanize_datetime(dt_str):
     """Converts a datetime string to a human-friendly format."""
@@ -25,6 +32,7 @@ def humanize_datetime(dt_str):
 def create_app():
     app = Flask(__name__)
     CORS(app)
+    socketio.init_app(app, cors_allowed_origins="*")
 
     # Register custom Jinja2 filter
     app.jinja_env.filters['humanize'] = humanize_datetime
@@ -59,6 +67,7 @@ def create_app():
     from auth_routes import auth_bp
     from settings_routes import settings_bp
     from subjective_routes import subjective_bp
+    from camera_routes import camera_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(json_bp)
@@ -69,6 +78,7 @@ def create_app():
     app.register_blueprint(auth_bp)
     app.register_blueprint(settings_bp)
     app.register_blueprint(subjective_bp)
+    app.register_blueprint(camera_bp)
 
     return app
 

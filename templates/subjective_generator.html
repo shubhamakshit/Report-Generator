@@ -2,39 +2,283 @@
 
 {% block title %}Subjective Question Generator{% endblock %}
 
+{% block head %}
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, maximum-scale=1, viewport-fit=cover">
+<style>
+    :root {
+        --app-bg: #181a1c;
+        --card-bg: #212529;
+        --border-color: #495057;
+        --primary-color: #0d6efd;
+        --primary-bg-subtle: rgba(13, 110, 253, 0.1);
+    }
+
+    body {
+        background-color: var(--app-bg);
+        color: #e9ecef;
+    }
+
+    /* Centered Layout */
+    .generator-wrapper {
+        min-height: calc(100vh - 56px);
+        min-height: calc(100dvh - 56px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+        padding-bottom: env(safe-area-inset-bottom);
+    }
+
+    .main-card {
+        background-color: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 16px;
+        box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+        width: 100%;
+        max-width: 600px;
+        overflow: hidden;
+    }
+
+    /* Touch-friendly Upload Zone */
+    .upload-zone {
+        position: relative;
+        border: 2px dashed var(--border-color);
+        border-radius: 12px;
+        padding: 2rem 1rem;
+        text-align: center;
+        background: rgba(255,255,255,0.02);
+        transition: all 0.2s ease;
+        cursor: pointer;
+        min-height: 250px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+    }
+
+    .upload-zone:active, .upload-zone.drag-over {
+        border-color: var(--primary-color);
+        background: var(--primary-bg-subtle);
+        transform: scale(0.99);
+    }
+
+    .upload-zone.has-file {
+        border-style: solid;
+        border-color: #198754;
+        background: rgba(25, 135, 84, 0.05);
+        padding: 1rem;
+    }
+
+    /* Hidden Input */
+    .file-input {
+        position: absolute;
+        top: 0; left: 0;
+        width: 100%; height: 100%;
+        opacity: 0;
+        cursor: pointer;
+        z-index: 10;
+    }
+
+    /* Icon & Text */
+    .upload-icon {
+        font-size: 3rem;
+        color: #adb5bd;
+        margin-bottom: 1rem;
+        transition: color 0.2s;
+    }
+
+    .upload-zone.has-file .upload-icon {
+        display: none;
+    }
+
+    .zone-text {
+        font-weight: 500;
+        color: #e9ecef;
+    }
+    
+    .zone-subtext {
+        font-size: 0.85rem;
+        color: #adb5bd;
+        margin-top: 0.5rem;
+    }
+
+    /* Image Preview */
+    #image-preview {
+        max-width: 100%;
+        max-height: 300px;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        display: none; /* Hidden by default */
+        margin-bottom: 1rem;
+    }
+
+    /* Button Styling */
+    .btn-action {
+        min-height: 54px;
+        font-size: 1.1rem;
+        font-weight: 600;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        transition: transform 0.1s;
+    }
+    
+    .btn-action:active {
+        transform: scale(0.98);
+    }
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="container mt-5">
-    <div class="row justify-content-center">
-        <div class="col-md-8">
-            <div class="card shadow-sm">
-                <div class="card-header bg-primary text-white">
-                    <h3 class="mb-0"><i class="fas fa-magic me-2"></i>Subjective Question Generator</h3>
-                </div>
-                <div class="card-body">
-                    <p class="text-muted">Upload an image of your written questions (handwritten or printed). AI will transcribe and organize them for you.</p>
-                    <form action="{{ url_for('subjective.generate') }}" method="POST" enctype="multipart/form-data" id="generateForm">
-                        <div class="mb-3">
-                            <label for="image" class="form-label">Upload Image</label>
-                            <input type="file" class="form-control" id="image" name="image" accept="image/*" required>
-                        </div>
-                        <div class="d-grid">
-                            <button type="submit" class="btn btn-primary btn-lg" id="generateBtn">
-                                <span id="btnText">Transcribe & Generate</span>
-                                <span id="btnSpinner" class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
-                            </button>
-                        </div>
-                    </form>
+<div class="generator-wrapper">
+    <div class="main-card">
+        
+        <!-- Header -->
+        <div class="p-4 border-bottom border-secondary" style="border-color: #495057 !important;">
+            <div class="d-flex align-items-center justify-content-center mb-2">
+                <div class="bg-primary bg-opacity-10 text-primary p-3 rounded-circle d-flex align-items-center justify-content-center" style="width: 60px; height: 60px;">
+                    <i class="bi bi-magic fs-3"></i>
                 </div>
             </div>
+            <div class="text-center">
+                <h1 class="h4 mb-1">Subjective Generator</h1>
+                <p class="text-secondary small mb-0">AI will transcribe and format your handwritten or printed questions.</p>
+            </div>
+        </div>
+
+        <div class="card-body p-4">
+            <!-- Remote Camera Component -->
+            {% include 'camera_receiver_component.html' %}
+
+            <form action="{{ url_for('subjective.generate') }}" method="POST" enctype="multipart/form-data" id="generateForm">
+                
+                <!-- Upload Zone -->
+                <div class="mb-4">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <label class="form-label mb-0">Image</label>
+                        <button type="button" class="btn btn-sm btn-outline-info" onclick="toggleCameraReceiver()">
+                            <i class="bi bi-camera-video me-1"></i> Use Remote Camera
+                        </button>
+                    </div>
+                    <div class="upload-zone" id="drop-zone">
+                        <!-- Preview Image -->
+                        <img id="image-preview" alt="Preview">
+                        
+                        <!-- Placeholder Content -->
+                        <div id="placeholder-content">
+                            <i class="bi bi-cloud-upload upload-icon"></i>
+                            <div class="zone-text" id="main-text">Tap to upload image</div>
+                            <div class="zone-subtext" id="sub-text">Supports JPG, PNG (Max 10MB)</div>
+                        </div>
+
+                        <input type="file" class="file-input" id="images-upload" name="image" accept="image/*" required>
+                    </div>
+                </div>
+
+                <!-- Action Button -->
+                <button type="submit" class="btn btn-primary w-100 btn-action shadow" id="generateBtn">
+                    <span id="btnSpinner" class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                    <span id="btnText">Transcribe & Generate</span>
+                    <i class="bi bi-stars" id="btnIcon"></i>
+                </button>
+
+            </form>
         </div>
     </div>
 </div>
+{% endblock %}
 
+{% block scripts %}
 <script>
-document.getElementById('generateForm').addEventListener('submit', function() {
-    document.getElementById('generateBtn').disabled = true;
-    document.getElementById('btnText').textContent = 'Generating... (This may take a moment)';
-    document.getElementById('btnSpinner').classList.remove('d-none');
-});
+    const fileInput = document.getElementById('images-upload');
+    const dropZone = document.getElementById('drop-zone');
+    const previewImg = document.getElementById('image-preview');
+    const placeholder = document.getElementById('placeholder-content');
+    const mainText = document.getElementById('main-text');
+    const subText = document.getElementById('sub-text');
+    const form = document.getElementById('generateForm');
+
+    function toggleCameraReceiver() {
+        const component = document.getElementById('camera-receiver-component');
+        if (component.style.display === 'none') {
+            component.style.display = 'block';
+            if (typeof initCameraReceiver === 'function') {
+                initCameraReceiver();
+            }
+        } else {
+            component.style.display = 'none';
+        }
+    }
+
+    // --- File Selection & Preview ---
+    fileInput.addEventListener('change', function(e) {
+        const file = this.files[0];
+        
+        if (file) {
+            // Show file name
+            dropZone.classList.add('has-file');
+            mainText.innerHTML = `<i class="bi bi-check-circle-fill text-success"></i> Selected`;
+            subText.textContent = file.name;
+
+            // Render Preview
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                previewImg.src = e.target.result;
+                previewImg.style.display = 'block';
+                // Hide icon, keep text below
+                document.querySelector('.upload-icon').style.display = 'none';
+            }
+            reader.readAsDataURL(file);
+        } else {
+            resetUI();
+        }
+    });
+
+    function resetUI() {
+        dropZone.classList.remove('has-file');
+        previewImg.style.display = 'none';
+        previewImg.src = '';
+        document.querySelector('.upload-icon').style.display = 'block';
+        mainText.textContent = "Tap to upload image";
+        subText.textContent = "Supports JPG, PNG (Max 10MB)";
+    }
+
+    // --- Drag & Drop Visuals ---
+    ['dragenter', 'dragover'].forEach(evt => {
+        dropZone.addEventListener(evt, (e) => {
+            e.preventDefault();
+            dropZone.classList.add('drag-over');
+        });
+    });
+
+    ['dragleave', 'drop'].forEach(evt => {
+        dropZone.addEventListener(evt, (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('drag-over');
+        });
+    });
+
+    // --- Form Submission State ---
+    form.addEventListener('submit', function(e) {
+        // Basic client-side validation
+        if (!fileInput.files || fileInput.files.length === 0) {
+            e.preventDefault();
+            alert("Please select an image first.");
+            return;
+        }
+
+        const btn = document.getElementById('generateBtn');
+        const text = document.getElementById('btnText');
+        const icon = document.getElementById('btnIcon');
+        const spinner = document.getElementById('btnSpinner');
+
+        btn.disabled = true;
+        btn.classList.add('opacity-75');
+        icon.classList.add('d-none');
+        spinner.classList.remove('d-none');
+        text.textContent = 'Processing...';
+    });
 </script>
 {% endblock %}

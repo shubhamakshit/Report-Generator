@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Web Camera Feed{% endblock %}
+{% block head %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+{% endblock %}
+{% block content %}
+<div class="container mt-4 text-center">
+    <h1>Live Camera Feed (Web Receiver)</h1>
+    <div class="position-relative d-inline-block" style="width: 100%; max-width: 800px;">
+        <video id="webcamFeed" autoplay playsinline controls style="width: 100%; border-radius: 8px; background-color: #000;"></video>
+        <div id="status" class="position-absolute top-50 start-50 translate-middle text-white bg-dark bg-opacity-75 p-3 rounded" style="display: none;">
+            Waiting for connection...
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+    const socket = io();
+    const video = document.getElementById('webcamFeed');
+    let peerConnection;
+    const room = 'stream_room';
+    
+    const config = {
+        iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' }
+        ]
+    };
+
+    socket.on('connect', () => {
+        console.log("Connected to signaling server");
+        socket.emit('join', { room: room });
+        document.getElementById('status').style.display = 'block';
+    });
+
+    socket.on('offer', async (offer) => {
+        console.log("Received offer");
+        document.getElementById('status').style.display = 'none';
+        
+        if (peerConnection) peerConnection.close();
+        peerConnection = new RTCPeerConnection(config);
+
+        peerConnection.onicecandidate = (event) => {
+            if (event.candidate) {
+                socket.emit('candidate', { candidate: event.candidate, room: room });
+            }
+        };
+
+        peerConnection.ontrack = (event) => {
+            console.log("Received track");
+            video.srcObject = event.streams[0];
+        };
+
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+        const answer = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answer);
+        socket.emit('answer', { answer: answer, room: room });
+    });
+
+    socket.on('candidate', async (candidate) => {
+        if (!peerConnection) return;
+        try {
+            await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (e) {
+            console.error("Error adding received ice candidate", e);
+        }
+    });
+    
+    socket.on('disconnect', () => {
+        console.log("Disconnected");
+        if (peerConnection) peerConnection.close();
+    });
+</script>
+{% endblock %}

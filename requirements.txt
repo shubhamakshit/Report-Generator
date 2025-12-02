@@ -15,3 +15,5 @@ imgkit
 beautifulsoup4
 google-genai
 python-dotenv
+flask-socketio
+simple-websocket

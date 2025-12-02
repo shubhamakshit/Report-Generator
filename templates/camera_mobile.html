@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+{% block title %}Mobile Camera Feed{% endblock %}
+{% block head %}
+<style>
+    body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #000; }
+    #video-container { position: relative; width: 100%; height: 100%; }
+    #mobileCamFeed { width: 100%; height: 100%; object-fit: cover; }
+    
+    #controls {
+        position: absolute;
+        bottom: 20px;
+        left: 0;
+        width: 100%;
+        padding: 10px;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        z-index: 100;
+    }
+    
+    #debugLog {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        right: 10px;
+        max-height: 100px;
+        overflow-y: auto;
+        background: rgba(0,0,0,0.7);
+        color: #0f0;
+        font-family: monospace;
+        font-size: 10px;
+        padding: 5px;
+        pointer-events: none;
+        z-index: 90;
+    }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+{% endblock %}
+{% block content %}
+<div id="video-container">
+    <div id="debugLog"></div>
+    <video id="mobileCamFeed" autoplay playsinline muted></video>
+    <div id="controls">
+        <select id="cameraSelect" class="form-select form-select-sm bg-dark text-white border-secondary"></select>
+        <div class="d-flex gap-2">
+            <button id="startBtn" class="btn btn-primary btn-sm w-50">Restart</button>
+            <button id="stopBtn" class="btn btn-danger btn-sm w-50">Stop</button>
+        </div>
+        <button id="captureBtn" class="btn btn-success btn-sm w-100 mt-2"><i class="bi bi-camera me-2"></i>Capture</button>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+    function log(msg) {
+        const logEl = document.getElementById('debugLog');
+        logEl.innerHTML += `<div>${msg}</div>`;
+        logEl.scrollTop = logEl.scrollHeight;
+        console.log(msg);
+    }
+
+    if (!window.isSecureContext) {
+        log("WARNING: Not in a Secure Context. Camera access may be blocked.");
+    }
+
+    const socket = io();
+    const video = document.getElementById('mobileCamFeed');
+    const cameraSelect = document.getElementById('cameraSelect');
+    let localStream;
+    let peerConnection;
+    const room = 'stream_room';
+    
+    const config = {
+        iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' }
+        ]
+    };
+
+    async function stopCamera() {
+        if (localStream) {
+            localStream.getTracks().forEach(track => {
+                track.stop();
+            });
+            localStream = null;
+            video.srcObject = null;
+            log("Camera stopped.");
+        }
+    }
+
+    async function getCameras() {
+        try {
+            // Request permission first to get labels
+            await navigator.mediaDevices.getUserMedia({ video: true });
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const videoDevices = devices.filter(device => device.kind === 'videoinput');
+            
+            cameraSelect.innerHTML = '';
+            videoDevices.forEach(device => {
+                const option = document.createElement('option');
+                option.value = device.deviceId;
+                option.text = device.label || `Camera ${cameraSelect.length + 1}`;
+                cameraSelect.appendChild(option);
+            });
+            
+            log(`Found ${videoDevices.length} cameras`);
+            
+            // Try to select back camera by default
+            for (let i = 0; i < cameraSelect.options.length; i++) {
+                const label = cameraSelect.options[i].text.toLowerCase();
+                if (label.includes('back') || label.includes('rear') || label.includes('environment')) {
+                    cameraSelect.selectedIndex = i;
+                    break;
+                }
+            }
+            
+            startCamera();
+        } catch (err) {
+            log("Error getting cameras: " + err.name + ": " + err.message);
+        }
+    }
+
+    async function startCamera() {
+        await stopCamera(); // Ensure previous stream is stopped
+
+        const deviceId = cameraSelect.value;
+        const constraints = {
+            video: {
+                deviceId: deviceId ? { exact: deviceId } : undefined,
+                facingMode: deviceId ? undefined : 'environment'
+            },
+            audio: false
+        };
+
+        try {
+            log(`Starting camera...`);
+            localStream = await navigator.mediaDevices.getUserMedia(constraints);
+            video.srcObject = localStream;
+            socket.emit('join', { room: room });
+            log("Camera started");
+        } catch (err) {
+            log("Start failed: " + err.name + ": " + err.message);
+            // No fallback: if specific constraints fail, that's it as requested by user
+        }
+    }
+
+    document.getElementById('startBtn').addEventListener('click', startCamera);
+    document.getElementById('stopBtn').addEventListener('click', stopCamera);
+    cameraSelect.addEventListener('change', startCamera);
+
+    // Capture Button Logic
+    document.getElementById('captureBtn').addEventListener('click', async () => {
+        // Emit a capture event to the server/room
+        // The desktop receiver will listen for this event and handle the actual capture/upload
+        log("Sending remote capture request...");
+        socket.emit('remote_capture', { room: room });
+    });
+
+    // Initialize
+    getCameras();
+
+    socket.on('user_joined', async () => {
+        log("Receiver joined. Creating PeerConnection...");
+        createPeerConnection();
+        
+        if (localStream) {
+            localStream.getTracks().forEach(track => {
+                peerConnection.addTrack(track, localStream);
+            });
+        } else {
+            log("No local stream to add!");
+        }
+
+        try {
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+            socket.emit('offer', { offer: offer, room: room });
+            log("Offer sent");
+        } catch (e) {
+            log("Error creating offer: " + e);
+        }
+    });
+
+    socket.on('answer', async (answer) => {
+        if (!peerConnection) return;
+        log("Received answer");
+        try {
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+        } catch (e) {
+            log("Error setting remote description: " + e);
+        }
+    });
+
+    socket.on('candidate', async (candidate) => {
+        if (!peerConnection) return;
+        try {
+            await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+            // log("Added ICE candidate"); // Too verbose
+        } catch (e) {
+            log("Error adding ICE: " + e);
+        }
+    });
+
+    function createPeerConnection() {
+        if (peerConnection) peerConnection.close();
+        
+        peerConnection = new RTCPeerConnection(config);
+
+        peerConnection.onicecandidate = (event) => {
+            if (event.candidate) {
+                socket.emit('candidate', { candidate: event.candidate, room: room });
+            }
+        };
+        
+        peerConnection.onconnectionstatechange = () => {
+            log("Connection state: " + peerConnection.connectionState);
+        };
+    }
+</script>
+{% endblock %}

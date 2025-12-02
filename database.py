@@ -138,6 +138,7 @@ def setup_database():
         question_html TEXT NOT NULL,
         question_number_within_topic TEXT,
         folder_id INTEGER,
+        topic_order INTEGER DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users (id),
         FOREIGN KEY (folder_id) REFERENCES subjective_folders (id) ON DELETE SET NULL
@@ -145,6 +146,11 @@ def setup_database():
     """)
 
     # --- Migrations ---
+    try:
+        cursor.execute("SELECT topic_order FROM subjective_questions LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE subjective_questions ADD COLUMN topic_order INTEGER DEFAULT 0")
+
     try:
         cursor.execute("SELECT folder_id FROM subjective_questions LIMIT 1")
     except sqlite3.OperationalError:

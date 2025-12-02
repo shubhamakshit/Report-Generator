@@ -145,10 +145,19 @@
         </div>
 
         <div class="card-body p-4">
+            <!-- Remote Camera Component -->
+            {% include 'camera_receiver_component.html' %}
+
             <form id="upload-form">
                 
                 <!-- Large Drop Zone -->
                 <div class="mb-4">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <label class="form-label mb-0">Files</label>
+                        <button type="button" class="btn btn-sm btn-outline-info" onclick="toggleCameraReceiver()">
+                            <i class="bi bi-camera-video me-1"></i> Use Remote Camera
+                        </button>
+                    </div>
                     <div class="file-drop-area" id="drop-zone">
                         <i class="bi bi-images upload-icon" id="drop-icon"></i>
                         <span class="file-msg" id="file-label-main">Tap to select images</span>
@@ -232,6 +241,18 @@
             dropZone.classList.remove('drag-over');
         }, false);
     });
+
+    function toggleCameraReceiver() {
+        const component = document.getElementById('camera-receiver-component');
+        if (component.style.display === 'none') {
+            component.style.display = 'block';
+            if (typeof initCameraReceiver === 'function') {
+                initCameraReceiver();
+            }
+        } else {
+            component.style.display = 'none';
+        }
+    }
 
     // Form Submission
     document.getElementById('upload-form').addEventListener('submit', async function(e) {
