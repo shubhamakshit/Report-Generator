@@ -1487,6 +1487,10 @@ def download_file(filename):
 def view_pdf(filename):
     return send_file(os.path.join(current_app.config['OUTPUT_FOLDER'], filename), as_attachment=False)
 
+@main_bp.route('/view_pdf_v2/<filename>')
+def view_pdf_v2(filename):
+    return render_template('pdfjs_viewer.html', pdf_url=url_for('main.view_pdf', filename=filename), pdf_title=filename)
+
 @main_bp.route('/viewpdflegacy/<int:pdf_id>')
 def view_pdf_legacy(pdf_id):
     conn = get_db_connection()
