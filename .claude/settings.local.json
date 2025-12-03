@@ -1,0 +1,16 @@
+{
+  "env": {
+    "CLAUDE_CODE_USE_VERTEX": "1",
+    "CLOUD_ML_REGION": "global",
+    "ANTHROPIC_VERTEX_PROJECT_ID": "project-ba1bfcb3-c42b-4d63-84f",
+    "VERTEX_REGION_CLAUDE_3_5_SONNET": "global",
+    "VERTEX_REGION_CLAUDE_3_5_HAIKU": "global",
+    "VERTEX_REGION_CLAUDE_3_7_SONNET": "global",
+    "VERTEX_REGION_CLAUDE_4_0_OPUS": "global",
+    "VERTEX_REGION_CLAUDE_4_0_SONNET": "global",
+    "VERTEX_REGION_CLAUDE_4_1_OPUS": "global",
+    "VERTEX_REGION_CLAUDE_4_5_SONNET": "global",
+    "ANTHROPIC_MODEL": "claude-sonnet-4-5@20250929",
+    "ANTHROPIC_SMALL_FAST_MODEL": "claude-3-5-haiku@20241022"
+  }
+}

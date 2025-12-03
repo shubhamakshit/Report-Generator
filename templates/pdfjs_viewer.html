@@ -831,24 +831,12 @@
             text-align: center;
         }
 
-        /* ===== RESPONSIVE ===== */
-        @media (max-width: 768px) {
-            #sidebar.open {
-                position: fixed;
-                left: 0;
-                top: var(--toolbar-height);
-                height: calc(100vh - var(--toolbar-height));
-                z-index: 50;
-            }
-
-            .toolbar-group.hide-mobile {
-                display: none;
-            }
-
-            .doc-title {
-                max-width: 150px;
-            }
-        }
+        /* Cursors */
+        .cursor-grab { cursor: grab; }
+        .cursor-grabbing { cursor: grabbing; }
+        .cursor-crosshair { cursor: crosshair; }
+        .cursor-text { cursor: text; }
+        .cursor-default { cursor: default; }
     </style>
 </head>
 <body>
@@ -901,6 +889,13 @@
                     <i class="bi bi-plus"></i>
                 </button>
             </div>
+            <div class="toolbar-divider"></div>
+            <button class="btn btn-icon" id="tool-select" title="Select Tool (V)">
+                <i class="bi bi-cursor"></i>
+            </button>
+            <button class="btn btn-icon" id="tool-hand" title="Hand Tool (H)">
+                <i class="bi bi-hand-index-thumb"></i>
+            </button>
             <div class="toolbar-divider"></div>
             <button class="btn btn-icon" id="view-mode" title="View Mode">
                 <i class="bi bi-file-earmark"></i>
@@ -1014,6 +1009,9 @@
                 </button>
                 <button class="annotation-tool" data-tool="draw" title="Free Draw">
                     <i class="bi bi-brush"></i> Draw
+                </button>
+                <button class="annotation-tool" data-tool="eraser" title="Eraser">
+                    <i class="bi bi-eraser"></i> Eraser
                 </button>
             </div>
             
@@ -1154,12 +1152,14 @@
             renderQueue: [],
             bookmarks: JSON.parse(localStorage.getItem('pdf-bookmarks') || '[]'),
             notes: JSON.parse(localStorage.getItem('pdf-notes') || '{}'),
+            drawings: JSON.parse(localStorage.getItem('pdf-drawings') || '{}'),
             searchResults: [],
             currentSearchIndex: -1,
-            selectedTool: null,
+            selectedTool: 'select', // Default tool
             annotationColor: '#fbbf24',
             isPresentationMode: false,
-            renderedPages: new Set()
+            renderedPages: new Set(),
+            isDragging: false
         };
 
         // URL Configuration
@@ -1179,7 +1179,9 @@
             searchBar: document.getElementById('search-bar'),
             searchInput: document.getElementById('search-input'),
             contextMenu: document.getElementById('context-menu'),
-            toastContainer: document.getElementById('toast-container')
+            toastContainer: document.getElementById('toast-container'),
+            toolHand: document.getElementById('tool-hand'),
+            toolSelect: document.getElementById('tool-select')
         };
 
         // ==========================================
@@ -1231,17 +1233,174 @@
             };
         }
 
+        function getMousePos(canvas, evt) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            return {
+                x: (evt.clientX - rect.left) * scaleX,
+                y: (evt.clientY - rect.top) * scaleY
+            };
+        }
+
+        // ==========================================
+        // TOOL MANAGEMENT
+        // ==========================================
+
+        function setActiveTool(tool) {
+            state.selectedTool = tool;
+
+            // UI Updates
+            elements.toolHand.classList.toggle('active', tool === 'hand');
+            elements.toolSelect.classList.toggle('active', tool === 'select');
+            
+            document.querySelectorAll('.annotation-tool').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.tool === tool);
+            });
+
+            // Cursor Updates
+            elements.container.classList.remove('cursor-grab', 'cursor-grabbing', 'cursor-crosshair', 'cursor-text', 'cursor-default');
+            
+            // Update drawing layers pointer events
+            const drawingLayers = document.querySelectorAll('.drawing-layer');
+            drawingLayers.forEach(layer => {
+                layer.style.pointerEvents = (tool === 'draw' || tool === 'eraser') ? 'auto' : 'none';
+            });
+
+            if (tool === 'hand') {
+                elements.container.classList.add('cursor-grab');
+                showToast('Hand Tool Active', 'info');
+            } else if (tool === 'select') {
+                elements.container.classList.add('cursor-text'); // or default
+                showToast('Select Tool Active', 'info');
+            } else if (tool === 'draw' || tool === 'eraser') {
+                 elements.container.classList.add('cursor-crosshair');
+                 // Ensure annotation panel is open if drawing
+                 if (tool === 'draw' && !elements.annotationsPanel.classList.contains('open')) {
+                     toggleAnnotationsPanel();
+                 }
+                 showToast(tool === 'draw' ? 'Draw Tool Active' : 'Eraser Tool Active', 'info');
+            }
+        }
+
+        // ==========================================
+        // HAND TOOL LOGIC
+        // ==========================================
+        let startX, startY, scrollLeft, scrollTop;
+
+        elements.container.addEventListener('mousedown', (e) => {
+            if (state.selectedTool !== 'hand') return;
+            state.isDragging = true;
+            elements.container.classList.add('cursor-grabbing');
+            startX = e.pageX - elements.container.offsetLeft;
+            startY = e.pageY - elements.container.offsetTop;
+            scrollLeft = elements.container.scrollLeft;
+            scrollTop = elements.container.scrollTop;
+        });
+
+        elements.container.addEventListener('mouseleave', () => {
+            state.isDragging = false;
+            if (state.selectedTool === 'hand') {
+                elements.container.classList.remove('cursor-grabbing');
+            }
+        });
+
+        elements.container.addEventListener('mouseup', () => {
+            state.isDragging = false;
+             if (state.selectedTool === 'hand') {
+                elements.container.classList.remove('cursor-grabbing');
+            }
+        });
+
+        elements.container.addEventListener('mousemove', (e) => {
+            if (!state.isDragging || state.selectedTool !== 'hand') return;
+            e.preventDefault();
+            const x = e.pageX - elements.container.offsetLeft;
+            const y = e.pageY - elements.container.offsetTop;
+            const walkX = (x - startX) * 1.5; // Scroll-fast
+            const walkY = (y - startY) * 1.5;
+            elements.container.scrollLeft = scrollLeft - walkX;
+            elements.container.scrollTop = scrollTop - walkY;
+        });
+
+
         // ==========================================
         // PDF RENDERING
         // ==========================================
+
+        const PDFCache = {
+            dbName: 'PDFViewerCache',
+            storeName: 'pdfs',
+            
+            async open() {
+                return new Promise((resolve, reject) => {
+                    const request = indexedDB.open(this.dbName, 1);
+                    
+                    request.onerror = () => reject(request.error);
+                    request.onsuccess = () => resolve(request.result);
+                    
+                    request.onupgradeneeded = (e) => {
+                        const db = e.target.result;
+                        if (!db.objectStoreNames.contains(this.storeName)) {
+                            db.createObjectStore(this.storeName);
+                        }
+                    };
+                });
+            },
+            
+            async get(url) {
+                try {
+                    const db = await this.open();
+                    return new Promise((resolve, reject) => {
+                        const transaction = db.transaction(this.storeName, 'readonly');
+                        const store = transaction.objectStore(this.storeName);
+                        const request = store.get(url);
+                        
+                        request.onerror = () => reject(request.error);
+                        request.onsuccess = () => resolve(request.result);
+                    });
+                } catch (err) {
+                    console.warn('PDFCache get error:', err);
+                    return null;
+                }
+            },
+            
+            async put(url, data) {
+                try {
+                    const db = await this.open();
+                    return new Promise((resolve, reject) => {
+                        const transaction = db.transaction(this.storeName, 'readwrite');
+                        const store = transaction.objectStore(this.storeName);
+                        const request = store.put(data, url);
+                        
+                        request.onerror = () => reject(request.error);
+                        request.onsuccess = () => resolve();
+                    });
+                } catch (err) {
+                    console.warn('PDFCache put error:', err);
+                }
+            }
+        };
         
         async function loadPDF() {
             try {
-                const loadingTask = pdfjsLib.getDocument({
-                    url: pdfUrl,
+                // Try to load from cache first
+                let cachedData = await PDFCache.get(pdfUrl);
+                let loadingParams = {
                     cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
                     cMapPacked: true
-                });
+                };
+
+                if (cachedData) {
+                    console.log('Loading PDF from cache');
+                    loadingParams.data = cachedData;
+                    showToast('Loaded from cache', 'info');
+                } else {
+                    console.log('Loading PDF from URL');
+                    loadingParams.url = pdfUrl;
+                }
+
+                const loadingTask = pdfjsLib.getDocument(loadingParams);
                 
                 loadingTask.onProgress = (progress) => {
                     if (progress.total) {
@@ -1252,6 +1411,17 @@
                 
                 state.pdfDoc = await loadingTask.promise;
                 state.totalPages = state.pdfDoc.numPages;
+
+                // Cache the data if it wasn't cached
+                if (!cachedData) {
+                    try {
+                        const data = await state.pdfDoc.getData();
+                        await PDFCache.put(pdfUrl, data);
+                        console.log('PDF cached successfully');
+                    } catch (cacheErr) {
+                        console.warn('Failed to cache PDF:', cacheErr);
+                    }
+                }
                 
                 // Update UI
                 elements.pageCount.textContent = state.totalPages;
@@ -1272,7 +1442,9 @@
                 // Load bookmarks
                 renderBookmarks();
                 
-                showToast('PDF loaded successfully', 'success');
+                if (!cachedData) {
+                    showToast('PDF loaded successfully', 'success');
+                }
                 
             } catch (error) {
                 console.error('Error loading PDF:', error);
@@ -1328,11 +1500,22 @@
                 wrapper.className = 'page-wrapper';
                 wrapper.dataset.page = pageNum;
                 
-                // Create canvas
+                // Create canvas for PDF
                 const canvas = document.createElement('canvas');
                 canvas.className = 'pdf-page';
                 canvas.height = scaledViewport.height;
                 canvas.width = scaledViewport.width;
+                
+                // Create canvas for Drawing Layer
+                const drawCanvas = document.createElement('canvas');
+                drawCanvas.className = 'drawing-layer';
+                drawCanvas.height = scaledViewport.height;
+                drawCanvas.width = scaledViewport.width;
+                drawCanvas.style.position = 'absolute';
+                drawCanvas.style.top = '0';
+                drawCanvas.style.left = '0';
+                // Pointer events depend on tool
+                drawCanvas.style.pointerEvents = (state.selectedTool === 'draw' || state.selectedTool === 'eraser') ? 'auto' : 'none';
                 
                 // Page number label
                 const label = document.createElement('div');
@@ -1340,10 +1523,17 @@
                 label.textContent = `Page ${pageNum}`;
                 
                 wrapper.appendChild(canvas);
+                wrapper.appendChild(drawCanvas);
                 wrapper.appendChild(label);
                 elements.container.appendChild(wrapper);
                 
-                // Render
+                // Setup drawing events on the drawing canvas
+                setupDrawingEvents(drawCanvas, pageNum);
+                
+                // Render Saved Drawings
+                renderDrawings(drawCanvas, pageNum);
+
+                // Render PDF
                 const ctx = canvas.getContext('2d');
                 await page.render({
                     canvasContext: ctx,
@@ -1379,6 +1569,133 @@
                 renderPage(nextPage);
             }
         }
+
+        // ==========================================
+        // DRAWING & ERASER LOGIC
+        // ==========================================
+
+        function setupDrawingEvents(canvas, pageNum) {
+            let isDrawing = false;
+            let currentPath = [];
+            
+            const ctx = canvas.getContext('2d');
+            
+            function startDrawing(e) {
+                const pos = getMousePos(canvas, e);
+                
+                if (state.selectedTool === 'draw') {
+                    isDrawing = true;
+                    currentPath = [{x: pos.x, y: pos.y}];
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(pos.x, pos.y);
+                    ctx.lineWidth = 2;
+                    ctx.lineCap = 'round';
+                    ctx.strokeStyle = state.annotationColor;
+                } else if (state.selectedTool === 'eraser') {
+                    isDrawing = true; // Use isDrawing flag for eraser drag
+                    eraseAt(pos, pageNum, canvas);
+                }
+            }
+            
+            function draw(e) {
+                if (!isDrawing) return;
+                const pos = getMousePos(canvas, e);
+
+                if (state.selectedTool === 'draw') {
+                    ctx.lineTo(pos.x, pos.y);
+                    ctx.stroke();
+                    currentPath.push({x: pos.x, y: pos.y});
+                } else if (state.selectedTool === 'eraser') {
+                    eraseAt(pos, pageNum, canvas);
+                }
+            }
+            
+            function stopDrawing() {
+                if (!isDrawing) return;
+                isDrawing = false;
+                
+                // Save path if drawing
+                if (state.selectedTool === 'draw' && currentPath.length > 1) {
+                    const pageDrawings = state.drawings[pageNum] || [];
+                    pageDrawings.push({
+                        color: state.annotationColor,
+                        width: 2,
+                        path: currentPath
+                    });
+                    state.drawings[pageNum] = pageDrawings;
+                    localStorage.setItem('pdf-drawings', JSON.stringify(state.drawings));
+                }
+            }
+            
+            function eraseAt(pos, pageNum, canvas) {
+                const pageDrawings = state.drawings[pageNum];
+                if (!pageDrawings) return;
+                
+                const threshold = 10; // eraser radius
+                let changed = false;
+                
+                const newDrawings = pageDrawings.filter(drawing => {
+                    // Check if any point in the path is close to the mouse
+                    const hit = drawing.path.some(pt => {
+                        const dist = Math.hypot(pt.x - pos.x, pt.y - pos.y);
+                        return dist < threshold;
+                    });
+                    if (hit) changed = true;
+                    return !hit;
+                });
+                
+                if (changed) {
+                    state.drawings[pageNum] = newDrawings;
+                    localStorage.setItem('pdf-drawings', JSON.stringify(state.drawings));
+                    
+                    // Re-render canvas
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    renderDrawings(canvas, pageNum);
+                }
+            }
+            
+            canvas.addEventListener('mousedown', startDrawing);
+            canvas.addEventListener('mousemove', draw);
+            canvas.addEventListener('mouseup', stopDrawing);
+            canvas.addEventListener('mouseout', stopDrawing);
+            
+            // Touch support
+            canvas.addEventListener('touchstart', (e) => {
+                if (state.selectedTool === 'draw' || state.selectedTool === 'eraser') e.preventDefault();
+                startDrawing(e.touches[0]);
+            }, { passive: false });
+            
+            canvas.addEventListener('touchmove', (e) => {
+                 if (state.selectedTool === 'draw' || state.selectedTool === 'eraser') e.preventDefault();
+                draw(e.touches[0]);
+            }, { passive: false });
+            
+            canvas.addEventListener('touchend', stopDrawing);
+        }
+
+        function renderDrawings(canvas, pageNum) {
+            const pageDrawings = state.drawings[pageNum];
+            if (!pageDrawings) return;
+            
+            const ctx = canvas.getContext('2d');
+            
+            pageDrawings.forEach(drawing => {
+                ctx.beginPath();
+                ctx.lineWidth = drawing.width || 2;
+                ctx.lineCap = 'round';
+                ctx.strokeStyle = drawing.color;
+                
+                if (drawing.path.length > 0) {
+                    ctx.moveTo(drawing.path[0].x, drawing.path[0].y);
+                    for (let i = 1; i < drawing.path.length; i++) {
+                        ctx.lineTo(drawing.path[i].x, drawing.path[i].y);
+                    }
+                    ctx.stroke();
+                }
+            });
+        }
+
 
         async function renderAllPages() {
             elements.container.innerHTML = '';
@@ -1872,6 +2189,10 @@
         document.getElementById('zoom-out').addEventListener('click', zoomOut);
         elements.zoomSelect.addEventListener('change', (e) => setZoom(e.target.value));
         
+        // Tools
+        document.getElementById('tool-hand').addEventListener('click', () => setActiveTool('hand'));
+        document.getElementById('tool-select').addEventListener('click', () => setActiveTool('select'));
+
         // View & Rotate
         document.getElementById('view-mode').addEventListener('click', toggleViewMode);
         document.getElementById('rotate-cw').addEventListener('click', rotate);
@@ -1896,9 +2217,20 @@
         // Annotations
         document.getElementById('toggle-annotations').addEventListener('click', toggleAnnotationsPanel);
         document.getElementById('close-annotations').addEventListener('click', toggleAnnotationsPanel);
-        document.querySelectorAll('.annotation-tool').forEach(tool => {
-            tool.addEventListener('click', () => selectAnnotationTool(tool.dataset.tool));
+        
+        // Annotation Tools Selection
+        document.querySelectorAll('.annotation-tool').forEach(toolBtn => {
+            toolBtn.addEventListener('click', () => {
+                const tool = toolBtn.dataset.tool;
+                // If clicking active tool, toggle off to 'select'
+                if (state.selectedTool === tool) {
+                    setActiveTool('select');
+                } else {
+                    setActiveTool(tool);
+                }
+            });
         });
+
         document.querySelectorAll('.color-option').forEach(opt => {
             opt.addEventListener('click', () => selectAnnotationColor(opt.dataset.color));
         });
@@ -1925,7 +2257,7 @@
         });
         
         document.getElementById('ctx-highlight').addEventListener('click', () => {
-            selectAnnotationTool('highlight');
+            setActiveTool('highlight');
             toggleAnnotationsPanel();
         });
         
@@ -1962,6 +2294,21 @@
                 return;
             }
             
+            // Tools
+            if (e.key.toLowerCase() === 'h') {
+                setActiveTool('hand');
+            }
+            if (e.key.toLowerCase() === 'v') {
+                setActiveTool('select');
+            }
+            if (e.key.toLowerCase() === 'e') {
+                 // Check if annotation panel is open, or just open it
+                 if (!elements.annotationsPanel.classList.contains('open')) {
+                     toggleAnnotationsPanel();
+                 }
+                 setActiveTool('eraser');
+            }
+
             // Navigation
             if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
                 e.preventDefault();
@@ -2084,7 +2431,10 @@
         // INITIALIZATION
         // ==========================================
         
+        // Initialize with select tool
+        setActiveTool('select');
         loadPDF();
+
     </script>
 </body>
 </html>
