@@ -11,6 +11,12 @@ def settings():
         # --- Handle NeetPrep Toggle ---
         neetprep_enabled = 1 if request.form.get('neetprep_enabled') else 0
         
+        # --- Handle V2 Default Toggle ---
+        v2_default = 1 if request.form.get('v2_default') else 0
+        
+        # --- Handle Magnifier Toggle ---
+        magnifier_enabled = 1 if request.form.get('magnifier_enabled') else 0
+        
         # --- Handle DPI Setting ---
         dpi_input = request.form.get('dpi')
         if not dpi_input:
@@ -41,12 +47,14 @@ def settings():
 
         # --- Update Database ---
         conn = get_db_connection()
-        conn.execute('UPDATE users SET neetprep_enabled = ?, dpi = ?, color_rm_dpi = ? WHERE id = ?', (neetprep_enabled, dpi, color_rm_dpi, current_user.id))
+        conn.execute('UPDATE users SET neetprep_enabled = ?, v2_default = ?, magnifier_enabled = ?, dpi = ?, color_rm_dpi = ? WHERE id = ?', (neetprep_enabled, v2_default, magnifier_enabled, dpi, color_rm_dpi, current_user.id))
         conn.commit()
         conn.close()
         
         # --- Update current_user object for the session ---
         current_user.neetprep_enabled = neetprep_enabled
+        current_user.v2_default = v2_default
+        current_user.magnifier_enabled = magnifier_enabled
         current_user.dpi = dpi
         current_user.color_rm_dpi = color_rm_dpi
         

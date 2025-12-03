@@ -145,7 +145,7 @@
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <div>
                         <i class="bi bi-file-earmark-text me-2"></i>
-                        <a href="/view_pdf/{{ pdf.filename }}" target="_blank" class="text-white text-decoration-none">
+                        <a href="{{ '/view_pdf_v2/' if current_user.v2_default else '/view_pdf/' }}{{ pdf.filename }}" target="_blank" class="text-white text-decoration-none">
                             <span class="fw-bold pdf-filename">{{ pdf.filename }}</span>
                         </a>
                         <a href="intent://{{ request.host }}{{ url_for('main.download_file', filename=pdf.filename) }}#Intent;scheme={{ request.scheme }};action=android.intent.action.VIEW;type=application/pdf;end"

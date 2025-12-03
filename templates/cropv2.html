@@ -13,6 +13,7 @@
             --slider-height: 90px;
             --bg-dark: #121212;
             --surface-color: #1e1e1e;
+            --lens-size: 140px; /* Size of the magnifier DOM element */
         }
 
         html, body {
@@ -44,49 +45,13 @@
             z-index: 50;
         }
 
-        .header-title {
-            font-size: 1rem;
-            font-weight: 600;
-            margin: 0;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            color: #fff;
-        }
-
-        .header-actions {
-            display: flex;
-            gap: 12px;
-        }
-
-        .header-actions .btn {
-            min-height: 40px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
+        .header-title { font-size: 1rem; font-weight: 600; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #fff; }
+        .header-actions { display: flex; gap: 12px; }
+        .header-actions .btn { min-height: 40px; display: flex; align-items: center; justify-content: center; }
 
         /* --- 2. WORKSPACE --- */
-        .content-wrapper {
-            flex: 1;
-            position: relative;
-            background-color: #181a1c;
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-            width: 100%;
-        }
-
-        .image-pane {
-            flex-grow: 1;
-            position: relative;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            overflow: hidden;
-            width: 100%;
-            height: 100%;
-        }
+        .content-wrapper { flex: 1; position: relative; background-color: #181a1c; overflow: hidden; display: flex; flex-direction: column; width: 100%; }
+        .image-pane { flex-grow: 1; position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; width: 100%; height: 100%; }
 
         #crop-area {
             position: relative;
@@ -96,10 +61,7 @@
             -webkit-user-select: none;
         }
 
-        #main-image {
-            display: block;
-            pointer-events: none;
-        }
+        #main-image { display: block; pointer-events: none; }
 
         #draw-canvas {
             position: absolute;
@@ -110,57 +72,42 @@
             touch-action: none;
         }
 
+        /* --- MAGNIFIER LENS --- */
+        #magnifier {
+            position: absolute;
+            width: var(--lens-size);
+            height: var(--lens-size);
+            border: 3px solid #fff;
+            border-radius: 50%;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.6), inset 0 0 20px rgba(0,0,0,0.2);
+            pointer-events: none;
+            display: none;
+            z-index: 1000;
+            background-repeat: no-repeat;
+            background-color: #000;
+            overflow: hidden;
+        }
+        
+        /* Crosshair inside magnifier */
+        #magnifier::after {
+            content: ''; position: absolute; top: 50%; left: 50%; width: 12px; height: 12px;
+            border-left: 2px solid rgba(255,50,50,0.8);
+            border-top: 2px solid rgba(255,50,50,0.8);
+            transform: translate(-50%, -50%);
+        }
+
         /* --- 3. THUMBNAILS --- */
         .thumbnail-bar {
-            height: var(--slider-height);
-            flex-shrink: 0;
-            background: #212529;
-            border-top: 1px solid #495057;
-            display: flex;
-            align-items: center;
-            padding: 0 10px;
-            padding-bottom: env(safe-area-inset-bottom);
-            gap: 10px;
-            overflow-x: auto;
-            z-index: 40;
+            height: var(--slider-height); flex-shrink: 0; background: #212529; border-top: 1px solid #495057; display: flex; align-items: center; padding: 0 10px; padding-bottom: env(safe-area-inset-bottom); gap: 10px; overflow-x: auto; z-index: 40;
         }
-        
-        .thumb-item {
-            height: 60px;
-            min-width: 45px;
-            border-radius: 6px;
-            overflow: hidden;
-            position: relative;
-            border: 2px solid transparent;
-            opacity: 0.6;
-            background: #000;
-            flex-shrink: 0;
-        }
+        .thumb-item { height: 60px; min-width: 45px; border-radius: 6px; overflow: hidden; position: relative; border: 2px solid transparent; opacity: 0.6; background: #000; flex-shrink: 0; }
         .thumb-item.active { border-color: #0d6efd; opacity: 1; transform: scale(1.05); }
-        
-        .thumb-item img { 
-            width: 100%; 
-            height: 100%; 
-            object-fit: cover; 
-            opacity: 0; 
-            transition: opacity 0.3s ease-in;
-        }
+        .thumb-item img { width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 0.3s ease-in; }
         .thumb-item img.loaded { opacity: 1; }
         .thumb-number { position: absolute; bottom: 0; right: 0; background: rgba(0,0,0,0.7); color: #fff; font-size: 10px; padding: 2px 4px; }
 
         /* --- FLOATING UI --- */
-        #box-toolbar {
-            position: absolute;
-            background: rgba(33, 37, 41, 0.95);
-            border: 1px solid #6c757d;
-            border-radius: 50px;
-            padding: 8px 16px;
-            display: none;
-            gap: 16px;
-            backdrop-filter: blur(5px);
-            z-index: 100;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-        }
+        #box-toolbar { position: absolute; background: rgba(33, 37, 41, 0.95); border: 1px solid #6c757d; border-radius: 50px; padding: 8px 16px; display: none; gap: 16px; backdrop-filter: blur(5px); z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
         #box-toolbar button { background: transparent; border: none; color: #e9ecef; width: 32px; height: 32px; font-size: 1.4rem; padding: 0; display: flex; align-items: center; justify-content: center; }
         #box-toolbar button:active { transform: scale(0.9); color: #fff; }
         #box-toolbar button.delete-btn { color: #dc3545; }
@@ -168,13 +115,7 @@
         .fab-container { position: absolute; bottom: 20px; right: 20px; z-index: 45; }
         .fab-btn { width: 48px; height: 48px; border-radius: 50%; background: #212529; border: 1px solid #495057; color: white; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
         
-        .filters-panel {
-            position: absolute; bottom: 60px; right: 0;
-            background: #212529; border-radius: 12px;
-            padding: 16px; width: 220px;
-            box-shadow: 0 5px 20px rgba(0,0,0,0.6);
-            display: none; border: 1px solid #495057;
-        }
+        .filters-panel { position: absolute; bottom: 60px; right: 0; background: #212529; border-radius: 12px; padding: 16px; width: 220px; box-shadow: 0 5px 20px rgba(0,0,0,0.6); display: none; border: 1px solid #495057; }
         .filters-panel.show { display: block; }
         .form-range { height: 4px; }
         
@@ -184,6 +125,7 @@
     </style>
 </head>
 <body>
+    {% include '_navbar.html' %}
 
     <header class="app-header">
         <h1 class="header-title"><i class="bi bi-bounding-box me-2"></i>Page {{ image_index + 1 }} / {{ total_pages }}</h1>
@@ -198,6 +140,7 @@
         <div class="image-pane" id="imagePane">
             <div id="crop-area">
                 <img id="main-image" src="/image/upload/{{ image_info.filename }}" alt="Page" crossorigin="anonymous">
+                <div id="magnifier"></div>
                 <canvas id="draw-canvas"></canvas>
                 
                 <div id="box-toolbar">
@@ -208,8 +151,28 @@
                 </div>
             </div>
 
-            <div class="fab-container">
-                <div class="filters-panel" id="filtersPanel">
+    <!-- Floating Actions -->
+    <div class="fab-container">
+        <div class="filters-panel" id="dataPanel" style="bottom: 130px;">
+            <div id="no-selection-msg" class="text-center text-muted small py-3">Select a box to edit</div>
+            <div id="data-form">
+                <div class="mb-2"><label class="small text-secondary">Q. No</label><input type="text" class="form-control form-control-sm bg-dark text-white border-secondary" id="box-q-num"></div>
+                <div class="mb-2"><label class="small text-secondary">Status</label>
+                    <select class="form-select form-select-sm bg-dark text-white border-secondary" id="box-status">
+                        <option value="unattempted">Unattempted</option>
+                        <option value="correct">Correct</option>
+                        <option value="wrong">Wrong</option>
+                    </select>
+                </div>
+                <div class="row g-2 mb-0">
+                    <div class="col-6"><label class="small text-secondary">Marked</label><input type="text" class="form-control form-control-sm bg-dark text-white border-secondary" id="box-marked"></div>
+                    <div class="col-6"><label class="small text-secondary">Actual</label><input type="text" class="form-control form-control-sm bg-dark text-white border-secondary" id="box-actual"></div>
+                </div>
+            </div>
+        </div>
+        <button class="fab-btn" id="dataToggle" title="Data Entry"><i class="bi bi-pencil-square"></i></button>
+
+        <div class="filters-panel" id="filtersPanel">
                     <div class="mb-3"><label class="small text-secondary d-flex justify-content-between">Brightness <span id="val-b" class="text-white">0</span></label><input type="range" class="form-range" id="brightness" min="-100" max="100" value="0" step="5"></div>
                     <div class="mb-3"><label class="small text-secondary d-flex justify-content-between">Contrast <span id="val-c" class="text-white">1.0</span></label><input type="range" class="form-range" id="contrast" min="0.5" max="2.5" step="0.05" value="1.0"></div>
                     <div class="mb-0"><label class="small text-secondary d-flex justify-content-between">Gamma <span id="val-g" class="text-white">1.0</span></label><input type="range" class="form-range" id="gamma" min="0.2" max="2.2" step="0.1" value="1.0"></div>
@@ -241,105 +204,59 @@
             userId: '{{ user_id }}',
             imageIndex: parseInt('{{ image_index }}'),
             totalPages: parseInt('{{ total_pages }}'),
+            enableMagnifier: {{ 'true' if current_user.magnifier_enabled else 'false' }}
         };
         const storageKey = CONFIG.userId ? `cropState_${CONFIG.userId}_${CONFIG.sessionId}_${CONFIG.imageIndex}` : `cropState_${CONFIG.sessionId}_${CONFIG.imageIndex}`;
 
-        // --- INDEXED DB CACHE MANAGER ---
+        // --- INDEXED DB CACHE ---
         const ThumbCache = {
-            DB_NAME: 'PDF_Crop_Thumbs',
-            STORE_NAME: 'images',
-            EXPIRY_MS: 2 * 24 * 60 * 60 * 1000, // 2 Days
-
+            DB_NAME: 'PDF_Crop_Thumbs', STORE_NAME: 'images', EXPIRY_MS: 2 * 24 * 60 * 60 * 1000,
             async open() {
                 return new Promise((resolve, reject) => {
                     const req = indexedDB.open(this.DB_NAME, 1);
-                    req.onupgradeneeded = (e) => {
-                        const db = e.target.result;
-                        if (!db.objectStoreNames.contains(this.STORE_NAME)) {
-                            db.createObjectStore(this.STORE_NAME, { keyPath: 'url' });
-                        }
-                    };
-                    req.onsuccess = (e) => resolve(e.target.result);
-                    req.onerror = (e) => reject(e);
+                    req.onupgradeneeded = (e) => { const db = e.target.result; if (!db.objectStoreNames.contains(this.STORE_NAME)) db.createObjectStore(this.STORE_NAME, { keyPath: 'url' }); };
+                    req.onsuccess = (e) => resolve(e.target.result); req.onerror = (e) => reject(e);
                 });
             },
-
             async cleanup() {
                 const db = await this.open();
                 return new Promise((resolve) => {
-                    const tx = db.transaction(this.STORE_NAME, 'readwrite');
-                    const store = tx.objectStore(this.STORE_NAME);
-                    const now = Date.now();
+                    const tx = db.transaction(this.STORE_NAME, 'readwrite'); const store = tx.objectStore(this.STORE_NAME); const now = Date.now();
                     const req = store.openCursor();
-
-                    req.onsuccess = (e) => {
-                        const cursor = e.target.result;
-                        if (cursor) {
-                            if ((now - cursor.value.timestamp) > this.EXPIRY_MS) {
-                                cursor.delete();
-                            }
-                            cursor.continue();
-                        } else {
-                            resolve();
-                        }
-                    };
+                    req.onsuccess = (e) => { const cursor = e.target.result; if (cursor) { if ((now - cursor.value.timestamp) > this.EXPIRY_MS) cursor.delete(); cursor.continue(); } else resolve(); };
                     req.onerror = () => resolve();
                 });
             },
-
             async loadImage(url, imgElement) {
                 try {
-                    const db = await this.open();
-                    const txRead = db.transaction(this.STORE_NAME, 'readonly');
+                    const db = await this.open(); const txRead = db.transaction(this.STORE_NAME, 'readonly');
                     const req = txRead.objectStore(this.STORE_NAME).get(url);
-
                     req.onsuccess = async (e) => {
                         const record = e.target.result;
-                        if (record) {
-                            imgElement.src = URL.createObjectURL(record.blob);
-                            imgElement.classList.add('loaded');
-                        } else {
+                        if (record) { imgElement.src = URL.createObjectURL(record.blob); imgElement.classList.add('loaded'); } 
+                        else {
                             try {
-                                const response = await fetch(url);
-                                const blob = await response.blob();
-                                const txWrite = db.transaction(this.STORE_NAME, 'readwrite');
-                                txWrite.objectStore(this.STORE_NAME).put({
-                                    url: url, blob: blob, timestamp: Date.now(), sessionId: CONFIG.sessionId
-                                });
-                                imgElement.src = URL.createObjectURL(blob);
-                                imgElement.classList.add('loaded');
-                            } catch (err) {
-                                imgElement.src = url; // Fallback
-                                imgElement.classList.add('loaded');
-                            }
+                                const response = await fetch(url); const blob = await response.blob();
+                                const txWrite = db.transaction(this.STORE_NAME, 'readwrite'); txWrite.objectStore(this.STORE_NAME).put({ url: url, blob: blob, timestamp: Date.now(), sessionId: CONFIG.sessionId });
+                                imgElement.src = URL.createObjectURL(blob); imgElement.classList.add('loaded');
+                            } catch (err) { imgElement.src = url; imgElement.classList.add('loaded'); }
                         }
                     };
-                } catch (err) {
-                    imgElement.src = url; // Fallback
-                    imgElement.classList.add('loaded');
-                }
+                } catch (err) { imgElement.src = url; imgElement.classList.add('loaded'); }
             },
-
             async initAllThumbs() {
-                await this.cleanup(); 
-                const images = document.querySelectorAll('.thumb-img');
-                const process = (img) => {
-                    const url = img.getAttribute('data-src');
-                    if(url) this.loadImage(url, img);
-                };
-                if ('requestIdleCallback' in window) images.forEach(img => requestIdleCallback(() => process(img)));
-                else images.forEach(img => setTimeout(() => process(img), 10));
+                await this.cleanup(); const images = document.querySelectorAll('.thumb-img');
+                const process = (img) => { const url = img.getAttribute('data-src'); if(url) this.loadImage(url, img); };
+                if ('requestIdleCallback' in window) images.forEach(img => requestIdleCallback(() => process(img))); else images.forEach(img => setTimeout(() => process(img), 10));
             }
         };
 
         // --- APP LOGIC ---
         const els = {
-            image: document.getElementById('main-image'),
-            imagePane: document.getElementById('imagePane'),
-            cropArea: document.getElementById('crop-area'),
-            canvas: document.getElementById('draw-canvas'),
-            ctx: document.getElementById('draw-canvas').getContext('2d'),
-            toolbar: document.getElementById('box-toolbar')
+            image: document.getElementById('main-image'), imagePane: document.getElementById('imagePane'),
+            cropArea: document.getElementById('crop-area'), canvas: document.getElementById('draw-canvas'),
+            ctx: document.getElementById('draw-canvas').getContext('2d'), toolbar: document.getElementById('box-toolbar'),
+            magnifier: document.getElementById('magnifier')
         };
 
         let boxes = [];
@@ -349,50 +266,46 @@
         let dragTarget = null; 
         let startPositions = {};
         let stitchBuffer = JSON.parse(localStorage.getItem('gemini_stitch_buffer') || 'null');
+        
+        // ZOOM STATE
+        const LENS_SIZE_PX = 140; // Must match CSS
+        const ZOOM_LEVEL = 2.5;
+        let isMagnifying = false;
+        let magnifierPos = { x: 0, y: 0 }; // Normalized 0-1
 
         function init() {
-            ThumbCache.initAllThumbs(); // Cache Logic
-
-            if (els.image.complete && els.image.naturalWidth > 0) fitImage();
-            else els.image.onload = fitImage;
-            
-            const ro = new ResizeObserver(() => requestAnimationFrame(fitImage));
-            ro.observe(els.imagePane);
-            
-            loadSettings();
-            loadBoxes();
-            
-            setupListeners(); // Setup Events
-            updateStitchButton();
-            
-            const active = document.querySelector('.thumb-item.active');
-            if(active) active.scrollIntoView({inline:'center'});
+            ThumbCache.initAllThumbs();
+            if (els.image.complete && els.image.naturalWidth > 0) fitImage(); else els.image.onload = fitImage;
+            const ro = new ResizeObserver(() => requestAnimationFrame(fitImage)); ro.observe(els.imagePane);
+            loadSettings(); loadBoxes(); setupListeners(); updateStitchButton();
+            const active = document.querySelector('.thumb-item.active'); if(active) active.scrollIntoView({inline:'center'});
         }
 
         function fitImage() {
             if (!els.image.naturalWidth) return;
             const rect = els.imagePane.getBoundingClientRect();
             const padding = 10;
-            const availableW = rect.width - padding;
-            const availableH = rect.height - padding;
+            const availableW = rect.width - padding; const availableH = rect.height - padding;
             const scale = Math.min(availableW / els.image.naturalWidth, availableH / els.image.naturalHeight);
             
-            const finalW = Math.floor(els.image.naturalWidth * scale);
-            const finalH = Math.floor(els.image.naturalHeight * scale);
-
-            els.cropArea.style.width = `${finalW}px`;
-            els.cropArea.style.height = `${finalH}px`;
-            els.image.style.width = `${finalW}px`;
-            els.image.style.height = `${finalH}px`;
-            els.canvas.width = finalW;
-            els.canvas.height = finalH;
+            const finalW = Math.floor(els.image.naturalWidth * scale); const finalH = Math.floor(els.image.naturalHeight * scale);
+            els.cropArea.style.width = `${finalW}px`; els.cropArea.style.height = `${finalH}px`;
+            els.image.style.width = `${finalW}px`; els.image.style.height = `${finalH}px`;
+            els.canvas.width = finalW; els.canvas.height = finalH;
+            
+            if (CONFIG.enableMagnifier) {
+                els.magnifier.style.backgroundImage = `url('${els.image.src}')`;
+            }
 
             if (selectedBoxIndex !== -1) updateToolbar();
             drawBoxes();
         }
 
+        // --- DRAWING ENGINE ---
         function drawBoxes() {
             els.ctx.clearRect(0, 0, els.canvas.width, els.canvas.height);
+            
+            // 1. Draw Boxes
             boxes.forEach((box, index) => {
                 const isSelected = index === selectedBoxIndex;
                 const isStitched = box.remote_stitch_source != null;
@@ -403,57 +316,79 @@
                 els.ctx.fillStyle = isSelected ? 'rgba(255, 77, 77, 0.15)' : (isStitched ? 'rgba(13, 202, 240, 0.2)' : 'rgba(255, 193, 7, 0.1)');
                 
                 els.ctx.beginPath();
-                els.ctx.moveTo(p(box.tl).x, p(box.tl).y);
-                els.ctx.lineTo(p(box.tr).x, p(box.tr).y);
-                els.ctx.lineTo(p(box.br).x, p(box.br).y);
-                els.ctx.lineTo(p(box.bl).x, p(box.bl).y);
-                els.ctx.closePath();
-                els.ctx.stroke();
-                els.ctx.fill();
+                els.ctx.moveTo(p(box.tl).x, p(box.tl).y); els.ctx.lineTo(p(box.tr).x, p(box.tr).y);
+                els.ctx.lineTo(p(box.br).x, p(box.br).y); els.ctx.lineTo(p(box.bl).x, p(box.bl).y);
+                els.ctx.closePath(); els.ctx.stroke(); els.ctx.fill();
 
                 if (isSelected) {
                     els.ctx.fillStyle = 'white';
-                    ['tl','tr','bl','br'].forEach(k => {
-                        els.ctx.beginPath(); els.ctx.arc(p(box[k]).x, p(box[k]).y, 8, 0, Math.PI*2); els.ctx.fill(); els.ctx.stroke();
-                    });
+                    ['tl','tr','bl','br'].forEach(k => { els.ctx.beginPath(); els.ctx.arc(p(box[k]).x, p(box[k]).y, 8, 0, Math.PI*2); els.ctx.fill(); els.ctx.stroke(); });
                 }
                 
-                const cx = (p(box.tl).x + p(box.br).x)/2;
-                const cy = (p(box.tl).y + p(box.br).y)/2;
+                const cx = (p(box.tl).x + p(box.br).x)/2; const cy = (p(box.tl).y + p(box.br).y)/2;
                 els.ctx.font = "bold 24px system-ui"; els.ctx.fillStyle = "white"; els.ctx.shadowColor="rgba(0,0,0,0.8)"; els.ctx.shadowBlur=6;
                 els.ctx.fillText(index + 1, cx - 6, cy + 8);
                 if(isStitched) { els.ctx.font = "20px system-ui"; els.ctx.fillText("🔗", p(box.tr).x - 28, p(box.tr).y + 24); }
                 els.ctx.shadowBlur=0;
             });
+
+            // 2. Draw Magnifier Source Region Indicator
+            if (isMagnifying && CONFIG.enableMagnifier) {
+                const px = magnifierPos.x * els.canvas.width;
+                const py = magnifierPos.y * els.canvas.height;
+                
+                // Calculate radius on canvas that matches the lens view
+                // Lens is 140px on screen. Zoom is 2.5x. 
+                // So the source circle diameter is 140 / 2.5 = 56px. Radius = 28px.
+                const sourceRadius = (LENS_SIZE_PX / ZOOM_LEVEL) / 2;
+
+                els.ctx.beginPath();
+                els.ctx.arc(px, py, sourceRadius, 0, Math.PI * 2);
+                
+                // Style: White stroke + Black Shadow for visibility on all backgrounds
+                els.ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+                els.ctx.lineWidth = 1.5;
+                els.ctx.shadowColor = 'rgba(0,0,0,1)';
+                els.ctx.shadowBlur = 4;
+                els.ctx.fillStyle = 'rgba(255, 255, 255, 0.15)'; // Faint transparent fill
+                
+                els.ctx.stroke();
+                els.ctx.fill();
+                els.ctx.shadowBlur = 0; // Reset
+            }
         }
 
-        // --- EVENTS ---
-        function setupListeners() {
-            // Canvas Interaction
-            els.canvas.addEventListener('mousedown', onDown);
-            els.canvas.addEventListener('touchstart', onDown, {passive:false});
-            document.addEventListener('mousemove', onMove);
-            document.addEventListener('touchmove', onMove, {passive:false});
-            document.addEventListener('mouseup', onUp);
-            document.addEventListener('touchend', onUp);
+        // --- MAGNIFIER LOGIC ---
+        function updateMagnifierState(x, y, active) {
+            if (!CONFIG.enableMagnifier) return;
 
-            // Button Actions
-            document.getElementById('backBtn').onclick = () => location.href = CONFIG.imageIndex>0 ? `/cropv2/${CONFIG.sessionId}/${CONFIG.imageIndex-1}` : `/v2`;
-            document.getElementById('clearBtn').onclick = () => { if(confirm("Clear?")) { boxes=[]; selectedBoxIndex=-1; saveBoxes(); drawBoxes(); els.toolbar.style.display='none'; } };
-            document.getElementById('delete-btn').onclick = (e) => { e.stopPropagation(); boxes.splice(selectedBoxIndex,1); selectedBoxIndex=-1; els.toolbar.style.display='none'; saveBoxes(); drawBoxes(); };
-            document.getElementById('move-up-btn').onclick = (e) => { e.stopPropagation(); if(selectedBoxIndex<boxes.length-1) { const b=boxes.splice(selectedBoxIndex,1)[0]; boxes.splice(selectedBoxIndex+1,0,b); selectedBoxIndex++; saveBoxes(); drawBoxes(); updateToolbar(); }};
-            document.getElementById('move-down-btn').onclick = (e) => { e.stopPropagation(); if(selectedBoxIndex>0) { const b=boxes.splice(selectedBoxIndex,1)[0]; boxes.splice(selectedBoxIndex-1,0,b); selectedBoxIndex--; saveBoxes(); drawBoxes(); updateToolbar(); }};
-            document.getElementById('stitch-btn').onclick = handleStitch;
-            
-            // Process
-            document.getElementById('processBtn').onclick = processPage;
+            isMagnifying = active;
+            magnifierPos = { x, y };
 
-            // Filters
-            document.getElementById('filterToggle').onclick = () => document.getElementById('filtersPanel').classList.toggle('show');
-            ['brightness','contrast','gamma'].forEach(id => document.getElementById(id).addEventListener('input', updateFilters));
+            if (active) {
+                const lens = els.magnifier;
+                const w = els.canvas.width; const h = els.canvas.height;
+                const px = x * w; const py = y * h;
+                
+                // Float above finger
+                let top = py - LENS_SIZE_PX - 50; 
+                if (top < 0) top = py + 50; 
+
+                lens.style.display = 'block';
+                lens.style.left = (px - LENS_SIZE_PX/2) + 'px';
+                lens.style.top = top + 'px';
+
+                // Zoom bg
+                lens.style.backgroundSize = `${w * ZOOM_LEVEL}px ${h * ZOOM_LEVEL}px`;
+                const bgX = (px * ZOOM_LEVEL) - (LENS_SIZE_PX / 2);
+                const bgY = (py * ZOOM_LEVEL) - (LENS_SIZE_PX / 2);
+                lens.style.backgroundPosition = `-${bgX}px -${bgY}px`;
+            } else {
+                els.magnifier.style.display = 'none';
+            }
         }
 
-        // --- INTERACTION HANDLERS ---
+        // --- INTERACTION ---
         function getPos(e) {
             const rect = els.canvas.getBoundingClientRect();
             const cx = e.touches ? e.touches[0].clientX : e.clientX;
@@ -479,6 +414,9 @@
             if(e.target.closest('#box-toolbar')) return;
             e.preventDefault();
             const {x, y} = getPos(e);
+            
+            updateMagnifierState(x, y, true); // Show Lens + Source Indicator
+
             const hit = hitTest(x, y);
             if (hit) {
                 dragTarget = hit; selectedBoxIndex = hit.index; startPositions = JSON.parse(JSON.stringify(boxes[hit.index]));
@@ -490,24 +428,29 @@
         }
 
         function onMove(e) {
-            if(!isDrawing && !dragTarget) return; // Optimization
-            e.preventDefault();
-            const {x, y} = getPos(e);
-            const dx = x - startX, dy = y - startY;
-            if (dragTarget) {
-                const b = boxes[dragTarget.index];
-                if (dragTarget.type === 'corner') { b[dragTarget.corner].x = x; b[dragTarget.corner].y = y; } 
-                else { ['tl','tr','bl','br'].forEach(k => { b[k].x = startPositions[k].x + dx; b[k].y = startPositions[k].y + dy; }); }
-                drawBoxes(); updateToolbar();
-            } else if (isDrawing) {
-                drawBoxes();
-                const sx = startX * els.canvas.width, sy = startY * els.canvas.height;
-                const w = (x - startX) * els.canvas.width, h = (y - startY) * els.canvas.height;
-                els.ctx.strokeStyle = 'rgba(255, 77, 77, 0.5)'; els.ctx.strokeRect(sx, sy, w, h);
+            if(isDrawing || dragTarget) {
+                 e.preventDefault();
+                 const {x, y} = getPos(e);
+                 updateMagnifierState(x, y, true); // Update positions
+                 
+                 const dx = x - startX, dy = y - startY;
+                 if (dragTarget) {
+                    const b = boxes[dragTarget.index];
+                    if (dragTarget.type === 'corner') { b[dragTarget.corner].x = x; b[dragTarget.corner].y = y; } 
+                    else { ['tl','tr','bl','br'].forEach(k => { b[k].x = startPositions[k].x + dx; b[k].y = startPositions[k].y + dy; }); }
+                    drawBoxes(); updateToolbar();
+                 } else if (isDrawing) {
+                    drawBoxes();
+                    const sx = startX * els.canvas.width, sy = startY * els.canvas.height;
+                    const w = (x - startX) * els.canvas.width, h = (y - startY) * els.canvas.height;
+                    els.ctx.strokeStyle = 'rgba(255, 77, 77, 0.5)'; els.ctx.strokeRect(sx, sy, w, h);
+                 }
             }
         }
 
         function onUp(e) {
+            updateMagnifierState(0, 0, false); // Hide Lens + Source Indicator
+
             if (isDrawing) {
                 const rect = els.canvas.getBoundingClientRect();
                 const cx = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
@@ -531,7 +474,133 @@
         }
 
         // --- HELPERS ---
+        function setupListeners() {
+            els.canvas.addEventListener('mousedown', onDown);
+            els.canvas.addEventListener('touchstart', onDown, {passive:false});
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('touchmove', onMove, {passive:false});
+            document.addEventListener('mouseup', onUp);
+            document.addEventListener('touchend', onUp);
+
+            document.getElementById('backBtn').onclick = () => location.href = CONFIG.imageIndex>0 ? `/cropv2/${CONFIG.sessionId}/${CONFIG.imageIndex-1}` : `/v2`;
+            document.getElementById('clearBtn').onclick = () => { if(confirm("Clear?")) { boxes=[]; selectedBoxIndex=-1; saveBoxes(); drawBoxes(); els.toolbar.style.display='none'; } };
+            document.getElementById('delete-btn').onclick = (e) => { e.stopPropagation(); boxes.splice(selectedBoxIndex,1); selectedBoxIndex=-1; els.toolbar.style.display='none'; saveBoxes(); drawBoxes(); };
+            document.getElementById('move-up-btn').onclick = (e) => { e.stopPropagation(); if(selectedBoxIndex<boxes.length-1) { const b=boxes.splice(selectedBoxIndex,1)[0]; boxes.splice(selectedBoxIndex+1,0,b); selectedBoxIndex++; saveBoxes(); drawBoxes(); updateToolbar(); }};
+            document.getElementById('move-down-btn').onclick = (e) => { e.stopPropagation(); if(selectedBoxIndex>0) { const b=boxes.splice(selectedBoxIndex,1)[0]; boxes.splice(selectedBoxIndex-1,0,b); selectedBoxIndex--; saveBoxes(); drawBoxes(); updateToolbar(); }};
+            document.getElementById('stitch-btn').onclick = handleStitch;
+            document.getElementById('processBtn').onclick = processPage;
+            // Data Entry
+            document.getElementById('dataToggle').onclick = () => {
+                const panel = document.getElementById('dataPanel');
+                if (!panel.classList.contains('show') && selectedBoxIndex === -1 && boxes.length > 0) {
+                    selectedBoxIndex = 0;
+                    updateToolbar();
+                    drawBoxes();
+                }
+                panel.classList.toggle('show');
+            };
+            
+            const dataFields = {
+                'box-q-num': 'question_number',
+                'box-status': 'status',
+                'box-marked': 'marked_solution',
+                'box-actual': 'actual_solution'
+            };
+            
+            Object.keys(dataFields).forEach(id => {
+                document.getElementById(id).addEventListener('input', (e) => {
+                    if (selectedBoxIndex > -1) {
+                        boxes[selectedBoxIndex][dataFields[id]] = e.target.value;
+                        saveBoxes();
+                    }
+                });
+            });
+            
+            // Keyboard Shortcuts
+            document.addEventListener('keydown', (e) => {
+                if (!e.shiftKey) return;
+                const key = e.key.toLowerCase();
+
+                // Navigation
+                if (e.key === 'ArrowRight') {
+                    e.preventDefault();
+                    document.getElementById('processBtn').click();
+                    return;
+                }
+                if (e.key === 'ArrowLeft') {
+                    e.preventDefault();
+                    document.getElementById('backBtn').click();
+                    return;
+                }
+
+                // Box Navigation
+                if (key === 'q') {
+                    e.preventDefault();
+                    if (boxes.length > 0) {
+                        selectedBoxIndex = (selectedBoxIndex + 1) % boxes.length;
+                        updateToolbar();
+                        drawBoxes();
+                    }
+                    return;
+                }
+
+                // Box Actions (Require Selection)
+                if (selectedBoxIndex === -1) return;
+
+                if (key === 'm') {
+                    e.preventDefault();
+                    document.getElementById('box-marked').focus();
+                } else if (key === 'a') {
+                    e.preventDefault();
+                    document.getElementById('box-actual').focus();
+                } else if (key === 'c') {
+                    e.preventDefault();
+                    document.getElementById('box-status').value = 'correct';
+                    boxes[selectedBoxIndex].status = 'correct';
+                    saveBoxes();
+                } else if (key === 'w') {
+                    e.preventDefault();
+                    document.getElementById('box-status').value = 'wrong';
+                    boxes[selectedBoxIndex].status = 'wrong';
+                    saveBoxes();
+                } else if (key === 'u') {
+                    e.preventDefault();
+                    document.getElementById('box-status').value = 'unattempted';
+                    boxes[selectedBoxIndex].status = 'unattempted';
+                    saveBoxes();
+                }
+            });
+
+            // Filters
+            document.getElementById('filterToggle').onclick = () => {
+                document.getElementById('filtersPanel').classList.toggle('show');
+            };
+
+            ['brightness','contrast','gamma'].forEach(id => document.getElementById(id).addEventListener('input', updateFilters));
+        }
+
+        function updateDataPanel() {
+            const b = selectedBoxIndex > -1 ? boxes[selectedBoxIndex] : null;
+            const msg = document.getElementById('no-selection-msg');
+            const form = document.getElementById('data-form');
+            
+            if (!b) {
+                if(msg) msg.style.display = 'block';
+                if(form) form.style.display = 'none';
+                return;
+            }
+            
+            if(msg) msg.style.display = 'none';
+            if(form) form.style.display = 'block';
+
+            document.getElementById('box-q-num').value = b.question_number || '';
+            document.getElementById('box-status').value = b.status || 'unattempted';
+            document.getElementById('box-marked').value = b.marked_solution || '';
+            document.getElementById('box-actual').value = b.actual_solution || '';
+        }
+
         function updateToolbar() {
+            updateDataPanel();
             if (selectedBoxIndex === -1) { els.toolbar.style.display = 'none'; return; }
             const b = boxes[selectedBoxIndex];
             const p = (pt) => ({ x: pt.x * els.canvas.width, y: pt.y * els.canvas.height });
@@ -605,7 +674,9 @@
         function updateFilters() {
             const b = document.getElementById('brightness').value, c = document.getElementById('contrast').value, g = document.getElementById('gamma').value;
             document.getElementById('val-b').innerText=b; document.getElementById('val-c').innerText=c; document.getElementById('val-g').innerText=g;
-            els.image.style.filter = `brightness(${100 + parseFloat(b)}%) contrast(${c})`; localStorage.setItem('pdfFilters', JSON.stringify({b,c,g}));
+            els.image.style.filter = `brightness(${100 + parseFloat(b)}%) contrast(${c})`; 
+            els.magnifier.style.filter = els.image.style.filter;
+            localStorage.setItem('pdfFilters', JSON.stringify({b,c,g}));
         }
         function loadSettings() { const s = JSON.parse(localStorage.getItem('pdfFilters') || '{}'); if(s.b) document.getElementById('brightness').value=s.b; if(s.c) document.getElementById('contrast').value=s.c; if(s.g) document.getElementById('gamma').value=s.g; updateFilters(); }
 

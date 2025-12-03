@@ -6,6 +6,7 @@ import io
 import zipfile
 import threading
 import copy
+import re
 from datetime import datetime, timedelta
 from flask import Blueprint, render_template, request, jsonify, current_app, url_for, send_from_directory, send_file, redirect
 from flask_login import login_required, current_user
@@ -368,6 +369,26 @@ def _parse_curl_command(command):
     current_app.logger.info(f"Parsed URL: {url}, Filename: {output_filename}")
     return url, output_filename
 
+def convert_google_drive_url(url):
+    """
+    Converts a Google Drive view/sharing URL into a direct download URL.
+    Returns the original URL if it's not a Google Drive URL or if conversion fails.
+    """
+    try:
+        # Regex to extract the file ID from common Google Drive URL patterns
+        # Matches: .../file/d/FILE_ID/... or ...?id=FILE_ID...
+        match = re.search(r'/file/d/([a-zA-Z0-9_-]+)|id=([a-zA-Z0-9_-]+)', url)
+        
+        if match:
+            # group(1) matches /file/d/..., group(2) matches ?id=...
+            file_id = match.group(1) or match.group(2)
+            if file_id:
+                return f'https://drive.google.com/uc?export=download&id={file_id}'
+    except Exception as e:
+        current_app.logger.warning(f"Error converting Google Drive URL: {e}")
+    
+    return url
+
 @main_bp.route('/v2/upload', methods=['POST'])
 @login_required
 def v2_upload():
@@ -387,11 +408,27 @@ def v2_upload():
         # Case 2: URL upload
         elif 'pdf_url' in request.form and request.form['pdf_url']:
             pdf_url = request.form['pdf_url']
+            
+            # Handle Google Drive URLs
+            pdf_url = convert_google_drive_url(pdf_url)
+            
             response = requests.get(pdf_url, allow_redirects=True)
             response.raise_for_status()
-            original_filename = os.path.basename(urlparse(pdf_url).path)
-            if not original_filename.lower().endswith('.pdf'):
-                original_filename += '.pdf'
+            
+            # Try to get filename from Content-Disposition header
+            if 'Content-Disposition' in response.headers:
+                cd = response.headers['Content-Disposition']
+                # Simple extraction, can be improved with cgi.parse_header or similar
+                fname_match = re.search(r'filename="?([^";]+)"?', cd)
+                if fname_match:
+                    original_filename = fname_match.group(1)
+            
+            if not original_filename:
+                original_filename = os.path.basename(urlparse(pdf_url).path)
+                
+            if not original_filename or not original_filename.lower().endswith('.pdf'):
+                original_filename = 'downloaded_document.pdf'
+                
             pdf_content = response.content
 
         # Case 3: cURL command upload
@@ -401,6 +438,9 @@ def v2_upload():
             url, filename = _parse_curl_command(command)
             if not url or not filename:
                 return jsonify({'error': f"Could not parse cURL command: {command}"}), 400
+            
+            # Handle Google Drive URLs in cURL too (though unlikely if cURL is used correctly)
+            url = convert_google_drive_url(url)
             
             response = requests.get(url, allow_redirects=True)
             response.raise_for_status()
@@ -800,28 +840,35 @@ def process_crop_v2():
                 'original_filename': page_info['filename'],
                 'original_name': f"Page {page_index + 1} - Q{i + 1}",
                 'processed_filename': crop_filename,
-                'box_id': str(primary_box['id']) # Store box ID for future stitching reference
+                'box_id': str(primary_box['id']), # Store box ID for future stitching reference
+                'question_number': primary_box.get('question_number'),
+                'status': primary_box.get('status'),
+                'marked_solution': primary_box.get('marked_solution'),
+                'actual_solution': primary_box.get('actual_solution')
             })
 
         max_index_result = conn.execute('SELECT MAX(image_index) FROM images WHERE session_id = ?', (session_id,)).fetchone()
         next_index = (max_index_result[0] if max_index_result[0] is not None else -1) + 1
         
-        images_to_insert = []
         for i, p_box in enumerate(processed_boxes):
-            images_to_insert.append((
-                session_id,
-                next_index + i,
-                p_box['original_filename'],
-                p_box['original_name'],
-                p_box['processed_filename'],
-                'cropped',
-                p_box['box_id']
-            ))
-        
-        if images_to_insert:
-            conn.executemany(
+            conn.execute(
                 'INSERT INTO images (session_id, image_index, filename, original_name, processed_filename, image_type, box_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                images_to_insert
+                (session_id, next_index + i, p_box['original_filename'], p_box['original_name'], p_box['processed_filename'], 'cropped', p_box['box_id'])
+            )
+            image_id = conn.execute('SELECT last_insert_rowid()').fetchone()[0]
+            
+            conn.execute(
+                """INSERT INTO questions 
+                   (session_id, image_id, question_number, status, marked_solution, actual_solution) 
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (
+                    session_id, 
+                    image_id, 
+                    p_box.get('question_number'), 
+                    p_box.get('status', 'unattempted'), 
+                    p_box.get('marked_solution'), 
+                    p_box.get('actual_solution')
+                )
             )
         
         conn.commit()
@@ -1588,6 +1635,8 @@ def serve_image(folder, filename):
 @main_bp.route(ROUTE_INDEX)
 def index():
     if current_user.is_authenticated:
+        if getattr(current_user, 'v2_default', 0):
+            return redirect(url_for('main.upload_final_pdf'))
         return redirect(url_for('dashboard.dashboard'))
     return redirect(url_for('auth.login'))
 
@@ -2042,11 +2091,27 @@ def handle_final_pdf_upload():
 
         elif 'pdf_url' in request.form and request.form['pdf_url']:
             pdf_url = request.form['pdf_url']
+            
+            # Handle Google Drive URLs
+            pdf_url = convert_google_drive_url(pdf_url)
+            
             response = requests.get(pdf_url, allow_redirects=True)
             response.raise_for_status()
-            original_filename = os.path.basename(urlparse(pdf_url).path)
-            if not original_filename.lower().endswith('.pdf'):
-                original_filename += '.pdf'
+            
+            original_filename = None
+            # Try to get filename from Content-Disposition header
+            if 'Content-Disposition' in response.headers:
+                cd = response.headers['Content-Disposition']
+                fname_match = re.search(r'filename="?([^";]+)"?', cd)
+                if fname_match:
+                    original_filename = fname_match.group(1)
+            
+            if not original_filename:
+                original_filename = os.path.basename(urlparse(pdf_url).path)
+                
+            if not original_filename or not original_filename.lower().endswith('.pdf'):
+                original_filename = 'downloaded_document.pdf'
+                
             process_and_save_pdf(response.content, original_filename)
 
         elif 'curl_command' in request.form and request.form['curl_command']:
@@ -2058,6 +2123,9 @@ def handle_final_pdf_upload():
                 if not url or not filename:
                     current_app.logger.warning(f"Could not parse cURL command: {command}")
                     continue
+                
+                # Handle Google Drive URLs in cURL
+                url = convert_google_drive_url(url)
                 
                 response = requests.get(url, allow_redirects=True)
                 response.raise_for_status()

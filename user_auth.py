@@ -5,7 +5,7 @@ from utils import get_db_connection
 
 class User(UserMixin):
     """User model for Flask-Login."""
-    def __init__(self, id, username, email, password_hash, neetprep_enabled, dpi, color_rm_dpi):
+    def __init__(self, id, username, email, password_hash, neetprep_enabled, dpi, color_rm_dpi, v2_default=0, magnifier_enabled=1):
         self.id = id
         self.username = username
         self.email = email
@@ -13,6 +13,8 @@ class User(UserMixin):
         self.neetprep_enabled = neetprep_enabled
         self.dpi = dpi
         self.color_rm_dpi = color_rm_dpi
+        self.v2_default = v2_default
+        self.magnifier_enabled = magnifier_enabled
 
     @staticmethod
     def get(user_id):
@@ -20,7 +22,18 @@ class User(UserMixin):
         user_row = conn.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone()
         conn.close()
         if user_row:
-            return User(user_row['id'], user_row['username'], user_row['email'], user_row['password_hash'], user_row['neetprep_enabled'], user_row['dpi'], dict(user_row).get('color_rm_dpi', 200))
+            user_data = dict(user_row)
+            return User(
+                user_data['id'], 
+                user_data['username'], 
+                user_data['email'], 
+                user_data['password_hash'], 
+                user_data['neetprep_enabled'], 
+                user_data['dpi'], 
+                user_data.get('color_rm_dpi', 200),
+                user_data.get('v2_default', 0),
+                user_data.get('magnifier_enabled', 1)
+            )
         return None
 
     @staticmethod
@@ -29,7 +42,18 @@ class User(UserMixin):
         user_row = conn.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
         conn.close()
         if user_row:
-            return User(user_row['id'], user_row['username'], user_row['email'], user_row['password_hash'], user_row['neetprep_enabled'], user_row['dpi'], dict(user_row).get('color_rm_dpi', 200))
+            user_data = dict(user_row)
+            return User(
+                user_data['id'], 
+                user_data['username'], 
+                user_data['email'], 
+                user_data['password_hash'], 
+                user_data['neetprep_enabled'], 
+                user_data['dpi'], 
+                user_data.get('color_rm_dpi', 200),
+                user_data.get('v2_default', 0),
+                user_data.get('magnifier_enabled', 1)
+            )
         return None
     
     @staticmethod

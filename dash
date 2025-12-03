@@ -1,818 +1,2637 @@
-<!doctype html>
-<html lang="en" data-bs-theme="dark">
+<!DOCTYPE html>
+<html lang="en">
 <head>
-    <meta charset="utf-8">
-    <!-- Updated viewport: added viewport-fit=cover for notched phones -->
-    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, maximum-scale=1, viewport-fit=cover">
-    <title>Step 2: Draw Boxes ({{ image_index + 1 }} / {{ total_pages }})</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>{{ pdf_title }} - PDF Viewer Pro</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <style>
-        /* --- MOBILE FIRST CSS RESET --- */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
         :root {
-            --header-height: 60px;
-            --controls-height-mobile: 35vh;
-            --controls-width-desktop: 340px;
+            --primary: #3b82f6;
+            --primary-hover: #2563eb;
+            --bg-dark: #1a1a2e;
+            --bg-darker: #16162a;
+            --bg-sidebar: #0f0f1a;
+            --surface: #252542;
+            --surface-hover: #2d2d4a;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --border: #334155;
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --toolbar-height: 56px;
+            --sidebar-width: 280px;
         }
 
-        html, body { 
-            height: 100%; 
-            height: 100dvh; /* Dynamic viewport for mobile browsers */
-            width: 100%; 
-            margin: 0; 
-            padding: 0; 
-            overflow: hidden; 
-            background-color: #181a1c;
-            /* Prevent iOS text size adjustment */
-            -webkit-text-size-adjust: 100%;
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-primary);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
         }
 
-        /* MAIN FLEX CONTAINER */
-        .main-container { 
-            display: flex; 
-            flex-direction: column; 
-            height: 100vh; /* Fallback */
-            height: 100dvh; 
-            width: 100vw; 
-            overflow: hidden; 
+        /* ===== TOOLBAR ===== */
+        #toolbar {
+            height: var(--toolbar-height);
+            background: linear-gradient(135deg, var(--bg-darker) 0%, var(--surface) 100%);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            gap: 16px;
+            z-index: 100;
         }
 
-        /* HEADER */
-        .app-header { 
-            height: var(--header-height); 
-            flex-shrink: 0; 
-            display: flex; 
-            align-items: center; 
-            justify-content: space-between; 
-            padding: 0 16px; /* Touch friendly padding */
-            padding-top: env(safe-area-inset-top); /* Notch support */
-            padding-left: calc(16px + env(safe-area-inset-left));
-            padding-right: calc(16px + env(safe-area-inset-right));
-            background: #2c3034; 
-            border-bottom: 1px solid #495057; 
-        }
-        
-        .header-title { 
-            font-size: 1rem; 
-            font-weight: 600; 
-            margin: 0; 
-            white-space: nowrap; 
-            overflow: hidden; 
-            text-overflow: ellipsis; 
+        .toolbar-group {
+            display: flex;
+            align-items: center;
+            gap: 4px;
         }
 
-        /* Touch-friendly header buttons */
-        .header-actions { 
-            display: flex; 
-            gap: 12px; 
+        .toolbar-divider {
+            width: 1px;
+            height: 24px;
+            background: var(--border);
+            margin: 0 8px;
         }
-        
-        /* Enforce min touch target size on buttons */
-        .header-actions .btn {
-            min-height: 44px;
-            min-width: 44px;
+
+        .btn {
+            background: transparent;
+            border: none;
+            color: var(--text-primary);
+            cursor: pointer;
+            padding: 8px 12px;
+            border-radius: 8px;
             display: flex;
             align-items: center;
             justify-content: center;
+            gap: 6px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            white-space: nowrap;
         }
 
-        /* CONTENT WRAPPER */
-        .content-wrapper { 
-            flex: 1; 
-            display: flex; 
-            flex-direction: column; /* Mobile Default: Stacked */
-            min-height: 0; 
-            overflow: hidden; 
-            position: relative;
+        .btn:hover {
+            background-color: var(--surface-hover);
         }
 
-        /* IMAGE PANE */
-        .image-pane { 
-            flex-grow: 1; 
-            position: relative; 
-            background: #181a1c; 
-            overflow: hidden; 
-            display: flex; 
-            align-items: center; 
-            justify-content: center;
-            min-height: 0; 
-            width: 100%;
-            touch-action: none; /* Disable browser zooming/panning here */
+        .btn:disabled {
+            color: var(--text-secondary);
+            cursor: not-allowed;
+            opacity: 0.5;
         }
 
-        #crop-area { 
-            position: relative; 
-            line-height: 0; 
-            box-shadow: 0 0 20px rgba(0,0,0,0.5);
-            /* Prevent selection */
-            -webkit-user-select: none;
-            user-select: none;
+        .btn-icon {
+            padding: 8px;
+            font-size: 1.1rem;
         }
 
-        #main-image { 
-            display: block; 
-            width: 100%; 
-            height: 100%; 
-            pointer-events: none; 
-            -webkit-user-drag: none;
+        .btn-primary {
+            background: var(--primary);
+            color: white;
         }
 
-        #draw-canvas {
-            position: absolute; 
-            top: 0; 
-            left: 0; 
-            z-index: 10;
-            cursor: crosshair;
-            touch-action: none; /* Crucial for custom drawing */
+        .btn-primary:hover {
+            background: var(--primary-hover);
         }
 
-        /* CONTROLS PANE - MOBILE BOTTOM SHEET STYLE */
-        .controls-pane { 
-            flex-shrink: 0; 
-            background: #212529; 
-            border-top: 1px solid #495057; 
-            height: var(--controls-height-mobile); /* Percent based on mobile */
-            overflow-y: auto; 
-            z-index: 30; 
-            padding-bottom: env(safe-area-inset-bottom);
-            -webkit-overflow-scrolling: touch; /* Smooth scroll iOS */
-        }
-        
-        .controls-content { 
-            padding: 20px 16px; 
+        .btn.active {
+            background: var(--primary);
+            color: white;
         }
 
-        /* Larger touch targets for sliders */
-        .form-range {
-            height: 24px; 
-            margin-bottom: 24px; /* Spacing between touch targets */
+        /* Page Navigation */
+        .page-nav {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--surface);
+            border-radius: 8px;
+            padding: 4px;
         }
-        
-        /* Spacing for labels */
-        .control-group {
+
+        .page-input {
+            width: 50px;
+            background: var(--bg-darker);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text-primary);
+            text-align: center;
+            padding: 4px;
+            font-size: 0.875rem;
+        }
+
+        .page-input:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        /* Zoom Controls */
+        .zoom-controls {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            background: var(--surface);
+            border-radius: 8px;
+            padding: 4px;
+        }
+
+        .zoom-select {
+            background: transparent;
+            border: none;
+            color: var(--text-primary);
+            font-size: 0.875rem;
+            padding: 4px 8px;
+            cursor: pointer;
+            min-width: 80px;
+        }
+
+        .zoom-select:focus {
+            outline: none;
+        }
+
+        .zoom-select option {
+            background: var(--surface);
+        }
+
+        /* Title */
+        .doc-title {
+            font-size: 0.9rem;
+            font-weight: 600;
+            max-width: 300px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: var(--text-primary);
+        }
+
+        /* ===== MAIN CONTENT ===== */
+        #main-wrapper {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* ===== SIDEBAR ===== */
+        #sidebar {
+            width: 0;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            transition: width 0.3s ease;
+            overflow: hidden;
+        }
+
+        #sidebar.open {
+            width: var(--sidebar-width);
+        }
+
+        .sidebar-header {
+            padding: 16px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .sidebar-tabs {
+            display: flex;
+            gap: 4px;
+        }
+
+        .sidebar-tab {
+            padding: 8px 16px;
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .sidebar-tab:hover {
+            color: var(--text-primary);
+            background: var(--surface);
+        }
+
+        .sidebar-tab.active {
+            background: var(--primary);
+            color: white;
+        }
+
+        .sidebar-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+        }
+
+        /* Thumbnails */
+        .thumbnail-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .thumbnail-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 2px solid transparent;
+        }
+
+        .thumbnail-item:hover {
+            background: var(--surface);
+        }
+
+        .thumbnail-item.active {
+            background: var(--surface);
+            border-color: var(--primary);
+        }
+
+        .thumbnail-canvas {
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            border-radius: 4px;
+        }
+
+        .thumbnail-page-num {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        /* Outline */
+        .outline-item {
+            padding: 10px 12px;
+            cursor: pointer;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .outline-item:hover {
+            background: var(--surface);
+        }
+
+        .outline-item i {
+            color: var(--text-secondary);
+        }
+
+        /* Bookmarks */
+        .bookmark-item {
+            padding: 12px;
+            background: var(--surface);
+            border-radius: 8px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .bookmark-item:hover {
+            background: var(--surface-hover);
+        }
+
+        .bookmark-title {
+            font-size: 0.85rem;
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+
+        .bookmark-page {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        .bookmark-delete {
+            float: right;
+            color: var(--danger);
+            cursor: pointer;
+        }
+
+        /* Search */
+        .search-box {
+            display: flex;
+            gap: 8px;
             margin-bottom: 12px;
         }
 
-        /* FLOATING TOOLBAR */
-        #box-toolbar { 
-            position: absolute; 
-            background: rgba(33, 37, 41, 0.95); 
-            border: 1px solid #6c757d; 
-            border-radius: 50px; /* Pill shape */
-            padding: 8px 16px; 
-            display: none; 
-            z-index: 100; 
-            backdrop-filter: blur(5px); 
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-            gap: 16px;
+        .search-input {
+            flex: 1;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px 14px;
+            color: var(--text-primary);
+            font-size: 0.875rem;
         }
-        
-        #box-toolbar button { 
-            background: transparent; 
-            border: none; 
-            color: #e9ecef; 
-            padding: 0;
-            width: 32px;
-            height: 32px;
-            font-size: 1.4rem; /* Larger icons */
+
+        .search-input:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        .search-results {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+
+        .search-result-item {
+            padding: 10px 12px;
+            background: var(--surface);
+            border-radius: 6px;
+            margin-bottom: 6px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+
+        .search-result-item:hover {
+            background: var(--surface-hover);
+        }
+
+        .search-result-item mark {
+            background: var(--warning);
+            color: black;
+            padding: 1px 3px;
+            border-radius: 2px;
+        }
+
+        /* ===== PDF VIEWER ===== */
+        #viewer-wrapper {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        #pdf-container {
+            flex: 1;
+            overflow: auto;
+            display: flex;
+            flex-direction: column;
+            padding: 30px;
+            background: var(--bg-dark);
+        }
+
+        .page-wrapper {
+            position: relative;
+            margin: 0 auto 20px auto;
+        }
+
+        .pdf-page {
+            box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+            border-radius: 4px;
+        }
+
+        .page-number-label {
+            position: absolute;
+            bottom: -24px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            background: var(--surface);
+            padding: 2px 10px;
+            border-radius: 10px;
+        }
+
+        /* Text Layer for Selection */
+        .text-layer {
+            position: absolute;
+            left: 0;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            overflow: hidden;
+            opacity: 0.2;
+            line-height: 1.0;
+        }
+
+        .text-layer > span {
+            color: transparent;
+            position: absolute;
+            white-space: pre;
+            cursor: text;
+        }
+
+        .text-layer ::selection {
+            background: var(--primary);
+        }
+
+        /* Highlight for Search */
+        .highlight {
+            position: absolute;
+            background: rgba(245, 158, 11, 0.4);
+            border-radius: 2px;
+        }
+
+        .highlight.active {
+            background: rgba(245, 158, 11, 0.7);
+        }
+
+        /* ===== ANNOTATIONS PANEL ===== */
+        #annotations-panel {
+            position: fixed;
+            right: -360px;
+            top: var(--toolbar-height);
+            width: 360px;
+            height: calc(100vh - var(--toolbar-height));
+            background: var(--bg-sidebar);
+            border-left: 1px solid var(--border);
+            transition: right 0.3s ease;
+            z-index: 50;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #annotations-panel.open {
+            right: 0;
+        }
+
+        .panel-header {
+            padding: 16px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .panel-title {
+            font-weight: 600;
+            font-size: 1rem;
+        }
+
+        .panel-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+        }
+
+        /* Annotation Tools */
+        .annotation-tools {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+
+        .annotation-tool {
+            padding: 10px 14px;
+            background: var(--surface);
+            border: none;
+            border-radius: 8px;
+            color: var(--text-primary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+
+        .annotation-tool:hover {
+            background: var(--surface-hover);
+        }
+
+        .annotation-tool.active {
+            background: var(--primary);
+        }
+
+        .color-picker {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 16px;
+        }
+
+        .color-option {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: transform 0.2s;
+        }
+
+        .color-option:hover {
+            transform: scale(1.15);
+        }
+
+        .color-option.active {
+            border-color: white;
+        }
+
+        /* Notes */
+        .note-item {
+            background: var(--surface);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 10px;
+        }
+
+        .note-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        .note-content {
+            font-size: 0.85rem;
+        }
+
+        /* ===== LOADING ===== */
+        #loader {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--bg-dark);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            z-index: 1000;
+        }
+
+        .loader-spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid var(--surface);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        .loader-text {
+            font-size: 1rem;
+            color: var(--text-secondary);
+        }
+
+        .progress-bar {
+            width: 200px;
+            height: 4px;
+            background: var(--surface);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--primary);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* ===== MODAL ===== */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.7);
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: transform 0.1s;
+            z-index: 200;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s;
         }
-        
-        #box-toolbar button:active {
+
+        .modal-overlay.open {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .modal {
+            background: var(--surface);
+            border-radius: 16px;
+            width: 90%;
+            max-width: 500px;
+            max-height: 80vh;
+            overflow: hidden;
             transform: scale(0.9);
-            color: #fff;
+            transition: transform 0.3s;
         }
 
-        /* DESKTOP MEDIA QUERY (Landscape Tablets & Desktop) */
-        @media (min-width: 992px) { 
-            .content-wrapper { flex-direction: row; } 
-            
-            .controls-pane { 
-                width: var(--controls-width-desktop); 
-                height: 100%; 
-                border-top: none; 
-                border-left: 1px solid #495057; 
-                padding-bottom: 0;
-            } 
-            
-            .header-title { font-size: 1.25rem; }
+        .modal-overlay.open .modal {
+            transform: scale(1);
         }
 
-        /* UTILS */
-        #loader-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 9999; display: none; align-items: center; justify-content: center; }
+        .modal-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .modal-title {
+            font-weight: 600;
+            font-size: 1.1rem;
+        }
+
+        .modal-body {
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .modal-footer {
+            padding: 16px 20px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        /* Form Elements */
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 10px 14px;
+            background: var(--bg-darker);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 0.875rem;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        textarea.form-input {
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        /* ===== CONTEXT MENU ===== */
+        .context-menu {
+            position: fixed;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 6px;
+            min-width: 180px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            z-index: 300;
+            display: none;
+        }
+
+        .context-menu.show {
+            display: block;
+        }
+
+        .context-menu-item {
+            padding: 10px 14px;
+            cursor: pointer;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: background 0.2s;
+        }
+
+        .context-menu-item:hover {
+            background: var(--surface-hover);
+        }
+
+        .context-menu-divider {
+            height: 1px;
+            background: var(--border);
+            margin: 6px 0;
+        }
+
+        /* ===== TOAST ===== */
+        #toast-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 400;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .toast {
+            padding: 14px 20px;
+            background: var(--surface);
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            animation: slideIn 0.3s ease;
+            min-width: 280px;
+        }
+
+        .toast.success { border-left: 4px solid var(--success); }
+        .toast.warning { border-left: 4px solid var(--warning); }
+        .toast.error { border-left: 4px solid var(--danger); }
+        .toast.info { border-left: 4px solid var(--primary); }
+
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        /* ===== PRESENTATION MODE ===== */
+        .presentation-mode #toolbar,
+        .presentation-mode #sidebar,
+        .presentation-mode .page-number-label {
+            display: none;
+        }
+
+        .presentation-mode #pdf-container {
+            background: black;
+            padding: 0;
+        }
+
+        .presentation-mode .page-wrapper {
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        /* ===== PRINT STYLES ===== */
+        @media print {
+            body { background: white; }
+            #toolbar, #sidebar, #annotations-panel { display: none !important; }
+            #pdf-container { padding: 0; }
+            .page-wrapper { page-break-after: always; margin: 0; box-shadow: none; }
+        }
+
+        /* ===== KEYBOARD SHORTCUTS HELP ===== */
+        .shortcuts-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        .shortcut-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 0.85rem;
+        }
+
+        .shortcut-key {
+            background: var(--bg-darker);
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.8rem;
+            min-width: 60px;
+            text-align: center;
+        }
+
+        /* Cursors */
+        .cursor-grab { cursor: grab; }
+        .cursor-grabbing { cursor: grabbing; }
+        .cursor-crosshair { cursor: crosshair; }
+        .cursor-text { cursor: text; }
+        .cursor-default { cursor: default; }
     </style>
 </head>
 <body>
-    {% include '_navbar.html' %}
-    
-    <div id="loader-overlay">
-        <div class="spinner-border text-light" role="status"><span class="visually-hidden">Loading...</span></div>
+    <!-- TOOLBAR -->
+    <div id="toolbar">
+        <div class="toolbar-group">
+            <button class="btn btn-icon" id="toggle-sidebar" title="Toggle Sidebar (S)">
+                <i class="bi bi-layout-sidebar-inset"></i>
+            </button>
+            <div class="toolbar-divider"></div>
+            <div class="page-nav">
+                <button class="btn btn-icon" id="first-page" title="First Page">
+                    <i class="bi bi-chevron-bar-left"></i>
+                </button>
+                <button class="btn btn-icon" id="prev-page" title="Previous Page (←)">
+                    <i class="bi bi-chevron-left"></i>
+                </button>
+                <input type="number" class="page-input" id="page-input" value="1" min="1">
+                <span style="color: var(--text-secondary);">/</span>
+                <span id="page-count">--</span>
+                <button class="btn btn-icon" id="next-page" title="Next Page (→)">
+                    <i class="bi bi-chevron-right"></i>
+                </button>
+                <button class="btn btn-icon" id="last-page" title="Last Page">
+                    <i class="bi bi-chevron-bar-right"></i>
+                </button>
+            </div>
+        </div>
+
+        <div class="toolbar-group hide-mobile">
+            <span class="doc-title" id="doc-title">{{ pdf_title }}</span>
+        </div>
+
+        <div class="toolbar-group">
+            <div class="zoom-controls">
+                <button class="btn btn-icon" id="zoom-out" title="Zoom Out (-)">
+                    <i class="bi bi-dash"></i>
+                </button>
+                <select class="zoom-select" id="zoom-select">
+                    <option value="0.5">50%</option>
+                    <option value="0.75">75%</option>
+                    <option value="1" selected>100%</option>
+                    <option value="1.25">125%</option>
+                    <option value="1.5">150%</option>
+                    <option value="2">200%</option>
+                    <option value="fit-width">Fit Width</option>
+                    <option value="fit-page">Fit Page</option>
+                </select>
+                <button class="btn btn-icon" id="zoom-in" title="Zoom In (+)">
+                    <i class="bi bi-plus"></i>
+                </button>
+            </div>
+            <div class="toolbar-divider"></div>
+            <button class="btn btn-icon" id="tool-select" title="Select Tool (V)">
+                <i class="bi bi-cursor"></i>
+            </button>
+            <button class="btn btn-icon" id="tool-hand" title="Hand Tool (H)">
+                <i class="bi bi-hand-index-thumb"></i>
+            </button>
+            <div class="toolbar-divider"></div>
+            <button class="btn btn-icon" id="view-mode" title="View Mode">
+                <i class="bi bi-file-earmark"></i>
+            </button>
+            <button class="btn btn-icon" id="rotate-cw" title="Rotate Clockwise (R)">
+                <i class="bi bi-arrow-clockwise"></i>
+            </button>
+            <div class="toolbar-divider"></div>
+            <button class="btn btn-icon" id="toggle-search" title="Search (Ctrl+F)">
+                <i class="bi bi-search"></i>
+            </button>
+            <button class="btn btn-icon" id="toggle-annotations" title="Annotations">
+                <i class="bi bi-pencil-square"></i>
+            </button>
+            <button class="btn btn-icon" id="toggle-bookmarks" title="Add Bookmark (B)">
+                <i class="bi bi-bookmark"></i>
+            </button>
+            <div class="toolbar-divider"></div>
+            <button class="btn btn-icon" id="presentation-mode" title="Presentation Mode (F5)">
+                <i class="bi bi-easel"></i>
+            </button>
+            <button class="btn btn-icon" id="print-btn" title="Print (Ctrl+P)">
+                <i class="bi bi-printer"></i>
+            </button>
+            <button class="btn btn-icon" id="download-btn" title="Download">
+                <i class="bi bi-download"></i>
+            </button>
+            <button class="btn btn-icon" id="help-btn" title="Keyboard Shortcuts (?)">
+                <i class="bi bi-question-circle"></i>
+            </button>
+        </div>
     </div>
 
-    <div class="main-container">
-        <header class="app-header">
-             <h1 class="header-title"><i class="bi bi-bounding-box me-2"></i>Page {{ image_index + 1 }} / {{ total_pages }}</h1>
-             <div class="header-actions">
-                <!-- Removed btn-sm for larger touch targets, added explicit padding logic in CSS -->
-                <button id="backBtn" class="btn btn-secondary" aria-label="Back"><i class="bi bi-arrow-left"></i></button>
-                <button id="clearBtn" class="btn btn-outline-info" aria-label="Clear All"><i class="bi bi-eraser"></i></button>
-                <button id="processBtn" class="btn btn-success ps-3 pe-3">Next <i class="bi bi-chevron-right ms-1"></i></button>
-            </div>
-        </header>
-
-        <div class="content-wrapper">
-            <div class="image-pane" id="imagePane">
-                <div id="stitch-instructions" class="alert alert-warning position-absolute top-0 start-50 translate-middle-x mt-2 shadow-lg" style="z-index: 20; display: none; font-size: 0.9rem; width: 90%; max-width: 400px; border-radius: 12px;"></div>
-                
-                <div id="crop-area">
-                    <img id="main-image" src="/image/upload/{{ image_info.filename }}" alt="PDF Page" crossorigin="anonymous">
-                    <canvas id="draw-canvas"></canvas>
-                    
-                    <div id="box-toolbar">
-                        <button id="stitch-btn" title="Stitch"><i class="bi bi-scissors"></i></button>
-                        <button id="move-up-btn" title="Move Up"><i class="bi bi-arrow-up-circle"></i></button>
-                        <button id="move-down-btn" title="Move Down"><i class="bi bi-arrow-down-circle"></i></button>
-                        <button id="delete-btn" title="Delete Box" class="text-danger"><i class="bi bi-trash"></i></button>
-                    </div>
+    <!-- MAIN WRAPPER -->
+    <div id="main-wrapper">
+        <!-- SIDEBAR -->
+        <div id="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-tabs">
+                    <button class="sidebar-tab active" data-tab="thumbnails">
+                        <i class="bi bi-grid"></i> Pages
+                    </button>
+                    <button class="sidebar-tab" data-tab="outline">
+                        <i class="bi bi-list-nested"></i> Outline
+                    </button>
+                    <button class="sidebar-tab" data-tab="bookmarks">
+                        <i class="bi bi-bookmark"></i> Bookmarks
+                    </button>
                 </div>
             </div>
-
-            <div class="controls-pane">
-                 <div class="controls-content">
-                    <div class="alert alert-info small p-2 mb-3 rounded-3"><i class="bi bi-info-circle me-2"></i>Draw boxes on the image.</div>
-                    
-                    <h6 class="text-white mb-3 text-uppercase small ls-1">Image Filters</h6>
-                    
-                    <div class="control-group">
-                        <label class="small text-light d-flex justify-content-between mb-2">Brightness <span id="brightnessValue" class="text-primary fw-bold">0</span></label>
-                        <input type="range" class="form-range" id="brightness" min="-100" max="100" value="0" step="5">
+            <div class="sidebar-content" id="sidebar-content">
+                <!-- Thumbnails Tab -->
+                <div class="tab-content active" id="tab-thumbnails">
+                    <div class="thumbnail-grid" id="thumbnail-grid"></div>
+                </div>
+                
+                <!-- Outline Tab -->
+                <div class="tab-content" id="tab-outline" style="display: none;">
+                    <div id="outline-content">
+                        <p style="color: var(--text-secondary); font-size: 0.85rem;">No outline available</p>
                     </div>
-                    
-                    <div class="control-group">
-                        <label class="small text-light d-flex justify-content-between mb-2">Contrast <span id="contrastValue" class="text-primary fw-bold">1.0</span></label>
-                        <input type="range" class="form-range" id="contrast" min="0.5" max="2.5" value="1.0" step="0.05">
-                    </div>
-                    
-                    <div class="control-group">
-                        <label class="small text-light d-flex justify-content-between mb-2">Gamma <span id="gammaValue" class="text-primary fw-bold">1.0</span></label>
-                        <input type="range" class="form-range" id="gamma" min="0.2" max="2.2" value="1.0" step="0.1">
+                </div>
+                
+                <!-- Bookmarks Tab -->
+                <div class="tab-content" id="tab-bookmarks" style="display: none;">
+                    <div id="bookmarks-list">
+                        <p style="color: var(--text-secondary); font-size: 0.85rem; text-align: center; padding: 20px;">
+                            No bookmarks yet.<br>Press <strong>B</strong> to add a bookmark.
+                        </p>
                     </div>
                 </div>
             </div>
         </div>
-        <div id="statusContainer"></div>
+
+        <!-- PDF VIEWER -->
+        <div id="viewer-wrapper">
+            <!-- Search Bar -->
+            <div id="search-bar" style="display: none; padding: 12px 20px; background: var(--bg-darker); border-bottom: 1px solid var(--border);">
+                <div style="display: flex; gap: 8px; align-items: center; max-width: 500px;">
+                    <input type="text" class="search-input" id="search-input" placeholder="Search in document...">
+                    <button class="btn btn-icon" id="search-prev" disabled><i class="bi bi-chevron-up"></i></button>
+                    <button class="btn btn-icon" id="search-next" disabled><i class="bi bi-chevron-down"></i></button>
+                    <span id="search-count" style="font-size: 0.8rem; color: var(--text-secondary); min-width: 80px;"></span>
+                    <button class="btn btn-icon" id="search-close"><i class="bi bi-x-lg"></i></button>
+                </div>
+            </div>
+            
+            <div id="pdf-container"></div>
+        </div>
     </div>
 
-<script>
-    // Elements
-    const image = document.getElementById('main-image');
-    const imagePane = document.getElementById('imagePane');
-    const cropArea = document.getElementById('crop-area');
-    const drawCanvas = document.getElementById('draw-canvas');
-    const drawCtx = drawCanvas.getContext('2d');
-    
-    // State
-    const sessionId = '{{ session_id }}';
-    const userId = '{{ user_id }}';
-    const imageIndex = parseInt('{{ image_index }}');
-    const totalPages = parseInt('{{ total_pages }}');
+    <!-- ANNOTATIONS PANEL -->
+    <div id="annotations-panel">
+        <div class="panel-header">
+            <span class="panel-title">Annotations</span>
+            <button class="btn btn-icon" id="close-annotations"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="panel-content">
+            <div class="annotation-tools">
+                <button class="annotation-tool" data-tool="highlight" title="Highlight Text">
+                    <i class="bi bi-highlighter"></i> Highlight
+                </button>
+                <button class="annotation-tool" data-tool="underline" title="Underline Text">
+                    <i class="bi bi-type-underline"></i> Underline
+                </button>
+                <button class="annotation-tool" data-tool="strikethrough" title="Strikethrough">
+                    <i class="bi bi-type-strikethrough"></i> Strike
+                </button>
+                <button class="annotation-tool" data-tool="note" title="Add Note">
+                    <i class="bi bi-sticky"></i> Note
+                </button>
+                <button class="annotation-tool" data-tool="draw" title="Free Draw">
+                    <i class="bi bi-brush"></i> Draw
+                </button>
+                <button class="annotation-tool" data-tool="eraser" title="Eraser">
+                    <i class="bi bi-eraser"></i> Eraser
+                </button>
+            </div>
+            
+            <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 12px;">Annotation Color:</p>
+            <div class="color-picker">
+                <div class="color-option active" style="background: #fbbf24;" data-color="#fbbf24"></div>
+                <div class="color-option" style="background: #34d399;" data-color="#34d399"></div>
+                <div class="color-option" style="background: #60a5fa;" data-color="#60a5fa"></div>
+                <div class="color-option" style="background: #f472b6;" data-color="#f472b6"></div>
+                <div class="color-option" style="background: #a78bfa;" data-color="#a78bfa"></div>
+                <div class="color-option" style="background: #fb7185;" data-color="#fb7185"></div>
+            </div>
 
-    const storageKey = userId ? `cropState_${userId}_${sessionId}_${imageIndex}` : `cropState_${sessionId}_${imageIndex}`;
-    
-    let boxes = [];
-    let selectedBoxIndex = -1;
-    let isDrawing = false;
-    let startX, startY;
-    let dragTarget = null;
-    let startPositions = {};
-    
-    // Cross-Page Stitching State
-    let stitchBuffer = JSON.parse(localStorage.getItem('gemini_stitch_buffer') || 'null');
+            <hr style="border: none; border-top: 1px solid var(--border); margin: 16px 0;">
+            
+            <h4 style="font-size: 0.9rem; margin-bottom: 12px;">Notes on this page</h4>
+            <div id="notes-list">
+                <p style="color: var(--text-secondary); font-size: 0.85rem;">No notes on this page.</p>
+            </div>
+        </div>
+    </div>
 
-    // --- INITIALIZATION & RESIZING LOGIC ---
+    <!-- LOADING SCREEN -->
+    <div id="loader">
+        <div class="loader-spinner"></div>
+        <div class="loader-text">Loading PDF...</div>
+        <div class="progress-bar">
+            <div class="progress-fill" id="progress-fill"></div>
+        </div>
+    </div>
 
-    function init() {
-        if (image.complete && image.naturalWidth > 0) {
-            fitImageToPane();
-        } else {
-            image.onload = fitImageToPane;
+    <!-- CONTEXT MENU -->
+    <div class="context-menu" id="context-menu">
+        <div class="context-menu-item" id="ctx-copy"><i class="bi bi-clipboard"></i> Copy Text</div>
+        <div class="context-menu-item" id="ctx-highlight"><i class="bi bi-highlighter"></i> Highlight</div>
+        <div class="context-menu-item" id="ctx-note"><i class="bi bi-sticky"></i> Add Note</div>
+        <div class="context-menu-divider"></div>
+        <div class="context-menu-item" id="ctx-search"><i class="bi bi-search"></i> Search Selection</div>
+    </div>
+
+    <!-- TOAST CONTAINER -->
+    <div id="toast-container"></div>
+
+    <!-- MODALS -->
+    <!-- Bookmark Modal -->
+    <div class="modal-overlay" id="bookmark-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <span class="modal-title">Add Bookmark</span>
+                <button class="btn btn-icon" onclick="closeModal('bookmark-modal')"><i class="bi bi-x-lg"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">Bookmark Title</label>
+                    <input type="text" class="form-input" id="bookmark-title" placeholder="Enter bookmark title...">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Page</label>
+                    <input type="number" class="form-input" id="bookmark-page" readonly>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" onclick="closeModal('bookmark-modal')">Cancel</button>
+                <button class="btn btn-primary" id="save-bookmark">Save Bookmark</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Note Modal -->
+    <div class="modal-overlay" id="note-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <span class="modal-title">Add Note</span>
+                <button class="btn btn-icon" onclick="closeModal('note-modal')"><i class="bi bi-x-lg"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">Note Content</label>
+                    <textarea class="form-input" id="note-content" placeholder="Write your note here..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" onclick="closeModal('note-modal')">Cancel</button>
+                <button class="btn btn-primary" id="save-note">Save Note</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Keyboard Shortcuts Modal -->
+    <div class="modal-overlay" id="shortcuts-modal">
+        <div class="modal" style="max-width: 600px;">
+            <div class="modal-header">
+                <span class="modal-title">Keyboard Shortcuts</span>
+                <button class="btn btn-icon" onclick="closeModal('shortcuts-modal')"><i class="bi bi-x-lg"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="shortcuts-grid">
+                    <div class="shortcut-item"><span class="shortcut-key">←</span> Previous Page</div>
+                    <div class="shortcut-item"><span class="shortcut-key">→</span> Next Page</div>
+                    <div class="shortcut-item"><span class="shortcut-key">Home</span> First Page</div>
+                    <div class="shortcut-item"><span class="shortcut-key">End</span> Last Page</div>
+                    <div class="shortcut-item"><span class="shortcut-key">+</span> Zoom In</div>
+                    <div class="shortcut-item"><span class="shortcut-key">-</span> Zoom Out</div>
+                    <div class="shortcut-item"><span class="shortcut-key">0</span> Reset Zoom</div>
+                    <div class="shortcut-item"><span class="shortcut-key">R</span> Rotate</div>
+                    <div class="shortcut-item"><span class="shortcut-key">S</span> Toggle Sidebar</div>
+                    <div class="shortcut-item"><span class="shortcut-key">B</span> Add Bookmark</div>
+                    <div class="shortcut-item"><span class="shortcut-key">Ctrl+F</span> Search</div>
+                    <div class="shortcut-item"><span class="shortcut-key">Ctrl+P</span> Print</div>
+                    <div class="shortcut-item"><span class="shortcut-key">F5</span> Presentation</div>
+                    <div class="shortcut-item"><span class="shortcut-key">Esc</span> Exit/Close</div>
+                    <div class="shortcut-item"><span class="shortcut-key">?</span> Show Help</div>
+                    <div class="shortcut-item"><span class="shortcut-key">G</span> Go to Page</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // PDF VIEWER PRO - FEATURE-RICH PDF VIEWER
+        // ==========================================
+
+        // PDF.js Configuration
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        // ==========================================
+        // STATE MANAGEMENT
+        // ==========================================
+        const state = {
+            pdfDoc: null,
+            currentPage: 1,
+            totalPages: 0,
+            scale: 1.0,
+            rotation: 0,
+            viewMode: 'single', // 'single', 'continuous', 'two-page'
+            isRendering: false,
+            renderQueue: [],
+            bookmarks: JSON.parse(localStorage.getItem('pdf-bookmarks') || '[]'),
+            notes: JSON.parse(localStorage.getItem('pdf-notes') || '{}'),
+            drawings: JSON.parse(localStorage.getItem('pdf-drawings') || '{}'),
+            searchResults: [],
+            currentSearchIndex: -1,
+            selectedTool: 'select', // Default tool
+            annotationColor: '#fbbf24',
+            isPresentationMode: false,
+            renderedPages: new Set(),
+            isDragging: false
+        };
+
+        // URL Configuration
+        const pdfUrl = "{{ pdf_url }}";
+
+        // DOM Elements
+        const elements = {
+            container: document.getElementById('pdf-container'),
+            loader: document.getElementById('loader'),
+            progressFill: document.getElementById('progress-fill'),
+            pageInput: document.getElementById('page-input'),
+            pageCount: document.getElementById('page-count'),
+            zoomSelect: document.getElementById('zoom-select'),
+            sidebar: document.getElementById('sidebar'),
+            thumbnailGrid: document.getElementById('thumbnail-grid'),
+            annotationsPanel: document.getElementById('annotations-panel'),
+            searchBar: document.getElementById('search-bar'),
+            searchInput: document.getElementById('search-input'),
+            contextMenu: document.getElementById('context-menu'),
+            toastContainer: document.getElementById('toast-container'),
+            toolHand: document.getElementById('tool-hand'),
+            toolSelect: document.getElementById('tool-select')
+        };
+
+        // ==========================================
+        // UTILITY FUNCTIONS
+        // ==========================================
+        
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            
+            const icons = {
+                success: 'bi-check-circle-fill',
+                warning: 'bi-exclamation-triangle-fill',
+                error: 'bi-x-circle-fill',
+                info: 'bi-info-circle-fill'
+            };
+            
+            toast.innerHTML = `
+                <i class="bi ${icons[type]}" style="color: var(--${type === 'info' ? 'primary' : type})"></i>
+                <span>${message}</span>
+            `;
+            
+            elements.toastContainer.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateX(100%)';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
         }
-        
-        // Debounced resize for performance
-        let resizeTimer;
-        window.addEventListener('resize', () => {
-            clearTimeout(resizeTimer);
-            resizeTimer = setTimeout(() => requestAnimationFrame(fitImageToPane), 100);
-        });
-        
-        loadSettings();
-        loadBoxes();
-        setupListeners();
-        updateStitchButtonState();
-    }
 
-    // Exact dimension calculation preventing overflow
-    function fitImageToPane() {
-        if (!image.naturalWidth) return;
+        function openModal(id) {
+            document.getElementById(id).classList.add('open');
+        }
 
-        const rect = imagePane.getBoundingClientRect();
-        // Use a safe padding buffer
-        const buffer = 32; 
-        const availableW = rect.width - buffer;
-        const availableH = rect.height - buffer;
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('open');
+        }
 
-        const naturalW = image.naturalWidth;
-        const naturalH = image.naturalHeight;
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
 
-        const scale = Math.min(availableW / naturalW, availableH / naturalH);
+        function getMousePos(canvas, evt) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            return {
+                x: (evt.clientX - rect.left) * scaleX,
+                y: (evt.clientY - rect.top) * scaleY
+            };
+        }
 
-        const finalW = Math.floor(naturalW * scale);
-        const finalH = Math.floor(naturalH * scale);
+        // ==========================================
+        // TOOL MANAGEMENT
+        // ==========================================
 
-        cropArea.style.width = `${finalW}px`;
-        cropArea.style.height = `${finalH}px`;
+        function setActiveTool(tool) {
+            state.selectedTool = tool;
 
-        drawCanvas.width = finalW;
-        drawCanvas.height = finalH;
-
-        if (selectedBoxIndex !== -1) updateToolbarPosition();
-        drawBoxes();
-    }
-
-    // --- DRAWING LOGIC ---
-
-    function drawBoxes() {
-        drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
-        
-        boxes.forEach((box, index) => {
-            const isSelected = index === selectedBoxIndex;
-            // Visual cue for boxes that have a remote source attached
-            const isStitched = box.remote_stitch_source != null;
+            // UI Updates
+            elements.toolHand.classList.toggle('active', tool === 'hand');
+            elements.toolSelect.classList.toggle('active', tool === 'select');
             
-            // Debug log for the first box to check its state
-            if (index === 0) console.log(`Box 0: stitched=${isStitched}, val=${JSON.stringify(box.remote_stitch_source)}`);
+            document.querySelectorAll('.annotation-tool').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.tool === tool);
+            });
 
-            const p = (pt) => ({ x: pt.x * drawCanvas.width, y: pt.y * drawCanvas.height });
+            // Cursor Updates
+            elements.container.classList.remove('cursor-grab', 'cursor-grabbing', 'cursor-crosshair', 'cursor-text', 'cursor-default');
+            
+            // Update drawing layers pointer events
+            const drawingLayers = document.querySelectorAll('.drawing-layer');
+            drawingLayers.forEach(layer => {
+                layer.style.pointerEvents = (tool === 'draw' || tool === 'eraser') ? 'auto' : 'none';
+            });
 
-            drawCtx.lineWidth = isSelected ? 3 : 2;
-            drawCtx.strokeStyle = isSelected ? '#ff4d4d' : (isStitched ? '#0dcaf0' : '#ffc107');
-            drawCtx.fillStyle = isSelected ? 'rgba(255, 77, 77, 0.15)' : 'rgba(255, 193, 7, 0.1)';
-            if (isStitched) drawCtx.fillStyle = 'rgba(13, 202, 240, 0.2)';
-
-            drawCtx.beginPath();
-            drawCtx.moveTo(p(box.tl).x, p(box.tl).y);
-            drawCtx.lineTo(p(box.tr).x, p(box.tr).y);
-            drawCtx.lineTo(p(box.br).x, p(box.br).y);
-            drawCtx.lineTo(p(box.bl).x, p(box.bl).y);
-            drawCtx.closePath();
-            drawCtx.stroke();
-            drawCtx.fill();
-
-            if (isSelected) {
-                drawCtx.fillStyle = 'white';
-                // Larger visual handles for touch feedback (logic remains same, just visual radius)
-                const handleRad = 8;
-                ['tl','tr','bl','br'].forEach(k => {
-                    drawCtx.beginPath();
-                    drawCtx.arc(p(box[k]).x, p(box[k]).y, handleRad, 0, Math.PI*2);
-                    drawCtx.fill();
-                    drawCtx.stroke();
-                });
+            if (tool === 'hand') {
+                elements.container.classList.add('cursor-grab');
+                showToast('Hand Tool Active', 'info');
+            } else if (tool === 'select') {
+                elements.container.classList.add('cursor-text'); // or default
+                showToast('Select Tool Active', 'info');
+            } else if (tool === 'draw' || tool === 'eraser') {
+                 elements.container.classList.add('cursor-crosshair');
+                 // Ensure annotation panel is open if drawing
+                 if (tool === 'draw' && !elements.annotationsPanel.classList.contains('open')) {
+                     toggleAnnotationsPanel();
+                 }
+                 showToast(tool === 'draw' ? 'Draw Tool Active' : 'Eraser Tool Active', 'info');
             }
+        }
+
+        // ==========================================
+        // HAND TOOL LOGIC
+        // ==========================================
+        let startX, startY, scrollLeft, scrollTop;
+
+        elements.container.addEventListener('mousedown', (e) => {
+            if (state.selectedTool !== 'hand') return;
+            state.isDragging = true;
+            elements.container.classList.add('cursor-grabbing');
+            startX = e.pageX - elements.container.offsetLeft;
+            startY = e.pageY - elements.container.offsetTop;
+            scrollLeft = elements.container.scrollLeft;
+            scrollTop = elements.container.scrollTop;
+        });
+
+        elements.container.addEventListener('mouseleave', () => {
+            state.isDragging = false;
+            if (state.selectedTool === 'hand') {
+                elements.container.classList.remove('cursor-grabbing');
+            }
+        });
+
+        elements.container.addEventListener('mouseup', () => {
+            state.isDragging = false;
+             if (state.selectedTool === 'hand') {
+                elements.container.classList.remove('cursor-grabbing');
+            }
+        });
+
+        elements.container.addEventListener('mousemove', (e) => {
+            if (!state.isDragging || state.selectedTool !== 'hand') return;
+            e.preventDefault();
+            const x = e.pageX - elements.container.offsetLeft;
+            const y = e.pageY - elements.container.offsetTop;
+            const walkX = (x - startX) * 1.5; // Scroll-fast
+            const walkY = (y - startY) * 1.5;
+            elements.container.scrollLeft = scrollLeft - walkX;
+            elements.container.scrollTop = scrollTop - walkY;
+        });
+
+
+        // ==========================================
+        // PDF RENDERING
+        // ==========================================
+
+        const PDFCache = {
+            dbName: 'PDFViewerCache',
+            storeName: 'pdfs',
             
-            const cx = (p(box.tl).x + p(box.br).x)/2;
-            const cy = (p(box.tl).y + p(box.br).y)/2;
-            drawCtx.font = "bold 24px system-ui";
-            drawCtx.fillStyle = "white";
-            drawCtx.shadowColor="rgba(0,0,0,0.8)"; drawCtx.shadowBlur=6;
-            drawCtx.fillText(index + 1, cx - 6, cy + 8);
+            async open() {
+                return new Promise((resolve, reject) => {
+                    const request = indexedDB.open(this.dbName, 1);
+                    
+                    request.onerror = () => reject(request.error);
+                    request.onsuccess = () => resolve(request.result);
+                    
+                    request.onupgradeneeded = (e) => {
+                        const db = e.target.result;
+                        if (!db.objectStoreNames.contains(this.storeName)) {
+                            db.createObjectStore(this.storeName);
+                        }
+                    };
+                });
+            },
             
-            // Draw link icon if stitched
-            if(isStitched) {
-                drawCtx.font = "20px system-ui";
-                drawCtx.fillText("🔗", p(box.tr).x - 28, p(box.tr).y + 24);
-                // Add small text indicating source page
-                if (box.remote_stitch_source && box.remote_stitch_source.page_index !== undefined) {
-                    drawCtx.font = "12px system-ui";
-                    drawCtx.fillText(`Pg ${box.remote_stitch_source.page_index + 1}`, p(box.tr).x - 40, p(box.tr).y + 40);
+            async get(url) {
+                try {
+                    const db = await this.open();
+                    return new Promise((resolve, reject) => {
+                        const transaction = db.transaction(this.storeName, 'readonly');
+                        const store = transaction.objectStore(this.storeName);
+                        const request = store.get(url);
+                        
+                        request.onerror = () => reject(request.error);
+                        request.onsuccess = () => resolve(request.result);
+                    });
+                } catch (err) {
+                    console.warn('PDFCache get error:', err);
+                    return null;
+                }
+            },
+            
+            async put(url, data) {
+                try {
+                    const db = await this.open();
+                    return new Promise((resolve, reject) => {
+                        const transaction = db.transaction(this.storeName, 'readwrite');
+                        const store = transaction.objectStore(this.storeName);
+                        const request = store.put(data, url);
+                        
+                        request.onerror = () => reject(request.error);
+                        request.onsuccess = () => resolve();
+                    });
+                } catch (err) {
+                    console.warn('PDFCache put error:', err);
                 }
             }
-            drawCtx.shadowBlur=0;
-        });
-    }
-
-    // --- INTERACTION LOGIC ---
-
-    function getPointerPos(e) {
-        const rect = drawCanvas.getBoundingClientRect();
-        // Handle touch vs mouse
-        const clientX = e.touches && e.touches.length > 0 ? e.touches[0].clientX : e.clientX;
-        const clientY = e.touches && e.touches.length > 0 ? e.touches[0].clientY : e.clientY;
-        
-        let x = (clientX - rect.left) / rect.width;
-        let y = (clientY - rect.top) / rect.height;
-        
-        return { 
-            x: Math.max(0, Math.min(1, x)), 
-            y: Math.max(0, Math.min(1, y)) 
         };
-    }
-
-    function hitTest(nx, ny) {
-        // Increase hit radius for touch (approx 24px visual equivalent)
-        const hitPadding = 24 / drawCanvas.width; 
         
-        for (let i = boxes.length - 1; i >= 0; i--) {
-            const b = boxes[i];
-            // Check corners
-            for(let k of ['tl','tr','bl','br']) {
-                // Distance formula
-                if (Math.hypot(b[k].x - nx, b[k].y - ny) < hitPadding) return { type: 'corner', index: i, corner: k };
-            }
-            // Check body
-            const minX = Math.min(b.tl.x, b.br.x);
-            const maxX = Math.max(b.tl.x, b.br.x);
-            const minY = Math.min(b.tl.y, b.br.y);
-            const maxY = Math.max(b.tl.y, b.br.y);
-            if (nx > minX && nx < maxX && ny > minY && ny < maxY) return { type: 'body', index: i };
-        }
-        return null;
-    }
+        async function loadPDF() {
+            try {
+                // Try to load from cache first
+                let cachedData = await PDFCache.get(pdfUrl);
+                let loadingParams = {
+                    cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
+                    cMapPacked: true
+                };
 
-    function onPointerDown(e) {
-        e.preventDefault(); 
-        const {x, y} = getPointerPos(e);
-        const hit = hitTest(x, y);
+                if (cachedData) {
+                    console.log('Loading PDF from cache');
+                    loadingParams.data = cachedData;
+                    showToast('Loaded from cache', 'info');
+                } else {
+                    console.log('Loading PDF from URL');
+                    loadingParams.url = pdfUrl;
+                }
 
-        if (hit) {
-            dragTarget = hit;
-            selectBox(hit.index);
-            startPositions = JSON.parse(JSON.stringify(boxes[hit.index]));
-            startX = x; startY = y;
-            isDrawing = false;
-        } else {
-            selectBox(-1);
-            isDrawing = true;
-            startX = x; startY = y;
-        }
-        
-        document.addEventListener('mousemove', onPointerMove);
-        document.addEventListener('touchmove', onPointerMove, { passive: false });
-        document.addEventListener('mouseup', onPointerUp);
-        document.addEventListener('touchend', onPointerUp);
-    }
+                const loadingTask = pdfjsLib.getDocument(loadingParams);
+                
+                loadingTask.onProgress = (progress) => {
+                    if (progress.total) {
+                        const percent = (progress.loaded / progress.total) * 100;
+                        elements.progressFill.style.width = percent + '%';
+                    }
+                };
+                
+                state.pdfDoc = await loadingTask.promise;
+                state.totalPages = state.pdfDoc.numPages;
 
-    function onPointerMove(e) {
-        e.preventDefault();
-        const {x, y} = getPointerPos(e);
-        const dx = x - startX;
-        const dy = y - startY;
-
-        if (dragTarget) {
-            const b = boxes[dragTarget.index];
-            if (dragTarget.type === 'corner') {
-                b[dragTarget.corner].x = x;
-                b[dragTarget.corner].y = y;
-            } else {
-                ['tl','tr','bl','br'].forEach(k => {
-                    b[k].x = startPositions[k].x + dx;
-                    b[k].y = startPositions[k].y + dy;
-                });
-            }
-            drawBoxes();
-            updateToolbarPosition();
-        } else if (isDrawing) {
-            drawBoxes();
-            const sx = startX * drawCanvas.width;
-            const sy = startY * drawCanvas.height;
-            const w = (x - startX) * drawCanvas.width;
-            const h = (y - startY) * drawCanvas.height;
-            drawCtx.strokeStyle = 'rgba(255, 77, 77, 0.5)';
-            drawCtx.strokeRect(sx, sy, w, h);
-        }
-    }
-
-    function onPointerUp(e) {
-        if (isDrawing) {
-            const rect = drawCanvas.getBoundingClientRect();
-            // Handle touch end coordinates
-            const clientX = e.changedTouches && e.changedTouches.length ? e.changedTouches[0].clientX : e.clientX;
-            const clientY = e.changedTouches && e.changedTouches.length ? e.changedTouches[0].clientY : e.clientY;
-            
-            let endX = (clientX - rect.left) / rect.width;
-            let endY = (clientY - rect.top) / rect.height;
-            
-            endX = Math.max(0, Math.min(1, endX));
-            endY = Math.max(0, Math.min(1, endY));
-
-            // Minimum drag threshold to prevent accidental dots (20px)
-            if (Math.abs(endX - startX) * drawCanvas.width > 20 && Math.abs(endY - startY) * drawCanvas.height > 20) {
-                boxes.push({
-                    id: Date.now(),
-                    tl: { x: Math.min(startX, endX), y: Math.min(startY, endY) },
-                    tr: { x: Math.max(startX, endX), y: Math.min(startY, endY) },
-                    bl: { x: Math.min(startX, endX), y: Math.max(startY, endY) },
-                    br: { x: Math.max(startX, endX), y: Math.max(startY, endY) },
-                    remote_stitch_source: null 
-                });
-                selectBox(boxes.length - 1);
-            }
-        }
-        
-        isDrawing = false; dragTarget = null;
-        saveBoxes();
-        drawBoxes();
-        document.removeEventListener('mousemove', onPointerMove);
-        document.removeEventListener('touchmove', onPointerMove);
-        document.removeEventListener('mouseup', onPointerUp);
-        document.removeEventListener('touchend', onPointerUp);
-    }
-
-    // --- GUI & ACTIONS ---
-
-    function selectBox(i) {
-        selectedBoxIndex = i;
-        const tb = document.getElementById('box-toolbar');
-        if (i === -1) {
-            tb.style.display = 'none';
-        } else {
-            tb.style.display = 'flex';
-            updateToolbarPosition();
-            updateStitchButtonState();
-        }
-        drawBoxes();
-    }
-
-    function updateToolbarPosition() {
-        if (selectedBoxIndex === -1) return;
-        const b = boxes[selectedBoxIndex];
-        const tb = document.getElementById('box-toolbar');
-        const containerRect = imagePane.getBoundingClientRect();
-        
-        // Coordinates relative to canvas
-        const x = Math.max(b.tl.x, b.br.x) * drawCanvas.width;
-        const y = Math.min(b.tl.y, b.br.y) * drawCanvas.height;
-        
-        // Calculate preferred position (Bottom Right of box)
-        let left = x - tb.offsetWidth + 10;
-        let top = y + 10;
-        
-        // Boundary Detection (Keep toolbar on screen)
-        // Canvas width/height might differ from screen CSS pixels, so we check against offset
-        const maxLeft = drawCanvas.offsetWidth - tb.offsetWidth;
-        const maxTop = drawCanvas.offsetHeight - tb.offsetHeight;
-
-        if (left < 0) left = 0;
-        if (left > maxLeft) left = maxLeft;
-        
-        // If bottom is clipped, flip to top
-        if (top > maxTop) {
-            top = (Math.min(b.tl.y, b.tr.y) * drawCanvas.height) - tb.offsetHeight - 10;
-        }
-        if (top < 0) top = 10; // Extreme fallback
-        
-        tb.style.left = left + 'px';
-        tb.style.top = top + 'px';
-    }
-
-    function updateStitchButtonState() {
-        const btn = document.getElementById('stitch-btn');
-        const icon = btn.querySelector('i');
-        
-        const isBufferActive = stitchBuffer && stitchBuffer.session_id === sessionId;
-        // Check if current box is stitched
-        const isBoxStitched = selectedBoxIndex > -1 && boxes[selectedBoxIndex] && boxes[selectedBoxIndex].remote_stitch_source != null;
-
-        if (isBufferActive) {
-             // Mode: PASTE (Buffer Full)
-             btn.title = `Link to Box from Page ${stitchBuffer.page_index + 1}`;
-             icon.className = 'bi bi-link-45deg';
-             btn.style.color = '#0dcaf0'; // Cyan
-        } else if (isBoxStitched) {
-             // Mode: UNLINK (Buffer Empty + Box Stitched)
-             btn.title = "Remove Link";
-             icon.className = 'bi bi-x-lg';
-             btn.style.color = '#dc3545'; // Red
-        } else {
-             // Mode: COPY (Buffer Empty + Box Unstitched)
-             btn.title = "Copy to Stitch Buffer";
-             icon.className = 'bi bi-scissors';
-             btn.style.color = '#e9ecef'; // Default
-        }
-    }
-    
-    function handleStitchClick() {
-        if (selectedBoxIndex === -1) return;
-        
-        const isBufferActive = stitchBuffer && stitchBuffer.session_id === sessionId;
-        const isBoxStitched = boxes[selectedBoxIndex].remote_stitch_source != null;
-        
-        if (isBufferActive) {
-            // --- ACTION: PASTE LINK ---
-            boxes[selectedBoxIndex].remote_stitch_source = {
-                page_index: stitchBuffer.page_index,
-                box: stitchBuffer.box
-            };
-            // Auto-clear buffer to allow copying again immediately
-            stitchBuffer = null;
-            localStorage.removeItem('gemini_stitch_buffer');
-            // Visual feedback
-            alert(`Linked!`);
-        } else if (isBoxStitched) {
-            // --- ACTION: UNLINK ---
-            boxes[selectedBoxIndex].remote_stitch_source = null;
-        } else {
-            // --- ACTION: COPY SOURCE ---
-            const box = boxes[selectedBoxIndex];
-            // Normalize coordinates
-            const minX = Math.min(box.tl.x, box.bl.x);
-            const minY = Math.min(box.tl.y, box.tr.y);
-            const maxX = Math.max(box.tr.x, box.br.x);
-            const maxY = Math.max(box.bl.y, box.br.y);
-            
-            const cleanBox = { ...box, x: minX, y: minY, w: maxX - minX, h: maxY - minY };
-            
-            stitchBuffer = {
-                session_id: sessionId,
-                page_index: imageIndex,
-                box: cleanBox
-            };
-            localStorage.setItem('gemini_stitch_buffer', JSON.stringify(stitchBuffer));
-            alert("Copied! Select the target box (on any page) and click the Link button.");
-        }
-        
-        saveBoxes();
-        updateStitchButtonState();
-        drawBoxes();
-    }
-
-    function moveBoxUp() {
-        if (selectedBoxIndex > -1 && selectedBoxIndex < boxes.length - 1) {
-            const [movedBox] = boxes.splice(selectedBoxIndex, 1);
-            boxes.splice(selectedBoxIndex + 1, 0, movedBox);
-            selectedBoxIndex++;
-            saveBoxes();
-            drawBoxes();
-            updateToolbarPosition();
-        }
-    }
-
-    function moveBoxDown() {
-        if (selectedBoxIndex > 0) {
-            const [movedBox] = boxes.splice(selectedBoxIndex, 1);
-            boxes.splice(selectedBoxIndex - 1, 0, movedBox);
-            selectedBoxIndex--;
-            saveBoxes();
-            drawBoxes();
-            updateToolbarPosition();
-        }
-    }
-
-    function setupListeners() {
-        drawCanvas.addEventListener('mousedown', onPointerDown);
-        drawCanvas.addEventListener('touchstart', onPointerDown, {passive:false});
-        
-        document.getElementById('clearBtn').addEventListener('click', () => { 
-            if(confirm("Delete all boxes?")) { boxes=[]; selectBox(-1); saveBoxes(); }
-        });
-        
-        document.getElementById('backBtn').addEventListener('click', () => {
-             window.location.href = (imageIndex > 0) ? `/cropv2/${sessionId}/${imageIndex-1}` : `/v2`;
-        });
-
-        document.getElementById('delete-btn').addEventListener('click', () => {
-            if (selectedBoxIndex > -1) { 
-                const deletedBox = boxes[selectedBoxIndex];
-                // Clear buffer if we are deleting the source box currently in clipboard
-                if (stitchBuffer && stitchBuffer.session_id === sessionId && stitchBuffer.box.id === deletedBox.id) {
-                    stitchBuffer = null;
-                    localStorage.removeItem('gemini_stitch_buffer');
+                // Cache the data if it wasn't cached
+                if (!cachedData) {
+                    try {
+                        const data = await state.pdfDoc.getData();
+                        await PDFCache.put(pdfUrl, data);
+                        console.log('PDF cached successfully');
+                    } catch (cacheErr) {
+                        console.warn('Failed to cache PDF:', cacheErr);
+                    }
                 }
                 
-                boxes.splice(selectedBoxIndex, 1); 
-                selectBox(-1); 
-                saveBoxes(); 
+                // Update UI
+                elements.pageCount.textContent = state.totalPages;
+                elements.pageInput.max = state.totalPages;
+                
+                // Hide loader
+                elements.loader.style.display = 'none';
+                
+                // Initial render
+                await renderCurrentView();
+                
+                // Generate thumbnails
+                generateThumbnails();
+                
+                // Load outline
+                loadOutline();
+                
+                // Load bookmarks
+                renderBookmarks();
+                
+                if (!cachedData) {
+                    showToast('PDF loaded successfully', 'success');
+                }
+                
+            } catch (error) {
+                console.error('Error loading PDF:', error);
+                elements.loader.innerHTML = `
+                    <i class="bi bi-exclamation-triangle" style="font-size: 3rem; color: var(--danger);"></i>
+                    <div class="loader-text">Error loading PDF</div>
+                    <div style="color: var(--text-secondary); font-size: 0.85rem;">${error.message}</div>
+                `;
             }
-        });
-        
-        document.getElementById('stitch-btn').addEventListener('click', handleStitchClick);
-        
-        document.getElementById('move-up-btn').addEventListener('click', moveBoxUp);
-        document.getElementById('move-down-btn').addEventListener('click', moveBoxDown);
-
-        document.getElementById('processBtn').addEventListener('click', processPage);
-        
-        ['brightness','contrast','gamma'].forEach(id => {
-            document.getElementById(id).addEventListener('input', updateFilters);
-        });
-    }
-
-    function updateFilters() {
-        const b = document.getElementById('brightness').value;
-        const c = document.getElementById('contrast').value;
-        const g = document.getElementById('gamma').value;
-        
-        console.log(`Filters: Brightness ${b}, Contrast ${c}, Gamma ${g}`);
-        
-        // Note: Gamma is not supported in standard CSS filters, so it won't show visually here.
-        // It would require an SVG filter or Canvas manipulation to visualize.
-        image.style.filter = `brightness(${100 + parseFloat(b)}%) contrast(${c})`;
-        
-        document.getElementById('brightnessValue').innerText = b;
-        document.getElementById('contrastValue').innerText = c;
-        document.getElementById('gammaValue').innerText = g;
-        
-        localStorage.setItem('pdfFilters', JSON.stringify({b,c,g}));
-    }
-    
-    function loadSettings() {
-        try {
-            const s = JSON.parse(localStorage.getItem('pdfFilters'));
-            if(s) {
-                document.getElementById('brightness').value = s.b;
-                document.getElementById('contrast').value = s.c;
-                document.getElementById('gamma').value = s.g;
-                updateFilters();
-            }
-        } catch(e){}
-    }
-
-    async function processPage() {
-        if(boxes.length === 0) {
-            if(!confirm("No boxes drawn. Skip page?")) return;
         }
-        
-        const btn = document.getElementById('processBtn');
-        btn.disabled = true;
-        document.getElementById('loader-overlay').style.display = 'flex';
 
-        const finalBoxes = boxes.map(b => {
-            const minX = Math.min(b.tl.x, b.bl.x);
-            const minY = Math.min(b.tl.y, b.tr.y);
-            const maxX = Math.max(b.tr.x, b.br.x);
-            const maxY = Math.max(b.bl.y, b.br.y);
-            return { ...b, x: minX, y: minY, w: maxX - minX, h: maxY - minY };
-        });
-
-        // Capture current filter state
-        const tempCv = document.createElement('canvas');
-        tempCv.width = image.naturalWidth;
-        tempCv.height = image.naturalHeight;
-        const tCtx = tempCv.getContext('2d');
-        tCtx.filter = image.style.filter;
-        tCtx.drawImage(image, 0, 0);
-        const imgData = tempCv.toDataURL('image/jpeg', 0.85);
-
-        try {
-            const res = await fetch('/process_crop_v2', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    session_id: sessionId,
-                    image_index: imageIndex,
-                    boxes: finalBoxes,
-                    imageData: imgData
-                })
+        async function renderCurrentView() {
+            // Capture scroll ratios
+            const scrollRatioY = elements.container.scrollTop / elements.container.scrollHeight;
+            const scrollRatioX = elements.container.scrollLeft / elements.container.scrollWidth;
+            
+            if (state.viewMode === 'continuous') {
+                await renderAllPages();
+            } else {
+                await renderPage(state.currentPage);
+            }
+            
+            // Restore scroll positions
+            requestAnimationFrame(() => {
+                if (elements.container.scrollHeight > elements.container.clientHeight) {
+                    elements.container.scrollTop = scrollRatioY * elements.container.scrollHeight;
+                }
+                if (elements.container.scrollWidth > elements.container.clientWidth) {
+                    elements.container.scrollLeft = scrollRatioX * elements.container.scrollWidth;
+                }
             });
             
-            if(!res.ok) {
-                const errText = await res.text();
-                throw new Error(`Server Error (${res.status}): ${errText}`);
-            }
-
-            window.location.href = (imageIndex + 1 < totalPages)
-                ? `/cropv2/${sessionId}/${imageIndex+1}`
-                : `/question_entry_v2/${sessionId}`;
-                
-        } catch (err) {
-            console.error(err);
-            alert("Error processing page: " + err.message);
-            btn.disabled = false;
-            document.getElementById('loader-overlay').style.display = 'none';
+            updateNavigationState();
         }
-    }
 
-    function saveBoxes() { localStorage.setItem(storageKey, JSON.stringify(boxes)); }
-    function loadBoxes() {
-        try {
-            const s = localStorage.getItem(storageKey);
-            if(s) {
-                boxes = JSON.parse(s);
-                boxes.forEach((b,i) => { 
-                    if(!b.id) b.id = Date.now()+i;
-                    // Sanitize: Ensure remote_stitch_source is null if undefined to prevent UI bugs
-                    if (b.remote_stitch_source === undefined) b.remote_stitch_source = null;
-                });
-                drawBoxes();
+        async function renderPage(pageNum) {
+            if (state.isRendering) {
+                state.renderQueue.push(pageNum);
+                return;
             }
-        } catch(e){}
-    }
+            
+            state.isRendering = true;
+            
+            try {
+                const page = await state.pdfDoc.getPage(pageNum);
+                
+                // Calculate scale
+                let scale = state.scale;
+                const containerWidth = elements.container.clientWidth - 60;
+                const containerHeight = elements.container.clientHeight - 60;
+                const viewport = page.getViewport({ scale: 1, rotation: state.rotation });
+                
+                if (state.scale === 'fit-width') {
+                    scale = containerWidth / viewport.width;
+                } else if (state.scale === 'fit-page') {
+                    scale = Math.min(containerWidth / viewport.width, containerHeight / viewport.height);
+                }
+                
+                const scaledViewport = page.getViewport({ scale, rotation: state.rotation });
+                
+                // Clear container for single page view
+                if (state.viewMode === 'single') {
+                    elements.container.innerHTML = '';
+                }
+                
+                // Create wrapper
+                const wrapper = document.createElement('div');
+                wrapper.className = 'page-wrapper';
+                wrapper.dataset.page = pageNum;
+                // Explicitly set dimensions to prevent layout shifts
+                wrapper.style.width = `${scaledViewport.width}px`;
+                wrapper.style.position = 'relative';
+                
+                // Create canvas for PDF
+                const canvas = document.createElement('canvas');
+                canvas.className = 'pdf-page';
+                canvas.height = scaledViewport.height;
+                canvas.width = scaledViewport.width;
+                canvas.style.width = '100%';
+                canvas.style.height = 'auto';
+                
+                // Create canvas for Drawing Layer
+                const drawCanvas = document.createElement('canvas');
+                drawCanvas.className = 'drawing-layer';
+                drawCanvas.height = scaledViewport.height;
+                drawCanvas.width = scaledViewport.width;
+                drawCanvas.style.position = 'absolute';
+                drawCanvas.style.top = '0';
+                drawCanvas.style.left = '0';
+                drawCanvas.style.width = '100%';
+                drawCanvas.style.height = 'auto';
+                // Pointer events depend on tool
+                drawCanvas.style.pointerEvents = (state.selectedTool === 'draw' || state.selectedTool === 'eraser') ? 'auto' : 'none';
+                
+                // Page number label
+                const label = document.createElement('div');
+                label.className = 'page-number-label';
+                label.textContent = `Page ${pageNum}`;
+                
+                wrapper.appendChild(canvas);
+                wrapper.appendChild(drawCanvas);
+                wrapper.appendChild(label);
+                elements.container.appendChild(wrapper);
+                
+                // Setup drawing events on the drawing canvas
+                setupDrawingEvents(drawCanvas, pageNum);
+                
+                // Render Saved Drawings
+                renderDrawings(drawCanvas, pageNum);
 
-    init();
-</script>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+                // Render PDF
+                const ctx = canvas.getContext('2d');
+                await page.render({
+                    canvasContext: ctx,
+                    viewport: scaledViewport
+                }).promise;
+                
+                state.renderedPages.add(pageNum);
+                state.renderedScale = scale;
+                
+                // Update actual zoom percentage in dropdown
+                if (typeof scale === 'number') {
+                    const percent = Math.round(scale * 100);
+                    elements.zoomSelect.options[0].selected = false;
+                    // Check if percent matches any option
+                    let matched = false;
+                    for (let opt of elements.zoomSelect.options) {
+                        if (parseFloat(opt.value) === scale) {
+                            opt.selected = true;
+                            matched = true;
+                            break;
+                        }
+                    }
+                }
+                
+            } catch (error) {
+                console.error('Error rendering page:', error);
+            }
+            
+            state.isRendering = false;
+            
+            // Process queue
+            if (state.renderQueue.length > 0) {
+                const nextPage = state.renderQueue.shift();
+                renderPage(nextPage);
+            }
+        }
+
+        // ==========================================
+        // DRAWING & ERASER LOGIC
+        // ==========================================
+
+        function setupDrawingEvents(canvas, pageNum) {
+            let isDrawing = false;
+            let currentPath = [];
+            
+            const ctx = canvas.getContext('2d');
+            
+            function startDrawing(e) {
+                const pos = getMousePos(canvas, e);
+                
+                if (state.selectedTool === 'draw') {
+                    isDrawing = true;
+                    currentPath = [{x: pos.x, y: pos.y}];
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(pos.x, pos.y);
+                    ctx.lineWidth = 2;
+                    ctx.lineCap = 'round';
+                    ctx.strokeStyle = state.annotationColor;
+                } else if (state.selectedTool === 'eraser') {
+                    isDrawing = true; // Use isDrawing flag for eraser drag
+                    eraseAt(pos, pageNum, canvas);
+                }
+            }
+            
+            function draw(e) {
+                if (!isDrawing) return;
+                const pos = getMousePos(canvas, e);
+
+                if (state.selectedTool === 'draw') {
+                    ctx.lineTo(pos.x, pos.y);
+                    ctx.stroke();
+                    currentPath.push({x: pos.x, y: pos.y});
+                } else if (state.selectedTool === 'eraser') {
+                    eraseAt(pos, pageNum, canvas);
+                }
+            }
+            
+            function stopDrawing() {
+                if (!isDrawing) return;
+                isDrawing = false;
+                
+                // Save path if drawing
+                if (state.selectedTool === 'draw' && currentPath.length > 1) {
+                    const pageDrawings = state.drawings[pageNum] || [];
+                    pageDrawings.push({
+                        color: state.annotationColor,
+                        width: 2,
+                        path: currentPath
+                    });
+                    state.drawings[pageNum] = pageDrawings;
+                    localStorage.setItem('pdf-drawings', JSON.stringify(state.drawings));
+                }
+            }
+            
+            function eraseAt(pos, pageNum, canvas) {
+                const pageDrawings = state.drawings[pageNum];
+                if (!pageDrawings) return;
+                
+                const threshold = 10; // eraser radius
+                let changed = false;
+                
+                const newDrawings = pageDrawings.filter(drawing => {
+                    // Check if any point in the path is close to the mouse
+                    const hit = drawing.path.some(pt => {
+                        const dist = Math.hypot(pt.x - pos.x, pt.y - pos.y);
+                        return dist < threshold;
+                    });
+                    if (hit) changed = true;
+                    return !hit;
+                });
+                
+                if (changed) {
+                    state.drawings[pageNum] = newDrawings;
+                    localStorage.setItem('pdf-drawings', JSON.stringify(state.drawings));
+                    
+                    // Re-render canvas
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    renderDrawings(canvas, pageNum);
+                }
+            }
+            
+            canvas.addEventListener('mousedown', startDrawing);
+            canvas.addEventListener('mousemove', draw);
+            canvas.addEventListener('mouseup', stopDrawing);
+            canvas.addEventListener('mouseout', stopDrawing);
+            
+            // Touch support
+            canvas.addEventListener('touchstart', (e) => {
+                if (state.selectedTool === 'draw' || state.selectedTool === 'eraser') e.preventDefault();
+                startDrawing(e.touches[0]);
+            }, { passive: false });
+            
+            canvas.addEventListener('touchmove', (e) => {
+                 if (state.selectedTool === 'draw' || state.selectedTool === 'eraser') e.preventDefault();
+                draw(e.touches[0]);
+            }, { passive: false });
+            
+            canvas.addEventListener('touchend', stopDrawing);
+        }
+
+        function renderDrawings(canvas, pageNum) {
+            const pageDrawings = state.drawings[pageNum];
+            if (!pageDrawings) return;
+            
+            const ctx = canvas.getContext('2d');
+            
+            pageDrawings.forEach(drawing => {
+                ctx.beginPath();
+                ctx.lineWidth = drawing.width || 2;
+                ctx.lineCap = 'round';
+                ctx.strokeStyle = drawing.color;
+                
+                if (drawing.path.length > 0) {
+                    ctx.moveTo(drawing.path[0].x, drawing.path[0].y);
+                    for (let i = 1; i < drawing.path.length; i++) {
+                        ctx.lineTo(drawing.path[i].x, drawing.path[i].y);
+                    }
+                    ctx.stroke();
+                }
+            });
+        }
+
+
+        async function renderAllPages() {
+            elements.container.innerHTML = '';
+            state.renderedPages.clear();
+            
+            for (let i = 1; i <= state.totalPages; i++) {
+                await renderPage(i);
+            }
+        }
+
+        // ==========================================
+        // NAVIGATION
+        // ==========================================
+        
+        function goToPage(pageNum) {
+            if (pageNum < 1 || pageNum > state.totalPages) return;
+            
+            state.currentPage = pageNum;
+            elements.pageInput.value = pageNum;
+            
+            if (state.viewMode === 'continuous') {
+                // Scroll to page
+                const pageWrapper = elements.container.querySelector(`[data-page="${pageNum}"]`);
+                if (pageWrapper) {
+                    pageWrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            } else {
+                renderPage(pageNum);
+            }
+            
+            updateNavigationState();
+            updateThumbnailHighlight();
+        }
+
+        function updateNavigationState() {
+            document.getElementById('prev-page').disabled = state.currentPage <= 1;
+            document.getElementById('first-page').disabled = state.currentPage <= 1;
+            document.getElementById('next-page').disabled = state.currentPage >= state.totalPages;
+            document.getElementById('last-page').disabled = state.currentPage >= state.totalPages;
+        }
+
+        // ==========================================
+        // ZOOM
+        // ==========================================
+        
+        function setZoom(value) {
+            if (value === 'fit-width' || value === 'fit-page') {
+                state.scale = value;
+            } else {
+                state.scale = parseFloat(value);
+            }
+            renderCurrentView();
+        }
+
+        function zoomIn() {
+            if (typeof state.scale !== 'number') {
+                state.scale = 1.0;
+            }
+            state.scale = Math.min(state.scale + 0.25, 5);
+            elements.zoomSelect.value = state.scale;
+            renderCurrentView();
+        }
+
+        function zoomOut() {
+            if (typeof state.scale !== 'number') {
+                state.scale = 1.0;
+            }
+            state.scale = Math.max(state.scale - 0.25, 0.25);
+            elements.zoomSelect.value = state.scale;
+            renderCurrentView();
+        }
+
+        // ==========================================
+        // ROTATION
+        // ==========================================
+        
+        function rotate() {
+            state.rotation = (state.rotation + 90) % 360;
+            renderCurrentView();
+            showToast(`Rotated to ${state.rotation}°`, 'info');
+        }
+
+        // ==========================================
+        // VIEW MODES
+        // ==========================================
+        
+        function toggleViewMode() {
+            const modes = ['single', 'continuous'];
+            const currentIndex = modes.indexOf(state.viewMode);
+            state.viewMode = modes[(currentIndex + 1) % modes.length];
+            
+            const icon = document.querySelector('#view-mode i');
+            if (state.viewMode === 'continuous') {
+                icon.className = 'bi bi-files';
+            } else {
+                icon.className = 'bi bi-file-earmark';
+            }
+            
+            renderCurrentView();
+            showToast(`View mode: ${state.viewMode}`, 'info');
+        }
+
+        // ==========================================
+        // THUMBNAILS
+        // ==========================================
+        
+        async function generateThumbnails() {
+            elements.thumbnailGrid.innerHTML = '';
+            
+            for (let i = 1; i <= state.totalPages; i++) {
+                const page = await state.pdfDoc.getPage(i);
+                const viewport = page.getViewport({ scale: 0.2 });
+                
+                const item = document.createElement('div');
+                item.className = 'thumbnail-item' + (i === state.currentPage ? ' active' : '');
+                item.dataset.page = i;
+                
+                const canvas = document.createElement('canvas');
+                canvas.className = 'thumbnail-canvas';
+                canvas.width = viewport.width;
+                canvas.height = viewport.height;
+                
+                const ctx = canvas.getContext('2d');
+                await page.render({
+                    canvasContext: ctx,
+                    viewport: viewport
+                }).promise;
+                
+                const pageLabel = document.createElement('span');
+                pageLabel.className = 'thumbnail-page-num';
+                pageLabel.textContent = `Page ${i}`;
+                
+                item.appendChild(canvas);
+                item.appendChild(pageLabel);
+                item.addEventListener('click', () => goToPage(i));
+                
+                elements.thumbnailGrid.appendChild(item);
+            }
+        }
+
+        function updateThumbnailHighlight() {
+            document.querySelectorAll('.thumbnail-item').forEach(item => {
+                item.classList.toggle('active', parseInt(item.dataset.page) === state.currentPage);
+            });
+        }
+
+        // ==========================================
+        // OUTLINE / TOC
+        // ==========================================
+        
+        async function loadOutline() {
+            try {
+                const outline = await state.pdfDoc.getOutline();
+                const container = document.getElementById('outline-content');
+                
+                if (!outline || outline.length === 0) {
+                    container.innerHTML = '<p style="color: var(--text-secondary); font-size: 0.85rem;">No outline available</p>';
+                    return;
+                }
+                
+                container.innerHTML = '';
+                renderOutlineItems(outline, container, 0);
+            } catch (error) {
+                console.error('Error loading outline:', error);
+            }
+        }
+
+        function renderOutlineItems(items, container, level) {
+            items.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'outline-item';
+                div.style.paddingLeft = (12 + level * 16) + 'px';
+                div.innerHTML = `<i class="bi bi-file-text"></i> ${item.title}`;
+                
+                div.addEventListener('click', async () => {
+                    if (item.dest) {
+                        const dest = await state.pdfDoc.getDestination(item.dest);
+                        const pageIndex = await state.pdfDoc.getPageIndex(dest[0]);
+                        goToPage(pageIndex + 1);
+                    }
+                });
+                
+                container.appendChild(div);
+                
+                if (item.items && item.items.length > 0) {
+                    renderOutlineItems(item.items, container, level + 1);
+                }
+            });
+        }
+
+        // ==========================================
+        // BOOKMARKS
+        // ==========================================
+        
+        function addBookmark() {
+            document.getElementById('bookmark-title').value = `Page ${state.currentPage}`;
+            document.getElementById('bookmark-page').value = state.currentPage;
+            openModal('bookmark-modal');
+        }
+
+        function saveBookmark() {
+            const title = document.getElementById('bookmark-title').value || `Page ${state.currentPage}`;
+            const page = parseInt(document.getElementById('bookmark-page').value);
+            
+            state.bookmarks.push({
+                id: Date.now(),
+                title,
+                page,
+                createdAt: new Date().toISOString()
+            });
+            
+            localStorage.setItem('pdf-bookmarks', JSON.stringify(state.bookmarks));
+            renderBookmarks();
+            closeModal('bookmark-modal');
+            showToast('Bookmark added', 'success');
+        }
+
+        function deleteBookmark(id) {
+            state.bookmarks = state.bookmarks.filter(b => b.id !== id);
+            localStorage.setItem('pdf-bookmarks', JSON.stringify(state.bookmarks));
+            renderBookmarks();
+            showToast('Bookmark deleted', 'info');
+        }
+
+        function renderBookmarks() {
+            const container = document.getElementById('bookmarks-list');
+            
+            if (state.bookmarks.length === 0) {
+                container.innerHTML = `
+                    <p style="color: var(--text-secondary); font-size: 0.85rem; text-align: center; padding: 20px;">
+                        No bookmarks yet.<br>Press <strong>B</strong> to add a bookmark.
+                    </p>
+                `;
+                return;
+            }
+            
+            container.innerHTML = '';
+            state.bookmarks.forEach(bookmark => {
+                const item = document.createElement('div');
+                item.className = 'bookmark-item';
+                item.innerHTML = `
+                    <span class="bookmark-delete" onclick="event.stopPropagation(); deleteBookmark(${bookmark.id})">
+                        <i class="bi bi-trash"></i>
+                    </span>
+                    <div class="bookmark-title">${bookmark.title}</div>
+                    <div class="bookmark-page">Page ${bookmark.page}</div>
+                `;
+                item.addEventListener('click', () => goToPage(bookmark.page));
+                container.appendChild(item);
+            });
+        }
+
+        // ==========================================
+        // SEARCH
+        // ==========================================
+        
+        function toggleSearch() {
+            const isVisible = elements.searchBar.style.display !== 'none';
+            elements.searchBar.style.display = isVisible ? 'none' : 'block';
+            if (!isVisible) {
+                elements.searchInput.focus();
+            }
+        }
+
+        async function performSearch(query) {
+            if (!query.trim()) {
+                state.searchResults = [];
+                document.getElementById('search-count').textContent = '';
+                return;
+            }
+            
+            state.searchResults = [];
+            state.currentSearchIndex = -1;
+            
+            for (let i = 1; i <= state.totalPages; i++) {
+                const page = await state.pdfDoc.getPage(i);
+                const textContent = await page.getTextContent();
+                const text = textContent.items.map(item => item.str).join(' ');
+                
+                const regex = new RegExp(query, 'gi');
+                let match;
+                while ((match = regex.exec(text)) !== null) {
+                    state.searchResults.push({
+                        page: i,
+                        index: match.index,
+                        text: text.substring(Math.max(0, match.index - 30), match.index + query.length + 30)
+                    });
+                }
+            }
+            
+            const count = state.searchResults.length;
+            document.getElementById('search-count').textContent = count > 0 ? `${count} result${count !== 1 ? 's' : ''}` : 'No results';
+            document.getElementById('search-prev').disabled = count === 0;
+            document.getElementById('search-next').disabled = count === 0;
+            
+            if (count > 0) {
+                navigateSearch(1);
+            }
+        }
+
+        function navigateSearch(direction) {
+            if (state.searchResults.length === 0) return;
+            
+            state.currentSearchIndex += direction;
+            if (state.currentSearchIndex < 0) {
+                state.currentSearchIndex = state.searchResults.length - 1;
+            } else if (state.currentSearchIndex >= state.searchResults.length) {
+                state.currentSearchIndex = 0;
+            }
+            
+            const result = state.searchResults[state.currentSearchIndex];
+            goToPage(result.page);
+            
+            document.getElementById('search-count').textContent = 
+                `${state.currentSearchIndex + 1} of ${state.searchResults.length}`;
+        }
+
+        // ==========================================
+        // ANNOTATIONS
+        // ==========================================
+        
+        function toggleAnnotationsPanel() {
+            elements.annotationsPanel.classList.toggle('open');
+        }
+
+        function selectAnnotationTool(tool) {
+            state.selectedTool = state.selectedTool === tool ? null : tool;
+            
+            document.querySelectorAll('.annotation-tool').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.tool === state.selectedTool);
+            });
+            
+            if (state.selectedTool) {
+                showToast(`${tool.charAt(0).toUpperCase() + tool.slice(1)} tool selected`, 'info');
+            }
+        }
+
+        function selectAnnotationColor(color) {
+            state.annotationColor = color;
+            document.querySelectorAll('.color-option').forEach(opt => {
+                opt.classList.toggle('active', opt.dataset.color === color);
+            });
+        }
+
+        function addNote() {
+            openModal('note-modal');
+        }
+
+        function saveNote() {
+            const content = document.getElementById('note-content').value;
+            if (!content.trim()) return;
+            
+            const pageNotes = state.notes[state.currentPage] || [];
+            pageNotes.push({
+                id: Date.now(),
+                content,
+                createdAt: new Date().toISOString()
+            });
+            state.notes[state.currentPage] = pageNotes;
+            
+            localStorage.setItem('pdf-notes', JSON.stringify(state.notes));
+            renderNotes();
+            closeModal('note-modal');
+            document.getElementById('note-content').value = '';
+            showToast('Note added', 'success');
+        }
+
+        function renderNotes() {
+            const container = document.getElementById('notes-list');
+            const pageNotes = state.notes[state.currentPage] || [];
+            
+            if (pageNotes.length === 0) {
+                container.innerHTML = '<p style="color: var(--text-secondary); font-size: 0.85rem;">No notes on this page.</p>';
+                return;
+            }
+            
+            container.innerHTML = '';
+            pageNotes.forEach(note => {
+                const item = document.createElement('div');
+                item.className = 'note-item';
+                item.innerHTML = `
+                    <div class="note-header">
+                        <span>${new Date(note.createdAt).toLocaleString()}</span>
+                        <span onclick="deleteNote(${note.id})" style="cursor: pointer; color: var(--danger);">
+                            <i class="bi bi-trash"></i>
+                        </span>
+                    </div>
+                    <div class="note-content">${note.content}</div>
+                `;
+                container.appendChild(item);
+            });
+        }
+
+        function deleteNote(id) {
+            const pageNotes = state.notes[state.currentPage] || [];
+            state.notes[state.currentPage] = pageNotes.filter(n => n.id !== id);
+            localStorage.setItem('pdf-notes', JSON.stringify(state.notes));
+            renderNotes();
+            showToast('Note deleted', 'info');
+        }
+
+        // ==========================================
+        // PRESENTATION MODE
+        // ==========================================
+        
+        function togglePresentationMode() {
+            state.isPresentationMode = !state.isPresentationMode;
+            document.body.classList.toggle('presentation-mode', state.isPresentationMode);
+            
+            if (state.isPresentationMode) {
+                document.documentElement.requestFullscreen?.();
+                showToast('Press ESC to exit presentation mode', 'info');
+            } else {
+                document.exitFullscreen?.();
+            }
+            
+            renderCurrentView();
+        }
+
+        // ==========================================
+        // PRINT & DOWNLOAD
+        // ==========================================
+        
+        function printPDF() {
+            window.print();
+        }
+
+        function downloadPDF() {
+            const link = document.createElement('a');
+            link.href = pdfUrl;
+            link.download = '{{ pdf_title }}.pdf';
+            link.click();
+            showToast('Download started', 'success');
+        }
+
+        // ==========================================
+        // SIDEBAR
+        // ==========================================
+        
+        function toggleSidebar() {
+            elements.sidebar.classList.toggle('open');
+        }
+
+        function switchSidebarTab(tabName) {
+            document.querySelectorAll('.sidebar-tab').forEach(tab => {
+                tab.classList.toggle('active', tab.dataset.tab === tabName);
+            });
+            
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.style.display = content.id === `tab-${tabName}` ? 'block' : 'none';
+            });
+        }
+
+        // ==========================================
+        // CONTEXT MENU
+        // ==========================================
+        
+        function showContextMenu(e, x, y) {
+            elements.contextMenu.style.left = x + 'px';
+            elements.contextMenu.style.top = y + 'px';
+            elements.contextMenu.classList.add('show');
+        }
+
+        function hideContextMenu() {
+            elements.contextMenu.classList.remove('show');
+        }
+
+        // ==========================================
+        // EVENT LISTENERS
+        // ==========================================
+        
+        // Navigation
+        document.getElementById('prev-page').addEventListener('click', () => goToPage(state.currentPage - 1));
+        document.getElementById('next-page').addEventListener('click', () => goToPage(state.currentPage + 1));
+        document.getElementById('first-page').addEventListener('click', () => goToPage(1));
+        document.getElementById('last-page').addEventListener('click', () => goToPage(state.totalPages));
+        
+        elements.pageInput.addEventListener('change', (e) => {
+            goToPage(parseInt(e.target.value));
+        });
+        
+        elements.pageInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                goToPage(parseInt(e.target.value));
+                e.target.blur();
+            }
+        });
+        
+        // Zoom
+        document.getElementById('zoom-in').addEventListener('click', zoomIn);
+        document.getElementById('zoom-out').addEventListener('click', zoomOut);
+        elements.zoomSelect.addEventListener('change', (e) => setZoom(e.target.value));
+        
+        // Tools
+        document.getElementById('tool-hand').addEventListener('click', () => setActiveTool('hand'));
+        document.getElementById('tool-select').addEventListener('click', () => setActiveTool('select'));
+
+        // View & Rotate
+        document.getElementById('view-mode').addEventListener('click', toggleViewMode);
+        document.getElementById('rotate-cw').addEventListener('click', rotate);
+        
+        // Sidebar
+        document.getElementById('toggle-sidebar').addEventListener('click', toggleSidebar);
+        document.querySelectorAll('.sidebar-tab').forEach(tab => {
+            tab.addEventListener('click', () => switchSidebarTab(tab.dataset.tab));
+        });
+        
+        // Search
+        document.getElementById('toggle-search').addEventListener('click', toggleSearch);
+        document.getElementById('search-close').addEventListener('click', toggleSearch);
+        elements.searchInput.addEventListener('input', debounce((e) => performSearch(e.target.value), 300));
+        document.getElementById('search-prev').addEventListener('click', () => navigateSearch(-1));
+        document.getElementById('search-next').addEventListener('click', () => navigateSearch(1));
+        
+        // Bookmarks
+        document.getElementById('toggle-bookmarks').addEventListener('click', addBookmark);
+        document.getElementById('save-bookmark').addEventListener('click', saveBookmark);
+        
+        // Annotations
+        document.getElementById('toggle-annotations').addEventListener('click', toggleAnnotationsPanel);
+        document.getElementById('close-annotations').addEventListener('click', toggleAnnotationsPanel);
+        
+        // Annotation Tools Selection
+        document.querySelectorAll('.annotation-tool').forEach(toolBtn => {
+            toolBtn.addEventListener('click', () => {
+                const tool = toolBtn.dataset.tool;
+                // If clicking active tool, toggle off to 'select'
+                if (state.selectedTool === tool) {
+                    setActiveTool('select');
+                } else {
+                    setActiveTool(tool);
+                }
+            });
+        });
+
+        document.querySelectorAll('.color-option').forEach(opt => {
+            opt.addEventListener('click', () => selectAnnotationColor(opt.dataset.color));
+        });
+        document.getElementById('save-note').addEventListener('click', saveNote);
+        
+        // Other actions
+        document.getElementById('presentation-mode').addEventListener('click', togglePresentationMode);
+        document.getElementById('print-btn').addEventListener('click', printPDF);
+        document.getElementById('download-btn').addEventListener('click', downloadPDF);
+        document.getElementById('help-btn').addEventListener('click', () => openModal('shortcuts-modal'));
+        
+        // Context Menu
+        elements.container.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            showContextMenu(e, e.clientX, e.clientY);
+        });
+        
+        document.addEventListener('click', hideContextMenu);
+        
+        document.getElementById('ctx-copy').addEventListener('click', () => {
+            const selection = window.getSelection().toString();
+            navigator.clipboard.writeText(selection);
+            showToast('Copied to clipboard', 'success');
+        });
+        
+        document.getElementById('ctx-highlight').addEventListener('click', () => {
+            setActiveTool('highlight');
+            toggleAnnotationsPanel();
+        });
+        
+        document.getElementById('ctx-note').addEventListener('click', addNote);
+        
+        document.getElementById('ctx-search').addEventListener('click', () => {
+            const selection = window.getSelection().toString();
+            if (selection) {
+                toggleSearch();
+                elements.searchInput.value = selection;
+                performSearch(selection);
+            }
+        });
+        
+        // Keyboard Shortcuts
+        document.addEventListener('keydown', (e) => {
+            // Don't trigger shortcuts when typing in inputs
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+                if (e.key === 'Escape') {
+                    e.target.blur();
+                }
+                return;
+            }
+            
+            // Presentation mode escape
+            if (e.key === 'Escape') {
+                if (state.isPresentationMode) {
+                    togglePresentationMode();
+                }
+                closeModal('bookmark-modal');
+                closeModal('note-modal');
+                closeModal('shortcuts-modal');
+                elements.searchBar.style.display = 'none';
+                return;
+            }
+            
+            // Tools
+            if (e.key.toLowerCase() === 'h') {
+                setActiveTool('hand');
+            }
+            if (e.key.toLowerCase() === 'v') {
+                setActiveTool('select');
+            }
+            if (e.key.toLowerCase() === 'e') {
+                 // Check if annotation panel is open, or just open it
+                 if (!elements.annotationsPanel.classList.contains('open')) {
+                     toggleAnnotationsPanel();
+                 }
+                 setActiveTool('eraser');
+            }
+
+            // Navigation
+            if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+                e.preventDefault();
+                goToPage(state.currentPage - 1);
+            }
+            if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') {
+                e.preventDefault();
+                goToPage(state.currentPage + 1);
+            }
+            if (e.key === 'Home') {
+                e.preventDefault();
+                goToPage(1);
+            }
+            if (e.key === 'End') {
+                e.preventDefault();
+                goToPage(state.totalPages);
+            }
+            
+            // Zoom
+            if (e.key === '+' || e.key === '=') {
+                e.preventDefault();
+                zoomIn();
+            }
+            if (e.key === '-') {
+                e.preventDefault();
+                zoomOut();
+            }
+            if (e.key === '0') {
+                e.preventDefault();
+                setZoom(1);
+                elements.zoomSelect.value = 1;
+            }
+            
+            // Actions
+            if (e.key.toLowerCase() === 'r') {
+                rotate();
+            }
+            if (e.key.toLowerCase() === 's') {
+                toggleSidebar();
+            }
+            if (e.key.toLowerCase() === 'b') {
+                addBookmark();
+            }
+            if (e.key.toLowerCase() === 'g') {
+                elements.pageInput.focus();
+                elements.pageInput.select();
+            }
+            if (e.key === '?') {
+                openModal('shortcuts-modal');
+            }
+            if (e.key === 'F5') {
+                e.preventDefault();
+                togglePresentationMode();
+            }
+            
+            // Ctrl combinations
+            if (e.ctrlKey || e.metaKey) {
+                if (e.key.toLowerCase() === 'f') {
+                    e.preventDefault();
+                    toggleSearch();
+                }
+                if (e.key.toLowerCase() === 'p') {
+                    e.preventDefault();
+                    printPDF();
+                }
+            }
+        });
+        
+        // Mouse wheel zoom (with Ctrl)
+        elements.container.addEventListener('wheel', (e) => {
+            if (e.ctrlKey) {
+                e.preventDefault();
+                if (e.deltaY < 0) {
+                    zoomIn();
+                } else {
+                    zoomOut();
+                }
+            }
+        }, { passive: false });
+        
+        // Continuous scroll page tracking
+        elements.container.addEventListener('scroll', debounce(() => {
+            if (state.viewMode === 'continuous') {
+                const wrappers = elements.container.querySelectorAll('.page-wrapper');
+                const containerTop = elements.container.scrollTop + 100;
+                
+                for (const wrapper of wrappers) {
+                    if (wrapper.offsetTop + wrapper.offsetHeight > containerTop) {
+                        const newPage = parseInt(wrapper.dataset.page);
+                        if (newPage !== state.currentPage) {
+                            state.currentPage = newPage;
+                            elements.pageInput.value = newPage;
+                            updateNavigationState();
+                            updateThumbnailHighlight();
+                            renderNotes();
+                        }
+                        break;
+                    }
+                }
+            }
+        }, 100));
+        
+        // Fullscreen change
+        document.addEventListener('fullscreenchange', () => {
+            if (!document.fullscreenElement && state.isPresentationMode) {
+                state.isPresentationMode = false;
+                document.body.classList.remove('presentation-mode');
+                renderCurrentView();
+            }
+        });
+        
+        // Window resize
+        window.addEventListener('resize', debounce(() => {
+            if (state.scale === 'fit-width' || state.scale === 'fit-page') {
+                renderCurrentView();
+            }
+        }, 250));
+
+        // ==========================================
+        // SMOOTH ZOOMING (PINCH & WHEEL)
+        // ==========================================
+        
+        let zoomRenderTimeout;
+        
+        function applyCssZoom(scale) {
+            // Visually scale elements immediately using CSS
+            // This is fast but blurry (low res) until render() is called
+            const wrappers = document.querySelectorAll('.page-wrapper');
+            
+            wrappers.forEach(wrapper => {
+                const canvas = wrapper.querySelector('.pdf-page');
+                if (!canvas) return;
+                
+                // Get original aspect ratio/dimensions from the canvas internal dimensions
+                // We use the canvas "width" attribute (not style) which represents the high-res pixels
+                // Current rendered pixel width
+                const pixelWidth = canvas.width; 
+                const pixelHeight = canvas.height;
+                
+                // We need to determine the new display width based on the desired 'scale'
+                // Since state.scale is relative to the PDF point size (1.0 = 72dpi usually),
+                // and canvas.width includes the DPR scaling.
+                
+                // Simpler approach: Calculate relative change from current display size
+                // But 'scale' is absolute. 
+                // We need to know the base dimensions of the page at scale 1.0.
+                // We can approximate by looking at the current style width and state.scale.
+            });
+            
+            // Actually, simpler approach for "preview":
+            // We don't need absolute precision for the preview.
+            // We just need it to grow/shrink.
+            // But we need to set state.scale correctly for the final render.
+            
+            // Let's rely on renderCurrentView for the logic, but debounce it.
+            // For immediate feedback, we CAN use CSS transform on the container?
+            // No, layout flows.
+            
+            // Let's implement the CSS Width approach properly in the event handlers.
+        }
+
+        function setupSmoothZoom() {
+            // --- PINCH ZOOM ---
+            let startDist = 0;
+            let startScale = 1;
+            let startWidths = []; // Store widths of all pages
+            
+            elements.container.addEventListener('touchstart', (e) => {
+                if (e.touches.length === 2) {
+                    e.preventDefault();
+                    startDist = Math.hypot(
+                        e.touches[0].pageX - e.touches[1].pageX,
+                        e.touches[0].pageY - e.touches[1].pageY
+                    );
+                    
+                    // Resolve 'fit-width' etc to number
+                    if (typeof state.scale !== 'number') {
+                        // Estimate current scale from first page
+                        const firstPage = document.querySelector('.pdf-page');
+                        if (firstPage && state.pdfDoc) {
+                            // We assume standard letter/A4 roughly, or just use the current visual width
+                            // This is just a starting point for the ratio
+                            state.scale = 1.0; // Fallback, will be corrected by visual ratio
+                        } else {
+                            state.scale = 1.0;
+                        }
+                    }
+                    startScale = state.scale;
+                    
+                    // Capture starting widths for CSS scaling
+                    startWidths = Array.from(document.querySelectorAll('.page-wrapper')).map(el => el.getBoundingClientRect().width);
+                }
+            }, { passive: false });
+            
+            elements.container.addEventListener('touchmove', (e) => {
+                if (e.touches.length === 2 && startDist > 0) {
+                    e.preventDefault();
+                    const dist = Math.hypot(
+                        e.touches[0].pageX - e.touches[1].pageX,
+                        e.touches[0].pageY - e.touches[1].pageY
+                    );
+                    
+                    const ratio = dist / startDist;
+                    const newScale = startScale * ratio;
+                    
+                    // Limit scale
+                    if (newScale < 0.25 || newScale > 5.0) return;
+                    
+                    state.scale = newScale;
+                    elements.zoomSelect.value = newScale; // Update UI roughly
+                    
+                    // Apply CSS scaling to wrappers for immediate feedback
+                    const wrappers = document.querySelectorAll('.page-wrapper');
+                    wrappers.forEach((wrapper, i) => {
+                        if (startWidths[i]) {
+                            const newW = startWidths[i] * ratio;
+                            wrapper.style.width = `${newW}px`;
+                            // Height auto-adjusts if we don't set it, or we should set it
+                            // Canvas inside is usually 100% width
+                            const canvas = wrapper.querySelector('.pdf-page');
+                            const drawLayer = wrapper.querySelector('.drawing-layer');
+                            if (canvas) {
+                                canvas.style.width = '100%';
+                                canvas.style.height = 'auto';
+                            }
+                            if (drawLayer) {
+                                drawLayer.style.width = '100%';
+                                drawLayer.style.height = 'auto';
+                            }
+                        }
+                    });
+                }
+            }, { passive: false });
+            
+            elements.container.addEventListener('touchend', (e) => {
+                if (e.touches.length < 2) {
+                    // Gesture ended
+                    startDist = 0;
+                    // Trigger high-res render
+                    clearTimeout(zoomRenderTimeout);
+                    zoomRenderTimeout = setTimeout(() => {
+                        renderCurrentView();
+                    }, 100);
+                }
+            });
+
+            // --- WHEEL ZOOM (Global) ---
+            window.addEventListener('wheel', (e) => {
+                if (e.ctrlKey) {
+                    e.preventDefault(); // Stop browser zoom
+                    
+                    // Calculate zoom step
+                    const delta = -e.deltaY;
+                    const zoomFactor = 1.05;
+                    
+                    if (typeof state.scale !== 'number') state.scale = 1.0;
+                    
+                    let newScale = state.scale;
+                    if (delta > 0) newScale *= zoomFactor;
+                    else newScale /= zoomFactor;
+                    
+                    // Clamp
+                    newScale = Math.min(Math.max(newScale, 0.25), 5.0);
+                    
+                    if (Math.abs(newScale - state.scale) > 0.01) {
+                        state.scale = newScale;
+                        elements.zoomSelect.value = newScale;
+                        
+                        // Apply CSS scale preview
+                        // For wheel, we don't have a stable "start" state like touch, 
+                        // so we calculate width based on previous width * factor
+                        const wrappers = document.querySelectorAll('.page-wrapper');
+                        wrappers.forEach(wrapper => {
+                            const currentW = wrapper.getBoundingClientRect().width;
+                            const ratio = delta > 0 ? zoomFactor : (1/zoomFactor);
+                            wrapper.style.width = `${currentW * ratio}px`;
+                            
+                            const canvas = wrapper.querySelector('.pdf-page');
+                            const drawLayer = wrapper.querySelector('.drawing-layer');
+                            if (canvas) { canvas.style.width = '100%'; canvas.style.height = 'auto'; }
+                            if (drawLayer) { drawLayer.style.width = '100%'; drawLayer.style.height = 'auto'; }
+                        });
+
+                        // Debounce render
+                        clearTimeout(zoomRenderTimeout);
+                        zoomRenderTimeout = setTimeout(() => {
+                            renderCurrentView();
+                        }, 150);
+                    }
+                }
+            }, { passive: false });
+        }
+
+        // ==========================================
+        // INITIALIZATION
+        // ==========================================
+        
+        // Initialize with select tool
+        setActiveTool('select');
+        setupSmoothZoom();
+        loadPDF();
+
+    </script>
 </body>
 </html>

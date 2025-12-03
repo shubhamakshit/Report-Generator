@@ -248,6 +248,16 @@ def setup_database():
     except sqlite3.OperationalError:
         cursor.execute("ALTER TABLE sessions ADD COLUMN session_type TEXT DEFAULT 'standard'")
 
+    try:
+        cursor.execute("SELECT v2_default FROM users LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE users ADD COLUMN v2_default INTEGER DEFAULT 0")
+
+    try:
+        cursor.execute("SELECT magnifier_enabled FROM users LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE users ADD COLUMN magnifier_enabled INTEGER DEFAULT 1")
+
     conn.commit()
     conn.close()
 

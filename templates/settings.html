@@ -25,12 +25,30 @@
                     <form method="POST">
                         <fieldset>
                             <legend class="h5 mb-3">Feature Toggles</legend>
-                            <div class="form-check form-switch">
+                            <div class="form-check form-switch mb-3">
                                 <input class="form-check-input" type="checkbox" role="switch" id="neetprep_enabled" name="neetprep_enabled" {% if current_user.neetprep_enabled %}checked{% endif %}>
                                 <label class="form-check-label" for="neetprep_enabled">
                                     Enable NeetPrep Sync
-                                    <p class="text-muted small">
-                                        Enable or disable fetching and managing questions from NeetPrep. Your own classified questions will not be affected.
+                                    <p class="text-muted small mb-0">
+                                        Enable or disable fetching and managing questions from NeetPrep.
+                                    </p>
+                                </label>
+                            </div>
+                            <div class="form-check form-switch mb-3">
+                                <input class="form-check-input" type="checkbox" role="switch" id="v2_default" name="v2_default" {% if current_user.v2_default %}checked{% endif %}>
+                                <label class="form-check-label" for="v2_default">
+                                    Use V2 Interface by Default
+                                    <p class="text-muted small mb-0">
+                                        Redirect to the V2 upload interface when visiting the home page.
+                                    </p>
+                                </label>
+                            </div>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" role="switch" id="magnifier_enabled" name="magnifier_enabled" {% if current_user.magnifier_enabled %}checked{% endif %}>
+                                <label class="form-check-label" for="magnifier_enabled">
+                                    Enable Crop Magnifier
+                                    <p class="text-muted small mb-0">
+                                        Show a magnifying lens when touching the screen in the cropping interface.
                                     </p>
                                 </label>
                             </div>
