@@ -319,6 +319,37 @@
         }, false);
     });
 
+    // --- Paste Support ---
+    document.addEventListener('paste', function(event) {
+        const items = (event.clipboardData || event.originalEvent.clipboardData).items;
+        for (let index in items) {
+            const item = items[index];
+            if (item.kind === 'file') {
+                const blob = item.getAsFile();
+                if (blob.type === 'application/pdf') {
+                    // It's a PDF!
+                    // We need to create a FileList-like object or use DataTransfer to set input.files
+                    const dataTransfer = new DataTransfer();
+                    dataTransfer.items.add(blob);
+                    fileInput.files = dataTransfer.files;
+
+                    // Trigger change event to update UI
+                    const changeEvent = new Event('change');
+                    fileInput.dispatchEvent(changeEvent);
+                    
+                    // Switch to file tab if not active
+                    const fileTabBtn = document.querySelector('#file-tab');
+                    if (!fileTabBtn.classList.contains('active')) {
+                        const tab = new bootstrap.Tab(fileTabBtn);
+                        tab.show();
+                    }
+                    
+                    break; 
+                }
+            }
+        }
+    });
+
     // --- Tab Handling ---
     const tabs = document.querySelectorAll('#uploadMethodTab .nav-link');
     tabs.forEach(tab => {

@@ -2,817 +2,615 @@
 <html lang="en" data-bs-theme="dark">
 <head>
     <meta charset="utf-8">
-    <!-- Updated viewport: added viewport-fit=cover for notched phones -->
     <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, maximum-scale=1, viewport-fit=cover">
-    <title>Step 2: Draw Boxes ({{ image_index + 1 }} / {{ total_pages }})</title>
+    <title>Crop Page {{ image_index + 1 }}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <style>
-        /* --- MOBILE FIRST CSS RESET --- */
+        /* --- CORE VARIABLES --- */
         :root {
             --header-height: 60px;
-            --controls-height-mobile: 35vh;
-            --controls-width-desktop: 340px;
+            --slider-height: 90px;
+            --bg-dark: #121212;
+            --surface-color: #1e1e1e;
         }
 
-        html, body { 
-            height: 100%; 
-            height: 100dvh; /* Dynamic viewport for mobile browsers */
-            width: 100%; 
-            margin: 0; 
-            padding: 0; 
-            overflow: hidden; 
+        html, body {
+            height: 100%;
+            height: 100dvh;
+            width: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
             background-color: #181a1c;
-            /* Prevent iOS text size adjustment */
-            -webkit-text-size-adjust: 100%;
+            font-family: system-ui, -apple-system, sans-serif;
+            display: flex;
+            flex-direction: column;
         }
 
-        /* MAIN FLEX CONTAINER */
-        .main-container { 
-            display: flex; 
-            flex-direction: column; 
-            height: 100vh; /* Fallback */
-            height: 100dvh; 
-            width: 100vw; 
-            overflow: hidden; 
-        }
-
-        /* HEADER */
-        .app-header { 
-            height: var(--header-height); 
-            flex-shrink: 0; 
-            display: flex; 
-            align-items: center; 
-            justify-content: space-between; 
-            padding: 0 16px; /* Touch friendly padding */
-            padding-top: env(safe-area-inset-top); /* Notch support */
+        /* --- 1. HEADER --- */
+        .app-header {
+            height: var(--header-height);
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 16px;
+            padding-top: env(safe-area-inset-top);
             padding-left: calc(16px + env(safe-area-inset-left));
             padding-right: calc(16px + env(safe-area-inset-right));
-            background: #2c3034; 
-            border-bottom: 1px solid #495057; 
-        }
-        
-        .header-title { 
-            font-size: 1rem; 
-            font-weight: 600; 
-            margin: 0; 
-            white-space: nowrap; 
-            overflow: hidden; 
-            text-overflow: ellipsis; 
+            background: #2c3034;
+            border-bottom: 1px solid #495057;
+            z-index: 50;
         }
 
-        /* Touch-friendly header buttons */
-        .header-actions { 
-            display: flex; 
-            gap: 12px; 
-        }
-        
-        /* Enforce min touch target size on buttons */
-        .header-actions .btn {
-            min-height: 44px;
-            min-width: 44px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        /* CONTENT WRAPPER */
-        .content-wrapper { 
-            flex: 1; 
-            display: flex; 
-            flex-direction: column; /* Mobile Default: Stacked */
-            min-height: 0; 
-            overflow: hidden; 
-            position: relative;
-        }
-
-        /* IMAGE PANE */
-        .image-pane { 
-            flex-grow: 1; 
-            position: relative; 
-            background: #181a1c; 
-            overflow: hidden; 
-            display: flex; 
-            align-items: center; 
-            justify-content: center;
-            min-height: 0; 
-            width: 100%;
-            touch-action: none; /* Disable browser zooming/panning here */
-        }
-
-        #crop-area { 
-            position: relative; 
-            line-height: 0; 
-            box-shadow: 0 0 20px rgba(0,0,0,0.5);
-            /* Prevent selection */
-            -webkit-user-select: none;
-            user-select: none;
-        }
-
-        #main-image { 
-            display: block; 
-            width: 100%; 
-            height: 100%; 
-            pointer-events: none; 
-            -webkit-user-drag: none;
-        }
-
-        #draw-canvas {
-            position: absolute; 
-            top: 0; 
-            left: 0; 
-            z-index: 10;
-            cursor: crosshair;
-            touch-action: none; /* Crucial for custom drawing */
-        }
-
-        /* CONTROLS PANE - MOBILE BOTTOM SHEET STYLE */
-        .controls-pane { 
-            flex-shrink: 0; 
-            background: #212529; 
-            border-top: 1px solid #495057; 
-            height: var(--controls-height-mobile); /* Percent based on mobile */
-            overflow-y: auto; 
-            z-index: 30; 
-            padding-bottom: env(safe-area-inset-bottom);
-            -webkit-overflow-scrolling: touch; /* Smooth scroll iOS */
-        }
-        
-        .controls-content { 
-            padding: 20px 16px; 
-        }
-
-        /* Larger touch targets for sliders */
-        .form-range {
-            height: 24px; 
-            margin-bottom: 24px; /* Spacing between touch targets */
-        }
-        
-        /* Spacing for labels */
-        .control-group {
-            margin-bottom: 12px;
-        }
-
-        /* FLOATING TOOLBAR */
-        #box-toolbar { 
-            position: absolute; 
-            background: rgba(33, 37, 41, 0.95); 
-            border: 1px solid #6c757d; 
-            border-radius: 50px; /* Pill shape */
-            padding: 8px 16px; 
-            display: none; 
-            z-index: 100; 
-            backdrop-filter: blur(5px); 
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-            gap: 16px;
-        }
-        
-        #box-toolbar button { 
-            background: transparent; 
-            border: none; 
-            color: #e9ecef; 
-            padding: 0;
-            width: 32px;
-            height: 32px;
-            font-size: 1.4rem; /* Larger icons */
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: transform 0.1s;
-        }
-        
-        #box-toolbar button:active {
-            transform: scale(0.9);
+        .header-title {
+            font-size: 1rem;
+            font-weight: 600;
+            margin: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
             color: #fff;
         }
 
-        /* DESKTOP MEDIA QUERY (Landscape Tablets & Desktop) */
-        @media (min-width: 992px) { 
-            .content-wrapper { flex-direction: row; } 
-            
-            .controls-pane { 
-                width: var(--controls-width-desktop); 
-                height: 100%; 
-                border-top: none; 
-                border-left: 1px solid #495057; 
-                padding-bottom: 0;
-            } 
-            
-            .header-title { font-size: 1.25rem; }
+        .header-actions {
+            display: flex;
+            gap: 12px;
         }
 
-        /* UTILS */
-        #loader-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 9999; display: none; align-items: center; justify-content: center; }
+        .header-actions .btn {
+            min-height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* --- 2. WORKSPACE --- */
+        .content-wrapper {
+            flex: 1;
+            position: relative;
+            background-color: #181a1c;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+        }
+
+        .image-pane {
+            flex-grow: 1;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            width: 100%;
+            height: 100%;
+        }
+
+        #crop-area {
+            position: relative;
+            line-height: 0;
+            box-shadow: 0 0 30px rgba(0,0,0,0.5);
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        #main-image {
+            display: block;
+            pointer-events: none;
+        }
+
+        #draw-canvas {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: 10;
+            cursor: crosshair;
+            touch-action: none;
+        }
+
+        /* --- 3. THUMBNAILS --- */
+        .thumbnail-bar {
+            height: var(--slider-height);
+            flex-shrink: 0;
+            background: #212529;
+            border-top: 1px solid #495057;
+            display: flex;
+            align-items: center;
+            padding: 0 10px;
+            padding-bottom: env(safe-area-inset-bottom);
+            gap: 10px;
+            overflow-x: auto;
+            z-index: 40;
+        }
+        
+        .thumb-item {
+            height: 60px;
+            min-width: 45px;
+            border-radius: 6px;
+            overflow: hidden;
+            position: relative;
+            border: 2px solid transparent;
+            opacity: 0.6;
+            background: #000;
+            flex-shrink: 0;
+        }
+        .thumb-item.active { border-color: #0d6efd; opacity: 1; transform: scale(1.05); }
+        
+        .thumb-item img { 
+            width: 100%; 
+            height: 100%; 
+            object-fit: cover; 
+            opacity: 0; 
+            transition: opacity 0.3s ease-in;
+        }
+        .thumb-item img.loaded { opacity: 1; }
+        .thumb-number { position: absolute; bottom: 0; right: 0; background: rgba(0,0,0,0.7); color: #fff; font-size: 10px; padding: 2px 4px; }
+
+        /* --- FLOATING UI --- */
+        #box-toolbar {
+            position: absolute;
+            background: rgba(33, 37, 41, 0.95);
+            border: 1px solid #6c757d;
+            border-radius: 50px;
+            padding: 8px 16px;
+            display: none;
+            gap: 16px;
+            backdrop-filter: blur(5px);
+            z-index: 100;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        #box-toolbar button { background: transparent; border: none; color: #e9ecef; width: 32px; height: 32px; font-size: 1.4rem; padding: 0; display: flex; align-items: center; justify-content: center; }
+        #box-toolbar button:active { transform: scale(0.9); color: #fff; }
+        #box-toolbar button.delete-btn { color: #dc3545; }
+
+        .fab-container { position: absolute; bottom: 20px; right: 20px; z-index: 45; }
+        .fab-btn { width: 48px; height: 48px; border-radius: 50%; background: #212529; border: 1px solid #495057; color: white; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+        
+        .filters-panel {
+            position: absolute; bottom: 60px; right: 0;
+            background: #212529; border-radius: 12px;
+            padding: 16px; width: 220px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.6);
+            display: none; border: 1px solid #495057;
+        }
+        .filters-panel.show { display: block; }
+        .form-range { height: 4px; }
+        
+        #loader-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: none; align-items: center; justify-content: center; z-index: 9999; }
+        .toast-container { position: fixed; top: 80px; left: 50%; transform: translateX(-50%); z-index: 2000; width: auto; pointer-events: none; }
+        .toast { background: #333; color: white; border: 1px solid #555; pointer-events: auto; }
     </style>
 </head>
 <body>
-    {% include '_navbar.html' %}
-    
-    <div id="loader-overlay">
-        <div class="spinner-border text-light" role="status"><span class="visually-hidden">Loading...</span></div>
-    </div>
 
-    <div class="main-container">
-        <header class="app-header">
-             <h1 class="header-title"><i class="bi bi-bounding-box me-2"></i>Page {{ image_index + 1 }} / {{ total_pages }}</h1>
-             <div class="header-actions">
-                <!-- Removed btn-sm for larger touch targets, added explicit padding logic in CSS -->
-                <button id="backBtn" class="btn btn-secondary" aria-label="Back"><i class="bi bi-arrow-left"></i></button>
-                <button id="clearBtn" class="btn btn-outline-info" aria-label="Clear All"><i class="bi bi-eraser"></i></button>
-                <button id="processBtn" class="btn btn-success ps-3 pe-3">Next <i class="bi bi-chevron-right ms-1"></i></button>
-            </div>
-        </header>
+    <header class="app-header">
+        <h1 class="header-title"><i class="bi bi-bounding-box me-2"></i>Page {{ image_index + 1 }} / {{ total_pages }}</h1>
+        <div class="header-actions">
+            <button id="backBtn" class="btn btn-secondary" aria-label="Back"><i class="bi bi-arrow-left"></i></button>
+            <button id="clearBtn" class="btn btn-outline-info" aria-label="Clear All"><i class="bi bi-eraser"></i></button>
+            <button id="processBtn" class="btn btn-success ps-3 pe-3">Next <i class="bi bi-chevron-right ms-1"></i></button>
+        </div>
+    </header>
 
-        <div class="content-wrapper">
-            <div class="image-pane" id="imagePane">
-                <div id="stitch-instructions" class="alert alert-warning position-absolute top-0 start-50 translate-middle-x mt-2 shadow-lg" style="z-index: 20; display: none; font-size: 0.9rem; width: 90%; max-width: 400px; border-radius: 12px;"></div>
+    <div class="content-wrapper">
+        <div class="image-pane" id="imagePane">
+            <div id="crop-area">
+                <img id="main-image" src="/image/upload/{{ image_info.filename }}" alt="Page" crossorigin="anonymous">
+                <canvas id="draw-canvas"></canvas>
                 
-                <div id="crop-area">
-                    <img id="main-image" src="/image/upload/{{ image_info.filename }}" alt="PDF Page" crossorigin="anonymous">
-                    <canvas id="draw-canvas"></canvas>
-                    
-                    <div id="box-toolbar">
-                        <button id="stitch-btn" title="Stitch"><i class="bi bi-scissors"></i></button>
-                        <button id="move-up-btn" title="Move Up"><i class="bi bi-arrow-up-circle"></i></button>
-                        <button id="move-down-btn" title="Move Down"><i class="bi bi-arrow-down-circle"></i></button>
-                        <button id="delete-btn" title="Delete Box" class="text-danger"><i class="bi bi-trash"></i></button>
-                    </div>
+                <div id="box-toolbar">
+                    <button id="stitch-btn" title="Stitch"><i class="bi bi-scissors"></i></button>
+                    <button id="move-up-btn" title="Move Up"><i class="bi bi-arrow-up-circle"></i></button>
+                    <button id="move-down-btn" title="Move Down"><i class="bi bi-arrow-down-circle"></i></button>
+                    <button id="delete-btn" title="Delete Box" class="delete-btn"><i class="bi bi-trash"></i></button>
                 </div>
             </div>
 
-            <div class="controls-pane">
-                 <div class="controls-content">
-                    <div class="alert alert-info small p-2 mb-3 rounded-3"><i class="bi bi-info-circle me-2"></i>Draw boxes on the image.</div>
-                    
-                    <h6 class="text-white mb-3 text-uppercase small ls-1">Image Filters</h6>
-                    
-                    <div class="control-group">
-                        <label class="small text-light d-flex justify-content-between mb-2">Brightness <span id="brightnessValue" class="text-primary fw-bold">0</span></label>
-                        <input type="range" class="form-range" id="brightness" min="-100" max="100" value="0" step="5">
-                    </div>
-                    
-                    <div class="control-group">
-                        <label class="small text-light d-flex justify-content-between mb-2">Contrast <span id="contrastValue" class="text-primary fw-bold">1.0</span></label>
-                        <input type="range" class="form-range" id="contrast" min="0.5" max="2.5" value="1.0" step="0.05">
-                    </div>
-                    
-                    <div class="control-group">
-                        <label class="small text-light d-flex justify-content-between mb-2">Gamma <span id="gammaValue" class="text-primary fw-bold">1.0</span></label>
-                        <input type="range" class="form-range" id="gamma" min="0.2" max="2.2" value="1.0" step="0.1">
-                    </div>
+            <div class="fab-container">
+                <div class="filters-panel" id="filtersPanel">
+                    <div class="mb-3"><label class="small text-secondary d-flex justify-content-between">Brightness <span id="val-b" class="text-white">0</span></label><input type="range" class="form-range" id="brightness" min="-100" max="100" value="0" step="5"></div>
+                    <div class="mb-3"><label class="small text-secondary d-flex justify-content-between">Contrast <span id="val-c" class="text-white">1.0</span></label><input type="range" class="form-range" id="contrast" min="0.5" max="2.5" step="0.05" value="1.0"></div>
+                    <div class="mb-0"><label class="small text-secondary d-flex justify-content-between">Gamma <span id="val-g" class="text-white">1.0</span></label><input type="range" class="form-range" id="gamma" min="0.2" max="2.2" step="0.1" value="1.0"></div>
                 </div>
+                <button class="fab-btn" id="filterToggle"><i class="bi bi-sliders"></i></button>
             </div>
         </div>
-        <div id="statusContainer"></div>
+
+        <div class="thumbnail-bar">
+            {% for page in all_pages %}
+            <div class="thumb-item {% if page.image_index == image_index %}active{% endif %}" onclick="location.href='/cropv2/{{ session_id }}/{{ page.image_index }}'">
+                <img data-src="/image/upload/{{ page.filename }}" 
+                     alt="Page {{ page.image_index + 1 }}"
+                     data-session="{{ session_id }}"
+                     class="thumb-img">
+                <div class="thumb-number">{{ page.image_index + 1 }}</div>
+            </div>
+            {% endfor %}
+        </div>
     </div>
 
-<script>
-    // Elements
-    const image = document.getElementById('main-image');
-    const imagePane = document.getElementById('imagePane');
-    const cropArea = document.getElementById('crop-area');
-    const drawCanvas = document.getElementById('draw-canvas');
-    const drawCtx = drawCanvas.getContext('2d');
-    
-    // State
-    const sessionId = '{{ session_id }}';
-    const userId = '{{ user_id }}';
-    const imageIndex = parseInt('{{ image_index }}');
-    const totalPages = parseInt('{{ total_pages }}');
+    <div id="loader-overlay"><div class="spinner-border text-light"></div></div>
+    <div class="toast-container" id="toastContainer"></div>
 
-    const storageKey = userId ? `cropState_${userId}_${sessionId}_${imageIndex}` : `cropState_${sessionId}_${imageIndex}`;
-    
-    let boxes = [];
-    let selectedBoxIndex = -1;
-    let isDrawing = false;
-    let startX, startY;
-    let dragTarget = null;
-    let startPositions = {};
-    
-    // Cross-Page Stitching State
-    let stitchBuffer = JSON.parse(localStorage.getItem('gemini_stitch_buffer') || 'null');
-
-    // --- INITIALIZATION & RESIZING LOGIC ---
-
-    function init() {
-        if (image.complete && image.naturalWidth > 0) {
-            fitImageToPane();
-        } else {
-            image.onload = fitImageToPane;
-        }
-        
-        // Debounced resize for performance
-        let resizeTimer;
-        window.addEventListener('resize', () => {
-            clearTimeout(resizeTimer);
-            resizeTimer = setTimeout(() => requestAnimationFrame(fitImageToPane), 100);
-        });
-        
-        loadSettings();
-        loadBoxes();
-        setupListeners();
-        updateStitchButtonState();
-    }
-
-    // Exact dimension calculation preventing overflow
-    function fitImageToPane() {
-        if (!image.naturalWidth) return;
-
-        const rect = imagePane.getBoundingClientRect();
-        // Use a safe padding buffer
-        const buffer = 32; 
-        const availableW = rect.width - buffer;
-        const availableH = rect.height - buffer;
-
-        const naturalW = image.naturalWidth;
-        const naturalH = image.naturalHeight;
-
-        const scale = Math.min(availableW / naturalW, availableH / naturalH);
-
-        const finalW = Math.floor(naturalW * scale);
-        const finalH = Math.floor(naturalH * scale);
-
-        cropArea.style.width = `${finalW}px`;
-        cropArea.style.height = `${finalH}px`;
-
-        drawCanvas.width = finalW;
-        drawCanvas.height = finalH;
-
-        if (selectedBoxIndex !== -1) updateToolbarPosition();
-        drawBoxes();
-    }
-
-    // --- DRAWING LOGIC ---
-
-    function drawBoxes() {
-        drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
-        
-        boxes.forEach((box, index) => {
-            const isSelected = index === selectedBoxIndex;
-            // Visual cue for boxes that have a remote source attached
-            const isStitched = box.remote_stitch_source != null;
-            
-            // Debug log for the first box to check its state
-            if (index === 0) console.log(`Box 0: stitched=${isStitched}, val=${JSON.stringify(box.remote_stitch_source)}`);
-
-            const p = (pt) => ({ x: pt.x * drawCanvas.width, y: pt.y * drawCanvas.height });
-
-            drawCtx.lineWidth = isSelected ? 3 : 2;
-            drawCtx.strokeStyle = isSelected ? '#ff4d4d' : (isStitched ? '#0dcaf0' : '#ffc107');
-            drawCtx.fillStyle = isSelected ? 'rgba(255, 77, 77, 0.15)' : 'rgba(255, 193, 7, 0.1)';
-            if (isStitched) drawCtx.fillStyle = 'rgba(13, 202, 240, 0.2)';
-
-            drawCtx.beginPath();
-            drawCtx.moveTo(p(box.tl).x, p(box.tl).y);
-            drawCtx.lineTo(p(box.tr).x, p(box.tr).y);
-            drawCtx.lineTo(p(box.br).x, p(box.br).y);
-            drawCtx.lineTo(p(box.bl).x, p(box.bl).y);
-            drawCtx.closePath();
-            drawCtx.stroke();
-            drawCtx.fill();
-
-            if (isSelected) {
-                drawCtx.fillStyle = 'white';
-                // Larger visual handles for touch feedback (logic remains same, just visual radius)
-                const handleRad = 8;
-                ['tl','tr','bl','br'].forEach(k => {
-                    drawCtx.beginPath();
-                    drawCtx.arc(p(box[k]).x, p(box[k]).y, handleRad, 0, Math.PI*2);
-                    drawCtx.fill();
-                    drawCtx.stroke();
-                });
-            }
-            
-            const cx = (p(box.tl).x + p(box.br).x)/2;
-            const cy = (p(box.tl).y + p(box.br).y)/2;
-            drawCtx.font = "bold 24px system-ui";
-            drawCtx.fillStyle = "white";
-            drawCtx.shadowColor="rgba(0,0,0,0.8)"; drawCtx.shadowBlur=6;
-            drawCtx.fillText(index + 1, cx - 6, cy + 8);
-            
-            // Draw link icon if stitched
-            if(isStitched) {
-                drawCtx.font = "20px system-ui";
-                drawCtx.fillText("🔗", p(box.tr).x - 28, p(box.tr).y + 24);
-                // Add small text indicating source page
-                if (box.remote_stitch_source && box.remote_stitch_source.page_index !== undefined) {
-                    drawCtx.font = "12px system-ui";
-                    drawCtx.fillText(`Pg ${box.remote_stitch_source.page_index + 1}`, p(box.tr).x - 40, p(box.tr).y + 40);
-                }
-            }
-            drawCtx.shadowBlur=0;
-        });
-    }
-
-    // --- INTERACTION LOGIC ---
-
-    function getPointerPos(e) {
-        const rect = drawCanvas.getBoundingClientRect();
-        // Handle touch vs mouse
-        const clientX = e.touches && e.touches.length > 0 ? e.touches[0].clientX : e.clientX;
-        const clientY = e.touches && e.touches.length > 0 ? e.touches[0].clientY : e.clientY;
-        
-        let x = (clientX - rect.left) / rect.width;
-        let y = (clientY - rect.top) / rect.height;
-        
-        return { 
-            x: Math.max(0, Math.min(1, x)), 
-            y: Math.max(0, Math.min(1, y)) 
+    <script>
+        // CONFIG
+        const CONFIG = {
+            sessionId: '{{ session_id }}',
+            userId: '{{ user_id }}',
+            imageIndex: parseInt('{{ image_index }}'),
+            totalPages: parseInt('{{ total_pages }}'),
         };
-    }
+        const storageKey = CONFIG.userId ? `cropState_${CONFIG.userId}_${CONFIG.sessionId}_${CONFIG.imageIndex}` : `cropState_${CONFIG.sessionId}_${CONFIG.imageIndex}`;
 
-    function hitTest(nx, ny) {
-        // Increase hit radius for touch (approx 24px visual equivalent)
-        const hitPadding = 24 / drawCanvas.width; 
-        
-        for (let i = boxes.length - 1; i >= 0; i--) {
-            const b = boxes[i];
-            // Check corners
-            for(let k of ['tl','tr','bl','br']) {
-                // Distance formula
-                if (Math.hypot(b[k].x - nx, b[k].y - ny) < hitPadding) return { type: 'corner', index: i, corner: k };
-            }
-            // Check body
-            const minX = Math.min(b.tl.x, b.br.x);
-            const maxX = Math.max(b.tl.x, b.br.x);
-            const minY = Math.min(b.tl.y, b.br.y);
-            const maxY = Math.max(b.tl.y, b.br.y);
-            if (nx > minX && nx < maxX && ny > minY && ny < maxY) return { type: 'body', index: i };
-        }
-        return null;
-    }
+        // --- INDEXED DB CACHE MANAGER ---
+        const ThumbCache = {
+            DB_NAME: 'PDF_Crop_Thumbs',
+            STORE_NAME: 'images',
+            EXPIRY_MS: 2 * 24 * 60 * 60 * 1000, // 2 Days
 
-    function onPointerDown(e) {
-        e.preventDefault(); 
-        const {x, y} = getPointerPos(e);
-        const hit = hitTest(x, y);
-
-        if (hit) {
-            dragTarget = hit;
-            selectBox(hit.index);
-            startPositions = JSON.parse(JSON.stringify(boxes[hit.index]));
-            startX = x; startY = y;
-            isDrawing = false;
-        } else {
-            selectBox(-1);
-            isDrawing = true;
-            startX = x; startY = y;
-        }
-        
-        document.addEventListener('mousemove', onPointerMove);
-        document.addEventListener('touchmove', onPointerMove, { passive: false });
-        document.addEventListener('mouseup', onPointerUp);
-        document.addEventListener('touchend', onPointerUp);
-    }
-
-    function onPointerMove(e) {
-        e.preventDefault();
-        const {x, y} = getPointerPos(e);
-        const dx = x - startX;
-        const dy = y - startY;
-
-        if (dragTarget) {
-            const b = boxes[dragTarget.index];
-            if (dragTarget.type === 'corner') {
-                b[dragTarget.corner].x = x;
-                b[dragTarget.corner].y = y;
-            } else {
-                ['tl','tr','bl','br'].forEach(k => {
-                    b[k].x = startPositions[k].x + dx;
-                    b[k].y = startPositions[k].y + dy;
+            async open() {
+                return new Promise((resolve, reject) => {
+                    const req = indexedDB.open(this.DB_NAME, 1);
+                    req.onupgradeneeded = (e) => {
+                        const db = e.target.result;
+                        if (!db.objectStoreNames.contains(this.STORE_NAME)) {
+                            db.createObjectStore(this.STORE_NAME, { keyPath: 'url' });
+                        }
+                    };
+                    req.onsuccess = (e) => resolve(e.target.result);
+                    req.onerror = (e) => reject(e);
                 });
-            }
-            drawBoxes();
-            updateToolbarPosition();
-        } else if (isDrawing) {
-            drawBoxes();
-            const sx = startX * drawCanvas.width;
-            const sy = startY * drawCanvas.height;
-            const w = (x - startX) * drawCanvas.width;
-            const h = (y - startY) * drawCanvas.height;
-            drawCtx.strokeStyle = 'rgba(255, 77, 77, 0.5)';
-            drawCtx.strokeRect(sx, sy, w, h);
-        }
-    }
+            },
 
-    function onPointerUp(e) {
-        if (isDrawing) {
-            const rect = drawCanvas.getBoundingClientRect();
-            // Handle touch end coordinates
-            const clientX = e.changedTouches && e.changedTouches.length ? e.changedTouches[0].clientX : e.clientX;
-            const clientY = e.changedTouches && e.changedTouches.length ? e.changedTouches[0].clientY : e.clientY;
-            
-            let endX = (clientX - rect.left) / rect.width;
-            let endY = (clientY - rect.top) / rect.height;
-            
-            endX = Math.max(0, Math.min(1, endX));
-            endY = Math.max(0, Math.min(1, endY));
+            async cleanup() {
+                const db = await this.open();
+                return new Promise((resolve) => {
+                    const tx = db.transaction(this.STORE_NAME, 'readwrite');
+                    const store = tx.objectStore(this.STORE_NAME);
+                    const now = Date.now();
+                    const req = store.openCursor();
 
-            // Minimum drag threshold to prevent accidental dots (20px)
-            if (Math.abs(endX - startX) * drawCanvas.width > 20 && Math.abs(endY - startY) * drawCanvas.height > 20) {
-                boxes.push({
-                    id: Date.now(),
-                    tl: { x: Math.min(startX, endX), y: Math.min(startY, endY) },
-                    tr: { x: Math.max(startX, endX), y: Math.min(startY, endY) },
-                    bl: { x: Math.min(startX, endX), y: Math.max(startY, endY) },
-                    br: { x: Math.max(startX, endX), y: Math.max(startY, endY) },
-                    remote_stitch_source: null 
+                    req.onsuccess = (e) => {
+                        const cursor = e.target.result;
+                        if (cursor) {
+                            if ((now - cursor.value.timestamp) > this.EXPIRY_MS) {
+                                cursor.delete();
+                            }
+                            cursor.continue();
+                        } else {
+                            resolve();
+                        }
+                    };
+                    req.onerror = () => resolve();
                 });
-                selectBox(boxes.length - 1);
+            },
+
+            async loadImage(url, imgElement) {
+                try {
+                    const db = await this.open();
+                    const txRead = db.transaction(this.STORE_NAME, 'readonly');
+                    const req = txRead.objectStore(this.STORE_NAME).get(url);
+
+                    req.onsuccess = async (e) => {
+                        const record = e.target.result;
+                        if (record) {
+                            imgElement.src = URL.createObjectURL(record.blob);
+                            imgElement.classList.add('loaded');
+                        } else {
+                            try {
+                                const response = await fetch(url);
+                                const blob = await response.blob();
+                                const txWrite = db.transaction(this.STORE_NAME, 'readwrite');
+                                txWrite.objectStore(this.STORE_NAME).put({
+                                    url: url, blob: blob, timestamp: Date.now(), sessionId: CONFIG.sessionId
+                                });
+                                imgElement.src = URL.createObjectURL(blob);
+                                imgElement.classList.add('loaded');
+                            } catch (err) {
+                                imgElement.src = url; // Fallback
+                                imgElement.classList.add('loaded');
+                            }
+                        }
+                    };
+                } catch (err) {
+                    imgElement.src = url; // Fallback
+                    imgElement.classList.add('loaded');
+                }
+            },
+
+            async initAllThumbs() {
+                await this.cleanup(); 
+                const images = document.querySelectorAll('.thumb-img');
+                const process = (img) => {
+                    const url = img.getAttribute('data-src');
+                    if(url) this.loadImage(url, img);
+                };
+                if ('requestIdleCallback' in window) images.forEach(img => requestIdleCallback(() => process(img)));
+                else images.forEach(img => setTimeout(() => process(img), 10));
             }
-        }
-        
-        isDrawing = false; dragTarget = null;
-        saveBoxes();
-        drawBoxes();
-        document.removeEventListener('mousemove', onPointerMove);
-        document.removeEventListener('touchmove', onPointerMove);
-        document.removeEventListener('mouseup', onPointerUp);
-        document.removeEventListener('touchend', onPointerUp);
-    }
+        };
 
-    // --- GUI & ACTIONS ---
+        // --- APP LOGIC ---
+        const els = {
+            image: document.getElementById('main-image'),
+            imagePane: document.getElementById('imagePane'),
+            cropArea: document.getElementById('crop-area'),
+            canvas: document.getElementById('draw-canvas'),
+            ctx: document.getElementById('draw-canvas').getContext('2d'),
+            toolbar: document.getElementById('box-toolbar')
+        };
 
-    function selectBox(i) {
-        selectedBoxIndex = i;
-        const tb = document.getElementById('box-toolbar');
-        if (i === -1) {
-            tb.style.display = 'none';
-        } else {
-            tb.style.display = 'flex';
-            updateToolbarPosition();
-            updateStitchButtonState();
-        }
-        drawBoxes();
-    }
+        let boxes = [];
+        let selectedBoxIndex = -1;
+        let isDrawing = false;
+        let startX, startY;
+        let dragTarget = null; 
+        let startPositions = {};
+        let stitchBuffer = JSON.parse(localStorage.getItem('gemini_stitch_buffer') || 'null');
 
-    function updateToolbarPosition() {
-        if (selectedBoxIndex === -1) return;
-        const b = boxes[selectedBoxIndex];
-        const tb = document.getElementById('box-toolbar');
-        const containerRect = imagePane.getBoundingClientRect();
-        
-        // Coordinates relative to canvas
-        const x = Math.max(b.tl.x, b.br.x) * drawCanvas.width;
-        const y = Math.min(b.tl.y, b.br.y) * drawCanvas.height;
-        
-        // Calculate preferred position (Bottom Right of box)
-        let left = x - tb.offsetWidth + 10;
-        let top = y + 10;
-        
-        // Boundary Detection (Keep toolbar on screen)
-        // Canvas width/height might differ from screen CSS pixels, so we check against offset
-        const maxLeft = drawCanvas.offsetWidth - tb.offsetWidth;
-        const maxTop = drawCanvas.offsetHeight - tb.offsetHeight;
+        function init() {
+            ThumbCache.initAllThumbs(); // Cache Logic
 
-        if (left < 0) left = 0;
-        if (left > maxLeft) left = maxLeft;
-        
-        // If bottom is clipped, flip to top
-        if (top > maxTop) {
-            top = (Math.min(b.tl.y, b.tr.y) * drawCanvas.height) - tb.offsetHeight - 10;
-        }
-        if (top < 0) top = 10; // Extreme fallback
-        
-        tb.style.left = left + 'px';
-        tb.style.top = top + 'px';
-    }
-
-    function updateStitchButtonState() {
-        const btn = document.getElementById('stitch-btn');
-        const icon = btn.querySelector('i');
-        
-        const isBufferActive = stitchBuffer && stitchBuffer.session_id === sessionId;
-        // Check if current box is stitched
-        const isBoxStitched = selectedBoxIndex > -1 && boxes[selectedBoxIndex] && boxes[selectedBoxIndex].remote_stitch_source != null;
-
-        if (isBufferActive) {
-             // Mode: PASTE (Buffer Full)
-             btn.title = `Link to Box from Page ${stitchBuffer.page_index + 1}`;
-             icon.className = 'bi bi-link-45deg';
-             btn.style.color = '#0dcaf0'; // Cyan
-        } else if (isBoxStitched) {
-             // Mode: UNLINK (Buffer Empty + Box Stitched)
-             btn.title = "Remove Link";
-             icon.className = 'bi bi-x-lg';
-             btn.style.color = '#dc3545'; // Red
-        } else {
-             // Mode: COPY (Buffer Empty + Box Unstitched)
-             btn.title = "Copy to Stitch Buffer";
-             icon.className = 'bi bi-scissors';
-             btn.style.color = '#e9ecef'; // Default
-        }
-    }
-    
-    function handleStitchClick() {
-        if (selectedBoxIndex === -1) return;
-        
-        const isBufferActive = stitchBuffer && stitchBuffer.session_id === sessionId;
-        const isBoxStitched = boxes[selectedBoxIndex].remote_stitch_source != null;
-        
-        if (isBufferActive) {
-            // --- ACTION: PASTE LINK ---
-            boxes[selectedBoxIndex].remote_stitch_source = {
-                page_index: stitchBuffer.page_index,
-                box: stitchBuffer.box
-            };
-            // Auto-clear buffer to allow copying again immediately
-            stitchBuffer = null;
-            localStorage.removeItem('gemini_stitch_buffer');
-            // Visual feedback
-            alert(`Linked!`);
-        } else if (isBoxStitched) {
-            // --- ACTION: UNLINK ---
-            boxes[selectedBoxIndex].remote_stitch_source = null;
-        } else {
-            // --- ACTION: COPY SOURCE ---
-            const box = boxes[selectedBoxIndex];
-            // Normalize coordinates
-            const minX = Math.min(box.tl.x, box.bl.x);
-            const minY = Math.min(box.tl.y, box.tr.y);
-            const maxX = Math.max(box.tr.x, box.br.x);
-            const maxY = Math.max(box.bl.y, box.br.y);
+            if (els.image.complete && els.image.naturalWidth > 0) fitImage();
+            else els.image.onload = fitImage;
             
-            const cleanBox = { ...box, x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+            const ro = new ResizeObserver(() => requestAnimationFrame(fitImage));
+            ro.observe(els.imagePane);
             
-            stitchBuffer = {
-                session_id: sessionId,
-                page_index: imageIndex,
-                box: cleanBox
-            };
-            localStorage.setItem('gemini_stitch_buffer', JSON.stringify(stitchBuffer));
-            alert("Copied! Select the target box (on any page) and click the Link button.");
+            loadSettings();
+            loadBoxes();
+            
+            setupListeners(); // Setup Events
+            updateStitchButton();
+            
+            const active = document.querySelector('.thumb-item.active');
+            if(active) active.scrollIntoView({inline:'center'});
         }
-        
-        saveBoxes();
-        updateStitchButtonState();
-        drawBoxes();
-    }
 
-    function moveBoxUp() {
-        if (selectedBoxIndex > -1 && selectedBoxIndex < boxes.length - 1) {
-            const [movedBox] = boxes.splice(selectedBoxIndex, 1);
-            boxes.splice(selectedBoxIndex + 1, 0, movedBox);
-            selectedBoxIndex++;
-            saveBoxes();
+        function fitImage() {
+            if (!els.image.naturalWidth) return;
+            const rect = els.imagePane.getBoundingClientRect();
+            const padding = 10;
+            const availableW = rect.width - padding;
+            const availableH = rect.height - padding;
+            const scale = Math.min(availableW / els.image.naturalWidth, availableH / els.image.naturalHeight);
+            
+            const finalW = Math.floor(els.image.naturalWidth * scale);
+            const finalH = Math.floor(els.image.naturalHeight * scale);
+
+            els.cropArea.style.width = `${finalW}px`;
+            els.cropArea.style.height = `${finalH}px`;
+            els.image.style.width = `${finalW}px`;
+            els.image.style.height = `${finalH}px`;
+            els.canvas.width = finalW;
+            els.canvas.height = finalH;
+
+            if (selectedBoxIndex !== -1) updateToolbar();
             drawBoxes();
-            updateToolbarPosition();
         }
-    }
 
-    function moveBoxDown() {
-        if (selectedBoxIndex > 0) {
-            const [movedBox] = boxes.splice(selectedBoxIndex, 1);
-            boxes.splice(selectedBoxIndex - 1, 0, movedBox);
-            selectedBoxIndex--;
-            saveBoxes();
-            drawBoxes();
-            updateToolbarPosition();
-        }
-    }
+        function drawBoxes() {
+            els.ctx.clearRect(0, 0, els.canvas.width, els.canvas.height);
+            boxes.forEach((box, index) => {
+                const isSelected = index === selectedBoxIndex;
+                const isStitched = box.remote_stitch_source != null;
+                const p = (pt) => ({ x: pt.x * els.canvas.width, y: pt.y * els.canvas.height });
+                
+                els.ctx.lineWidth = isSelected ? 3 : 2;
+                els.ctx.strokeStyle = isSelected ? '#ff4d4d' : (isStitched ? '#0dcaf0' : '#ffc107');
+                els.ctx.fillStyle = isSelected ? 'rgba(255, 77, 77, 0.15)' : (isStitched ? 'rgba(13, 202, 240, 0.2)' : 'rgba(255, 193, 7, 0.1)');
+                
+                els.ctx.beginPath();
+                els.ctx.moveTo(p(box.tl).x, p(box.tl).y);
+                els.ctx.lineTo(p(box.tr).x, p(box.tr).y);
+                els.ctx.lineTo(p(box.br).x, p(box.br).y);
+                els.ctx.lineTo(p(box.bl).x, p(box.bl).y);
+                els.ctx.closePath();
+                els.ctx.stroke();
+                els.ctx.fill();
 
-    function setupListeners() {
-        drawCanvas.addEventListener('mousedown', onPointerDown);
-        drawCanvas.addEventListener('touchstart', onPointerDown, {passive:false});
-        
-        document.getElementById('clearBtn').addEventListener('click', () => { 
-            if(confirm("Delete all boxes?")) { boxes=[]; selectBox(-1); saveBoxes(); }
-        });
-        
-        document.getElementById('backBtn').addEventListener('click', () => {
-             window.location.href = (imageIndex > 0) ? `/cropv2/${sessionId}/${imageIndex-1}` : `/v2`;
-        });
-
-        document.getElementById('delete-btn').addEventListener('click', () => {
-            if (selectedBoxIndex > -1) { 
-                const deletedBox = boxes[selectedBoxIndex];
-                // Clear buffer if we are deleting the source box currently in clipboard
-                if (stitchBuffer && stitchBuffer.session_id === sessionId && stitchBuffer.box.id === deletedBox.id) {
-                    stitchBuffer = null;
-                    localStorage.removeItem('gemini_stitch_buffer');
+                if (isSelected) {
+                    els.ctx.fillStyle = 'white';
+                    ['tl','tr','bl','br'].forEach(k => {
+                        els.ctx.beginPath(); els.ctx.arc(p(box[k]).x, p(box[k]).y, 8, 0, Math.PI*2); els.ctx.fill(); els.ctx.stroke();
+                    });
                 }
                 
-                boxes.splice(selectedBoxIndex, 1); 
-                selectBox(-1); 
-                saveBoxes(); 
-            }
-        });
-        
-        document.getElementById('stitch-btn').addEventListener('click', handleStitchClick);
-        
-        document.getElementById('move-up-btn').addEventListener('click', moveBoxUp);
-        document.getElementById('move-down-btn').addEventListener('click', moveBoxDown);
-
-        document.getElementById('processBtn').addEventListener('click', processPage);
-        
-        ['brightness','contrast','gamma'].forEach(id => {
-            document.getElementById(id).addEventListener('input', updateFilters);
-        });
-    }
-
-    function updateFilters() {
-        const b = document.getElementById('brightness').value;
-        const c = document.getElementById('contrast').value;
-        const g = document.getElementById('gamma').value;
-        
-        console.log(`Filters: Brightness ${b}, Contrast ${c}, Gamma ${g}`);
-        
-        // Note: Gamma is not supported in standard CSS filters, so it won't show visually here.
-        // It would require an SVG filter or Canvas manipulation to visualize.
-        image.style.filter = `brightness(${100 + parseFloat(b)}%) contrast(${c})`;
-        
-        document.getElementById('brightnessValue').innerText = b;
-        document.getElementById('contrastValue').innerText = c;
-        document.getElementById('gammaValue').innerText = g;
-        
-        localStorage.setItem('pdfFilters', JSON.stringify({b,c,g}));
-    }
-    
-    function loadSettings() {
-        try {
-            const s = JSON.parse(localStorage.getItem('pdfFilters'));
-            if(s) {
-                document.getElementById('brightness').value = s.b;
-                document.getElementById('contrast').value = s.c;
-                document.getElementById('gamma').value = s.g;
-                updateFilters();
-            }
-        } catch(e){}
-    }
-
-    async function processPage() {
-        if(boxes.length === 0) {
-            if(!confirm("No boxes drawn. Skip page?")) return;
-        }
-        
-        const btn = document.getElementById('processBtn');
-        btn.disabled = true;
-        document.getElementById('loader-overlay').style.display = 'flex';
-
-        const finalBoxes = boxes.map(b => {
-            const minX = Math.min(b.tl.x, b.bl.x);
-            const minY = Math.min(b.tl.y, b.tr.y);
-            const maxX = Math.max(b.tr.x, b.br.x);
-            const maxY = Math.max(b.bl.y, b.br.y);
-            return { ...b, x: minX, y: minY, w: maxX - minX, h: maxY - minY };
-        });
-
-        // Capture current filter state
-        const tempCv = document.createElement('canvas');
-        tempCv.width = image.naturalWidth;
-        tempCv.height = image.naturalHeight;
-        const tCtx = tempCv.getContext('2d');
-        tCtx.filter = image.style.filter;
-        tCtx.drawImage(image, 0, 0);
-        const imgData = tempCv.toDataURL('image/jpeg', 0.85);
-
-        try {
-            const res = await fetch('/process_crop_v2', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    session_id: sessionId,
-                    image_index: imageIndex,
-                    boxes: finalBoxes,
-                    imageData: imgData
-                })
+                const cx = (p(box.tl).x + p(box.br).x)/2;
+                const cy = (p(box.tl).y + p(box.br).y)/2;
+                els.ctx.font = "bold 24px system-ui"; els.ctx.fillStyle = "white"; els.ctx.shadowColor="rgba(0,0,0,0.8)"; els.ctx.shadowBlur=6;
+                els.ctx.fillText(index + 1, cx - 6, cy + 8);
+                if(isStitched) { els.ctx.font = "20px system-ui"; els.ctx.fillText("🔗", p(box.tr).x - 28, p(box.tr).y + 24); }
+                els.ctx.shadowBlur=0;
             });
-            
-            if(!res.ok) {
-                const errText = await res.text();
-                throw new Error(`Server Error (${res.status}): ${errText}`);
-            }
-
-            window.location.href = (imageIndex + 1 < totalPages)
-                ? `/cropv2/${sessionId}/${imageIndex+1}`
-                : `/question_entry_v2/${sessionId}`;
-                
-        } catch (err) {
-            console.error(err);
-            alert("Error processing page: " + err.message);
-            btn.disabled = false;
-            document.getElementById('loader-overlay').style.display = 'none';
         }
-    }
 
-    function saveBoxes() { localStorage.setItem(storageKey, JSON.stringify(boxes)); }
-    function loadBoxes() {
-        try {
-            const s = localStorage.getItem(storageKey);
-            if(s) {
-                boxes = JSON.parse(s);
-                boxes.forEach((b,i) => { 
-                    if(!b.id) b.id = Date.now()+i;
-                    // Sanitize: Ensure remote_stitch_source is null if undefined to prevent UI bugs
-                    if (b.remote_stitch_source === undefined) b.remote_stitch_source = null;
-                });
-                drawBoxes();
+        // --- EVENTS ---
+        function setupListeners() {
+            // Canvas Interaction
+            els.canvas.addEventListener('mousedown', onDown);
+            els.canvas.addEventListener('touchstart', onDown, {passive:false});
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('touchmove', onMove, {passive:false});
+            document.addEventListener('mouseup', onUp);
+            document.addEventListener('touchend', onUp);
+
+            // Button Actions
+            document.getElementById('backBtn').onclick = () => location.href = CONFIG.imageIndex>0 ? `/cropv2/${CONFIG.sessionId}/${CONFIG.imageIndex-1}` : `/v2`;
+            document.getElementById('clearBtn').onclick = () => { if(confirm("Clear?")) { boxes=[]; selectedBoxIndex=-1; saveBoxes(); drawBoxes(); els.toolbar.style.display='none'; } };
+            document.getElementById('delete-btn').onclick = (e) => { e.stopPropagation(); boxes.splice(selectedBoxIndex,1); selectedBoxIndex=-1; els.toolbar.style.display='none'; saveBoxes(); drawBoxes(); };
+            document.getElementById('move-up-btn').onclick = (e) => { e.stopPropagation(); if(selectedBoxIndex<boxes.length-1) { const b=boxes.splice(selectedBoxIndex,1)[0]; boxes.splice(selectedBoxIndex+1,0,b); selectedBoxIndex++; saveBoxes(); drawBoxes(); updateToolbar(); }};
+            document.getElementById('move-down-btn').onclick = (e) => { e.stopPropagation(); if(selectedBoxIndex>0) { const b=boxes.splice(selectedBoxIndex,1)[0]; boxes.splice(selectedBoxIndex-1,0,b); selectedBoxIndex--; saveBoxes(); drawBoxes(); updateToolbar(); }};
+            document.getElementById('stitch-btn').onclick = handleStitch;
+            
+            // Process
+            document.getElementById('processBtn').onclick = processPage;
+
+            // Filters
+            document.getElementById('filterToggle').onclick = () => document.getElementById('filtersPanel').classList.toggle('show');
+            ['brightness','contrast','gamma'].forEach(id => document.getElementById(id).addEventListener('input', updateFilters));
+        }
+
+        // --- INTERACTION HANDLERS ---
+        function getPos(e) {
+            const rect = els.canvas.getBoundingClientRect();
+            const cx = e.touches ? e.touches[0].clientX : e.clientX;
+            const cy = e.touches ? e.touches[0].clientY : e.clientY;
+            let x = (cx - rect.left) / rect.width;
+            let y = (cy - rect.top) / rect.height;
+            return { x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) };
+        }
+
+        function hitTest(x, y) {
+            const pad = 30 / els.canvas.width; 
+            for (let i = boxes.length - 1; i >= 0; i--) {
+                const b = boxes[i];
+                for(let k of ['tl','tr','bl','br']) { if (Math.hypot(b[k].x - x, b[k].y - y) < pad) return { type: 'corner', index: i, corner: k }; }
+                const mx=Math.min(b.tl.x,b.br.x), Mx=Math.max(b.tl.x,b.br.x);
+                const my=Math.min(b.tl.y,b.br.y), My=Math.max(b.tl.y,b.br.y);
+                if (x > mx && x < Mx && y > my && y < My) return { type: 'body', index: i };
             }
-        } catch(e){}
-    }
+            return null;
+        }
 
-    init();
-</script>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+        function onDown(e) {
+            if(e.target.closest('#box-toolbar')) return;
+            e.preventDefault();
+            const {x, y} = getPos(e);
+            const hit = hitTest(x, y);
+            if (hit) {
+                dragTarget = hit; selectedBoxIndex = hit.index; startPositions = JSON.parse(JSON.stringify(boxes[hit.index]));
+                startX = x; startY = y; updateToolbar(); updateStitchButton();
+            } else {
+                selectedBoxIndex = -1; els.toolbar.style.display = 'none'; isDrawing = true; startX = x; startY = y;
+            }
+            drawBoxes();
+        }
+
+        function onMove(e) {
+            if(!isDrawing && !dragTarget) return; // Optimization
+            e.preventDefault();
+            const {x, y} = getPos(e);
+            const dx = x - startX, dy = y - startY;
+            if (dragTarget) {
+                const b = boxes[dragTarget.index];
+                if (dragTarget.type === 'corner') { b[dragTarget.corner].x = x; b[dragTarget.corner].y = y; } 
+                else { ['tl','tr','bl','br'].forEach(k => { b[k].x = startPositions[k].x + dx; b[k].y = startPositions[k].y + dy; }); }
+                drawBoxes(); updateToolbar();
+            } else if (isDrawing) {
+                drawBoxes();
+                const sx = startX * els.canvas.width, sy = startY * els.canvas.height;
+                const w = (x - startX) * els.canvas.width, h = (y - startY) * els.canvas.height;
+                els.ctx.strokeStyle = 'rgba(255, 77, 77, 0.5)'; els.ctx.strokeRect(sx, sy, w, h);
+            }
+        }
+
+        function onUp(e) {
+            if (isDrawing) {
+                const rect = els.canvas.getBoundingClientRect();
+                const cx = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
+                const cy = e.changedTouches ? e.changedTouches[0].clientY : e.clientY;
+                let endX = Math.max(0, Math.min(1, (cx - rect.left) / rect.width));
+                let endY = Math.max(0, Math.min(1, (cy - rect.top) / rect.height));
+                if (Math.abs(endX - startX) * els.canvas.width > 20) {
+                    boxes.push({
+                        id: Date.now(),
+                        tl: { x: Math.min(startX, endX), y: Math.min(startY, endY) },
+                        tr: { x: Math.max(startX, endX), y: Math.min(startY, endY) },
+                        bl: { x: Math.min(startX, endX), y: Math.max(startY, endY) },
+                        br: { x: Math.max(startX, endX), y: Math.max(startY, endY) },
+                        remote_stitch_source: null
+                    });
+                    selectedBoxIndex = boxes.length - 1;
+                }
+            }
+            isDrawing = false; dragTarget = null;
+            saveBoxes(); drawBoxes(); updateToolbar(); updateStitchButton();
+        }
+
+        // --- HELPERS ---
+        function updateToolbar() {
+            if (selectedBoxIndex === -1) { els.toolbar.style.display = 'none'; return; }
+            const b = boxes[selectedBoxIndex];
+            const p = (pt) => ({ x: pt.x * els.canvas.width, y: pt.y * els.canvas.height });
+            const maxX = Math.max(p(b.tr).x, p(b.br).x);
+            const minY = Math.min(p(b.tl).y, p(b.tr).y);
+            let left = maxX - 180; if(left < 0) left = 0;
+            let top = minY + 10;
+            els.toolbar.style.left = `${left}px`; els.toolbar.style.top = `${top}px`; els.toolbar.style.display = 'flex';
+        }
+
+        function updateStitchButton() {
+            const btn = document.getElementById('stitch-btn');
+            const icon = btn.querySelector('i');
+            const isBuffer = stitchBuffer && stitchBuffer.session_id === CONFIG.sessionId;
+            const isStitched = selectedBoxIndex > -1 && boxes[selectedBoxIndex]?.remote_stitch_source;
+            if (isBuffer) { icon.className='bi bi-link-45deg'; btn.style.color='#0dcaf0'; }
+            else if (isStitched) { icon.className='bi bi-x-lg'; btn.style.color='#dc3545'; }
+            else { icon.className='bi bi-scissors'; btn.style.color='#e9ecef'; }
+        }
+
+        function handleStitch(e) {
+            e.stopPropagation(); if(selectedBoxIndex === -1) return;
+            const b = boxes[selectedBoxIndex];
+            if(stitchBuffer && stitchBuffer.session_id === CONFIG.sessionId) {
+                b.remote_stitch_source = { page_index: stitchBuffer.page_index, box: stitchBuffer.box };
+                stitchBuffer = null; localStorage.removeItem('gemini_stitch_buffer'); toast('Boxes Linked!');
+            } else if(b.remote_stitch_source) {
+                b.remote_stitch_source = null; toast('Link Removed');
+            } else {
+                const minX=Math.min(b.tl.x,b.bl.x), minY=Math.min(b.tl.y,b.tr.y), maxX=Math.max(b.tr.x,b.br.x), maxY=Math.max(b.bl.y,b.br.y);
+                const cleanBox = { ...b, x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+                stitchBuffer = { session_id: CONFIG.sessionId, page_index: CONFIG.imageIndex, box: cleanBox };
+                localStorage.setItem('gemini_stitch_buffer', JSON.stringify(stitchBuffer)); toast('Copied!');
+            }
+            saveBoxes(); updateStitchButton(); drawBoxes();
+        }
+
+        function toast(msg) {
+            const t = document.createElement('div'); t.className = 'toast align-items-center show fade p-2 rounded-3';
+            t.innerHTML = `<div class="d-flex"><div class="toast-body">${msg}</div></div>`;
+            document.getElementById('toastContainer').appendChild(t); setTimeout(() => t.remove(), 2500);
+        }
+
+        async function processPage() {
+            if(!boxes.length && !confirm("Skip page?")) return;
+            document.getElementById('loader-overlay').style.display='flex';
+            const finalBoxes = boxes.map(b => ({
+                ...b, x: Math.min(b.tl.x, b.bl.x), y: Math.min(b.tl.y, b.tr.y),
+                w: Math.max(b.tr.x, b.br.x) - Math.min(b.tl.x, b.bl.x),
+                h: Math.max(b.bl.y, b.br.y) - Math.min(b.tl.y, b.tr.y)
+            }));
+            const cv = document.createElement('canvas'); cv.width = els.image.naturalWidth; cv.height = els.image.naturalHeight;
+            const c = cv.getContext('2d'); c.filter = els.image.style.filter; c.drawImage(els.image, 0, 0);
+            try {
+                const res = await fetch('/process_crop_v2', { method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ session_id: CONFIG.sessionId, image_index: CONFIG.imageIndex, boxes: finalBoxes, imageData: cv.toDataURL('image/jpeg', 0.85) }) });
+                if(!res.ok) throw new Error(await res.text());
+                const next = CONFIG.imageIndex + 1;
+                location.href = next < CONFIG.totalPages ? `/cropv2/${CONFIG.sessionId}/${next}` : `/question_entry_v2/${CONFIG.sessionId}`;
+            } catch(e) { alert(e.message); document.getElementById('loader-overlay').style.display='none'; }
+        }
+
+        function saveBoxes() { localStorage.setItem(storageKey, JSON.stringify(boxes)); }
+        function loadBoxes() {
+            try {
+                const s = localStorage.getItem(storageKey);
+                if(s) { boxes = JSON.parse(s).map(b => b.tl ? b : { id: b.id||Date.now(), tl: {x:b.x, y:b.y}, tr: {x:b.x+b.w, y:b.y}, bl: {x:b.x, y:b.y+b.h}, br: {x:b.x+b.w, y:b.y+b.h}, remote_stitch_source: b.remote_stitch_source }); drawBoxes(); }
+            } catch(e){}
+        }
+
+        function updateFilters() {
+            const b = document.getElementById('brightness').value, c = document.getElementById('contrast').value, g = document.getElementById('gamma').value;
+            document.getElementById('val-b').innerText=b; document.getElementById('val-c').innerText=c; document.getElementById('val-g').innerText=g;
+            els.image.style.filter = `brightness(${100 + parseFloat(b)}%) contrast(${c})`; localStorage.setItem('pdfFilters', JSON.stringify({b,c,g}));
+        }
+        function loadSettings() { const s = JSON.parse(localStorage.getItem('pdfFilters') || '{}'); if(s.b) document.getElementById('brightness').value=s.b; if(s.c) document.getElementById('contrast').value=s.c; if(s.g) document.getElementById('gamma').value=s.g; updateFilters(); }
+
+        init();
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

@@ -583,6 +583,13 @@ def crop_interface_v2(session_id, image_index):
     ).fetchone()
     total_pages = total_pages_result[0] if total_pages_result else 0
     
+    # Fetch all pages for the slider
+    all_pages_rows = conn.execute(
+        "SELECT image_index, filename FROM images WHERE session_id = ? AND image_type = 'original' ORDER BY image_index ASC",
+        (session_id,)
+    ).fetchall()
+    all_pages = [{'image_index': row['image_index'], 'filename': row['filename']} for row in all_pages_rows]
+
     conn.close()
     
     return render_template(
@@ -590,8 +597,9 @@ def crop_interface_v2(session_id, image_index):
         session_id=session_id,
         user_id=current_user.id,  # Pass user ID to template
         image_index=image_index,
-        image_info=dict(image_info),
-        total_pages=total_pages
+        image_info=image_info,
+        total_pages=total_pages,
+        all_pages=all_pages # Pass all pages for the slider
     )
 
 @main_bp.route(ROUTE_PROCESS_CROP_V2, methods=[METHOD_POST])

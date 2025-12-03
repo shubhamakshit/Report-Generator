@@ -1,274 +1,818 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ pdf_title }} - PDF Viewer</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <meta charset="utf-8">
+    <!-- Updated viewport: added viewport-fit=cover for notched phones -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, maximum-scale=1, viewport-fit=cover">
+    <title>Step 2: Draw Boxes ({{ image_index + 1 }} / {{ total_pages }})</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <style>
-        body {
-            margin: 0;
-            padding: 0;
-            background-color: #2c3034;
-            color: #f8f9fa;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
+        /* --- MOBILE FIRST CSS RESET --- */
+        :root {
+            --header-height: 60px;
+            --controls-height-mobile: 35vh;
+            --controls-width-desktop: 340px;
         }
 
-        #toolbar {
-            height: 48px;
-            background-color: #212529;
-            border-bottom: 1px solid #495057;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 0 16px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-            z-index: 10;
+        html, body { 
+            height: 100%; 
+            height: 100dvh; /* Dynamic viewport for mobile browsers */
+            width: 100%; 
+            margin: 0; 
+            padding: 0; 
+            overflow: hidden; 
+            background-color: #181a1c;
+            /* Prevent iOS text size adjustment */
+            -webkit-text-size-adjust: 100%;
         }
 
-        .toolbar-group {
-            display: flex;
-            align-items: center;
-            gap: 8px;
+        /* MAIN FLEX CONTAINER */
+        .main-container { 
+            display: flex; 
+            flex-direction: column; 
+            height: 100vh; /* Fallback */
+            height: 100dvh; 
+            width: 100vw; 
+            overflow: hidden; 
         }
 
-        .btn-icon {
-            background: transparent;
-            border: none;
-            color: #e9ecef;
-            cursor: pointer;
-            padding: 8px;
-            border-radius: 4px;
+        /* HEADER */
+        .app-header { 
+            height: var(--header-height); 
+            flex-shrink: 0; 
+            display: flex; 
+            align-items: center; 
+            justify-content: space-between; 
+            padding: 0 16px; /* Touch friendly padding */
+            padding-top: env(safe-area-inset-top); /* Notch support */
+            padding-left: calc(16px + env(safe-area-inset-left));
+            padding-right: calc(16px + env(safe-area-inset-right));
+            background: #2c3034; 
+            border-bottom: 1px solid #495057; 
+        }
+        
+        .header-title { 
+            font-size: 1rem; 
+            font-weight: 600; 
+            margin: 0; 
+            white-space: nowrap; 
+            overflow: hidden; 
+            text-overflow: ellipsis; 
+        }
+
+        /* Touch-friendly header buttons */
+        .header-actions { 
+            display: flex; 
+            gap: 12px; 
+        }
+        
+        /* Enforce min touch target size on buttons */
+        .header-actions .btn {
+            min-height: 44px;
+            min-width: 44px;
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: background-color 0.2s;
         }
 
-        .btn-icon:hover {
-            background-color: rgba(255, 255, 255, 0.1);
-        }
-
-        .btn-icon:disabled {
-            color: #6c757d;
-            cursor: not-allowed;
-        }
-
-        #page-info {
-            font-size: 0.9rem;
-            color: #adb5bd;
-            min-width: 80px;
-            text-align: center;
-        }
-
-        #pdf-container {
-            flex: 1;
-            overflow: auto;
+        /* CONTENT WRAPPER */
+        .content-wrapper { 
+            flex: 1; 
+            display: flex; 
+            flex-direction: column; /* Mobile Default: Stacked */
+            min-height: 0; 
+            overflow: hidden; 
             position: relative;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            padding: 20px;
         }
 
-        .pdf-page {
-            margin-bottom: 20px;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-            max-width: 100%;
+        /* IMAGE PANE */
+        .image-pane { 
+            flex-grow: 1; 
+            position: relative; 
+            background: #181a1c; 
+            overflow: hidden; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center;
+            min-height: 0; 
+            width: 100%;
+            touch-action: none; /* Disable browser zooming/panning here */
         }
 
-        /* Loading Spinner */
-        #loader {
-            position: fixed;
-            top: 50%; left: 50%;
-            transform: translate(-50%, -50%);
-            color: white;
-            font-size: 1.2rem;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 10px;
-            z-index: 100;
+        #crop-area { 
+            position: relative; 
+            line-height: 0; 
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            /* Prevent selection */
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        #main-image { 
+            display: block; 
+            width: 100%; 
+            height: 100%; 
+            pointer-events: none; 
+            -webkit-user-drag: none;
+        }
+
+        #draw-canvas {
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            z-index: 10;
+            cursor: crosshair;
+            touch-action: none; /* Crucial for custom drawing */
+        }
+
+        /* CONTROLS PANE - MOBILE BOTTOM SHEET STYLE */
+        .controls-pane { 
+            flex-shrink: 0; 
+            background: #212529; 
+            border-top: 1px solid #495057; 
+            height: var(--controls-height-mobile); /* Percent based on mobile */
+            overflow-y: auto; 
+            z-index: 30; 
+            padding-bottom: env(safe-area-inset-bottom);
+            -webkit-overflow-scrolling: touch; /* Smooth scroll iOS */
         }
         
-        .spinner {
-            width: 40px; height: 40px;
-            border: 4px solid #495057;
-            border-top-color: #0d6efd;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
+        .controls-content { 
+            padding: 20px 16px; 
         }
 
-        @keyframes spin { to { transform: rotate(360deg); } }
+        /* Larger touch targets for sliders */
+        .form-range {
+            height: 24px; 
+            margin-bottom: 24px; /* Spacing between touch targets */
+        }
+        
+        /* Spacing for labels */
+        .control-group {
+            margin-bottom: 12px;
+        }
+
+        /* FLOATING TOOLBAR */
+        #box-toolbar { 
+            position: absolute; 
+            background: rgba(33, 37, 41, 0.95); 
+            border: 1px solid #6c757d; 
+            border-radius: 50px; /* Pill shape */
+            padding: 8px 16px; 
+            display: none; 
+            z-index: 100; 
+            backdrop-filter: blur(5px); 
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            gap: 16px;
+        }
+        
+        #box-toolbar button { 
+            background: transparent; 
+            border: none; 
+            color: #e9ecef; 
+            padding: 0;
+            width: 32px;
+            height: 32px;
+            font-size: 1.4rem; /* Larger icons */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.1s;
+        }
+        
+        #box-toolbar button:active {
+            transform: scale(0.9);
+            color: #fff;
+        }
+
+        /* DESKTOP MEDIA QUERY (Landscape Tablets & Desktop) */
+        @media (min-width: 992px) { 
+            .content-wrapper { flex-direction: row; } 
+            
+            .controls-pane { 
+                width: var(--controls-width-desktop); 
+                height: 100%; 
+                border-top: none; 
+                border-left: 1px solid #495057; 
+                padding-bottom: 0;
+            } 
+            
+            .header-title { font-size: 1.25rem; }
+        }
+
+        /* UTILS */
+        #loader-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 9999; display: none; align-items: center; justify-content: center; }
     </style>
 </head>
 <body>
-
-    <div id="toolbar">
-        <div class="toolbar-group">
-            <button class="btn-icon" id="prev" title="Previous Page"><i class="bi bi-chevron-left"></i></button>
-            <span id="page-info">
-                <span id="page-num">--</span> / <span id="page-count">--</span>
-            </span>
-            <button class="btn-icon" id="next" title="Next Page"><i class="bi bi-chevron-right"></i></button>
-        </div>
-        
-        <div class="toolbar-group">
-             <span style="font-size: 0.9rem; font-weight: 500; max-width: 300px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ pdf_title }}</span>
-        </div>
-
-        <div class="toolbar-group">
-            <button class="btn-icon" id="zoom-out" title="Zoom Out"><i class="bi bi-dash-lg"></i></button>
-            <span id="zoom-level" style="font-size: 0.9rem; min-width: 50px; text-align: center;">100%</span>
-            <button class="btn-icon" id="zoom-in" title="Zoom In"><i class="bi bi-plus-lg"></i></button>
-            <a href="{{ pdf_url }}" download class="btn-icon" title="Download"><i class="bi bi-download"></i></a>
-        </div>
+    {% include '_navbar.html' %}
+    
+    <div id="loader-overlay">
+        <div class="spinner-border text-light" role="status"><span class="visually-hidden">Loading...</span></div>
     </div>
 
-    <div id="loader">
-        <div class="spinner"></div>
-        <div>Loading PDF...</div>
+    <div class="main-container">
+        <header class="app-header">
+             <h1 class="header-title"><i class="bi bi-bounding-box me-2"></i>Page {{ image_index + 1 }} / {{ total_pages }}</h1>
+             <div class="header-actions">
+                <!-- Removed btn-sm for larger touch targets, added explicit padding logic in CSS -->
+                <button id="backBtn" class="btn btn-secondary" aria-label="Back"><i class="bi bi-arrow-left"></i></button>
+                <button id="clearBtn" class="btn btn-outline-info" aria-label="Clear All"><i class="bi bi-eraser"></i></button>
+                <button id="processBtn" class="btn btn-success ps-3 pe-3">Next <i class="bi bi-chevron-right ms-1"></i></button>
+            </div>
+        </header>
+
+        <div class="content-wrapper">
+            <div class="image-pane" id="imagePane">
+                <div id="stitch-instructions" class="alert alert-warning position-absolute top-0 start-50 translate-middle-x mt-2 shadow-lg" style="z-index: 20; display: none; font-size: 0.9rem; width: 90%; max-width: 400px; border-radius: 12px;"></div>
+                
+                <div id="crop-area">
+                    <img id="main-image" src="/image/upload/{{ image_info.filename }}" alt="PDF Page" crossorigin="anonymous">
+                    <canvas id="draw-canvas"></canvas>
+                    
+                    <div id="box-toolbar">
+                        <button id="stitch-btn" title="Stitch"><i class="bi bi-scissors"></i></button>
+                        <button id="move-up-btn" title="Move Up"><i class="bi bi-arrow-up-circle"></i></button>
+                        <button id="move-down-btn" title="Move Down"><i class="bi bi-arrow-down-circle"></i></button>
+                        <button id="delete-btn" title="Delete Box" class="text-danger"><i class="bi bi-trash"></i></button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="controls-pane">
+                 <div class="controls-content">
+                    <div class="alert alert-info small p-2 mb-3 rounded-3"><i class="bi bi-info-circle me-2"></i>Draw boxes on the image.</div>
+                    
+                    <h6 class="text-white mb-3 text-uppercase small ls-1">Image Filters</h6>
+                    
+                    <div class="control-group">
+                        <label class="small text-light d-flex justify-content-between mb-2">Brightness <span id="brightnessValue" class="text-primary fw-bold">0</span></label>
+                        <input type="range" class="form-range" id="brightness" min="-100" max="100" value="0" step="5">
+                    </div>
+                    
+                    <div class="control-group">
+                        <label class="small text-light d-flex justify-content-between mb-2">Contrast <span id="contrastValue" class="text-primary fw-bold">1.0</span></label>
+                        <input type="range" class="form-range" id="contrast" min="0.5" max="2.5" value="1.0" step="0.05">
+                    </div>
+                    
+                    <div class="control-group">
+                        <label class="small text-light d-flex justify-content-between mb-2">Gamma <span id="gammaValue" class="text-primary fw-bold">1.0</span></label>
+                        <input type="range" class="form-range" id="gamma" min="0.2" max="2.2" value="1.0" step="0.1">
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div id="statusContainer"></div>
     </div>
 
-    <div id="pdf-container"></div>
+<script>
+    // Elements
+    const image = document.getElementById('main-image');
+    const imagePane = document.getElementById('imagePane');
+    const cropArea = document.getElementById('crop-area');
+    const drawCanvas = document.getElementById('draw-canvas');
+    const drawCtx = drawCanvas.getContext('2d');
+    
+    // State
+    const sessionId = '{{ session_id }}';
+    const userId = '{{ user_id }}';
+    const imageIndex = parseInt('{{ image_index }}');
+    const totalPages = parseInt('{{ total_pages }}');
 
-    <script>
-        // PDF.js configuration
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const storageKey = userId ? `cropState_${userId}_${sessionId}_${imageIndex}` : `cropState_${sessionId}_${imageIndex}`;
+    
+    let boxes = [];
+    let selectedBoxIndex = -1;
+    let isDrawing = false;
+    let startX, startY;
+    let dragTarget = null;
+    let startPositions = {};
+    
+    // Cross-Page Stitching State
+    let stitchBuffer = JSON.parse(localStorage.getItem('gemini_stitch_buffer') || 'null');
 
-        const url = "{{ pdf_url }}";
-        let pdfDoc = null;
-        let pageNum = 1;
-        let pageRendering = false;
-        let pageNumPending = null;
-        let scale = 1.0; // Default zoom
-        const container = document.getElementById('pdf-container');
-        const loader = document.getElementById('loader');
-        const zoomStep = 0.25;
+    // --- INITIALIZATION & RESIZING LOGIC ---
 
-        // --- Render Page ---
-        async function renderPage(num) {
-            pageRendering = true;
-            
-            // Fetch page
-            const page = await pdfDoc.getPage(num);
-            
-            // Calculate scale to fit width if initial load (and we want fit-width)
-            // For now, we stick to the 'scale' variable
-            
-            const viewport = page.getViewport({ scale: scale });
-            
-            // Create or reuse canvas
-            // Note: For simple viewer, we can clear container and add new canvas
-            // Or keep all pages rendered. For performance on large PDFs, single page view is better.
-            // Let's implement "Single Page View" for now as it's lighter.
-            
-            container.innerHTML = ''; 
-            const canvas = document.createElement('canvas');
-            canvas.className = 'pdf-page';
-            container.appendChild(canvas);
-            
-            const ctx = canvas.getContext('2d');
-            canvas.height = viewport.height;
-            canvas.width = viewport.width;
-
-            // Render
-            const renderContext = {
-                canvasContext: ctx,
-                viewport: viewport
-            };
-            
-            try {
-                await page.render(renderContext).promise;
-            } catch(err) {
-                // Cancelled or error
-                console.error(err);
-            }
-
-            pageRendering = false;
-            
-            // Update Stats
-            document.getElementById('page-num').textContent = num;
-            document.getElementById('page-count').textContent = pdfDoc.numPages;
-            document.getElementById('zoom-level').textContent = Math.round(scale * 100) + '%';
-            
-            // Manage Buttons
-            document.getElementById('prev').disabled = num <= 1;
-            document.getElementById('next').disabled = num >= pdfDoc.numPages;
-
-            if (pageNumPending !== null) {
-                renderPage(pageNumPending);
-                pageNumPending = null;
-            }
+    function init() {
+        if (image.complete && image.naturalWidth > 0) {
+            fitImageToPane();
+        } else {
+            image.onload = fitImageToPane;
         }
+        
+        // Debounced resize for performance
+        let resizeTimer;
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => requestAnimationFrame(fitImageToPane), 100);
+        });
+        
+        loadSettings();
+        loadBoxes();
+        setupListeners();
+        updateStitchButtonState();
+    }
 
-        // --- Queue Render ---
-        function queueRenderPage(num) {
-            if (pageRendering) {
-                pageNumPending = num;
+    // Exact dimension calculation preventing overflow
+    function fitImageToPane() {
+        if (!image.naturalWidth) return;
+
+        const rect = imagePane.getBoundingClientRect();
+        // Use a safe padding buffer
+        const buffer = 32; 
+        const availableW = rect.width - buffer;
+        const availableH = rect.height - buffer;
+
+        const naturalW = image.naturalWidth;
+        const naturalH = image.naturalHeight;
+
+        const scale = Math.min(availableW / naturalW, availableH / naturalH);
+
+        const finalW = Math.floor(naturalW * scale);
+        const finalH = Math.floor(naturalH * scale);
+
+        cropArea.style.width = `${finalW}px`;
+        cropArea.style.height = `${finalH}px`;
+
+        drawCanvas.width = finalW;
+        drawCanvas.height = finalH;
+
+        if (selectedBoxIndex !== -1) updateToolbarPosition();
+        drawBoxes();
+    }
+
+    // --- DRAWING LOGIC ---
+
+    function drawBoxes() {
+        drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+        
+        boxes.forEach((box, index) => {
+            const isSelected = index === selectedBoxIndex;
+            // Visual cue for boxes that have a remote source attached
+            const isStitched = box.remote_stitch_source != null;
+            
+            // Debug log for the first box to check its state
+            if (index === 0) console.log(`Box 0: stitched=${isStitched}, val=${JSON.stringify(box.remote_stitch_source)}`);
+
+            const p = (pt) => ({ x: pt.x * drawCanvas.width, y: pt.y * drawCanvas.height });
+
+            drawCtx.lineWidth = isSelected ? 3 : 2;
+            drawCtx.strokeStyle = isSelected ? '#ff4d4d' : (isStitched ? '#0dcaf0' : '#ffc107');
+            drawCtx.fillStyle = isSelected ? 'rgba(255, 77, 77, 0.15)' : 'rgba(255, 193, 7, 0.1)';
+            if (isStitched) drawCtx.fillStyle = 'rgba(13, 202, 240, 0.2)';
+
+            drawCtx.beginPath();
+            drawCtx.moveTo(p(box.tl).x, p(box.tl).y);
+            drawCtx.lineTo(p(box.tr).x, p(box.tr).y);
+            drawCtx.lineTo(p(box.br).x, p(box.br).y);
+            drawCtx.lineTo(p(box.bl).x, p(box.bl).y);
+            drawCtx.closePath();
+            drawCtx.stroke();
+            drawCtx.fill();
+
+            if (isSelected) {
+                drawCtx.fillStyle = 'white';
+                // Larger visual handles for touch feedback (logic remains same, just visual radius)
+                const handleRad = 8;
+                ['tl','tr','bl','br'].forEach(k => {
+                    drawCtx.beginPath();
+                    drawCtx.arc(p(box[k]).x, p(box[k]).y, handleRad, 0, Math.PI*2);
+                    drawCtx.fill();
+                    drawCtx.stroke();
+                });
+            }
+            
+            const cx = (p(box.tl).x + p(box.br).x)/2;
+            const cy = (p(box.tl).y + p(box.br).y)/2;
+            drawCtx.font = "bold 24px system-ui";
+            drawCtx.fillStyle = "white";
+            drawCtx.shadowColor="rgba(0,0,0,0.8)"; drawCtx.shadowBlur=6;
+            drawCtx.fillText(index + 1, cx - 6, cy + 8);
+            
+            // Draw link icon if stitched
+            if(isStitched) {
+                drawCtx.font = "20px system-ui";
+                drawCtx.fillText("🔗", p(box.tr).x - 28, p(box.tr).y + 24);
+                // Add small text indicating source page
+                if (box.remote_stitch_source && box.remote_stitch_source.page_index !== undefined) {
+                    drawCtx.font = "12px system-ui";
+                    drawCtx.fillText(`Pg ${box.remote_stitch_source.page_index + 1}`, p(box.tr).x - 40, p(box.tr).y + 40);
+                }
+            }
+            drawCtx.shadowBlur=0;
+        });
+    }
+
+    // --- INTERACTION LOGIC ---
+
+    function getPointerPos(e) {
+        const rect = drawCanvas.getBoundingClientRect();
+        // Handle touch vs mouse
+        const clientX = e.touches && e.touches.length > 0 ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches && e.touches.length > 0 ? e.touches[0].clientY : e.clientY;
+        
+        let x = (clientX - rect.left) / rect.width;
+        let y = (clientY - rect.top) / rect.height;
+        
+        return { 
+            x: Math.max(0, Math.min(1, x)), 
+            y: Math.max(0, Math.min(1, y)) 
+        };
+    }
+
+    function hitTest(nx, ny) {
+        // Increase hit radius for touch (approx 24px visual equivalent)
+        const hitPadding = 24 / drawCanvas.width; 
+        
+        for (let i = boxes.length - 1; i >= 0; i--) {
+            const b = boxes[i];
+            // Check corners
+            for(let k of ['tl','tr','bl','br']) {
+                // Distance formula
+                if (Math.hypot(b[k].x - nx, b[k].y - ny) < hitPadding) return { type: 'corner', index: i, corner: k };
+            }
+            // Check body
+            const minX = Math.min(b.tl.x, b.br.x);
+            const maxX = Math.max(b.tl.x, b.br.x);
+            const minY = Math.min(b.tl.y, b.br.y);
+            const maxY = Math.max(b.tl.y, b.br.y);
+            if (nx > minX && nx < maxX && ny > minY && ny < maxY) return { type: 'body', index: i };
+        }
+        return null;
+    }
+
+    function onPointerDown(e) {
+        e.preventDefault(); 
+        const {x, y} = getPointerPos(e);
+        const hit = hitTest(x, y);
+
+        if (hit) {
+            dragTarget = hit;
+            selectBox(hit.index);
+            startPositions = JSON.parse(JSON.stringify(boxes[hit.index]));
+            startX = x; startY = y;
+            isDrawing = false;
+        } else {
+            selectBox(-1);
+            isDrawing = true;
+            startX = x; startY = y;
+        }
+        
+        document.addEventListener('mousemove', onPointerMove);
+        document.addEventListener('touchmove', onPointerMove, { passive: false });
+        document.addEventListener('mouseup', onPointerUp);
+        document.addEventListener('touchend', onPointerUp);
+    }
+
+    function onPointerMove(e) {
+        e.preventDefault();
+        const {x, y} = getPointerPos(e);
+        const dx = x - startX;
+        const dy = y - startY;
+
+        if (dragTarget) {
+            const b = boxes[dragTarget.index];
+            if (dragTarget.type === 'corner') {
+                b[dragTarget.corner].x = x;
+                b[dragTarget.corner].y = y;
             } else {
-                renderPage(num);
+                ['tl','tr','bl','br'].forEach(k => {
+                    b[k].x = startPositions[k].x + dx;
+                    b[k].y = startPositions[k].y + dy;
+                });
+            }
+            drawBoxes();
+            updateToolbarPosition();
+        } else if (isDrawing) {
+            drawBoxes();
+            const sx = startX * drawCanvas.width;
+            const sy = startY * drawCanvas.height;
+            const w = (x - startX) * drawCanvas.width;
+            const h = (y - startY) * drawCanvas.height;
+            drawCtx.strokeStyle = 'rgba(255, 77, 77, 0.5)';
+            drawCtx.strokeRect(sx, sy, w, h);
+        }
+    }
+
+    function onPointerUp(e) {
+        if (isDrawing) {
+            const rect = drawCanvas.getBoundingClientRect();
+            // Handle touch end coordinates
+            const clientX = e.changedTouches && e.changedTouches.length ? e.changedTouches[0].clientX : e.clientX;
+            const clientY = e.changedTouches && e.changedTouches.length ? e.changedTouches[0].clientY : e.clientY;
+            
+            let endX = (clientX - rect.left) / rect.width;
+            let endY = (clientY - rect.top) / rect.height;
+            
+            endX = Math.max(0, Math.min(1, endX));
+            endY = Math.max(0, Math.min(1, endY));
+
+            // Minimum drag threshold to prevent accidental dots (20px)
+            if (Math.abs(endX - startX) * drawCanvas.width > 20 && Math.abs(endY - startY) * drawCanvas.height > 20) {
+                boxes.push({
+                    id: Date.now(),
+                    tl: { x: Math.min(startX, endX), y: Math.min(startY, endY) },
+                    tr: { x: Math.max(startX, endX), y: Math.min(startY, endY) },
+                    bl: { x: Math.min(startX, endX), y: Math.max(startY, endY) },
+                    br: { x: Math.max(startX, endX), y: Math.max(startY, endY) },
+                    remote_stitch_source: null 
+                });
+                selectBox(boxes.length - 1);
             }
         }
-
-        // --- Navigation ---
-        function onPrevPage() {
-            if (pageNum <= 1) return;
-            pageNum--;
-            queueRenderPage(pageNum);
-        }
-
-        function onNextPage() {
-            if (pageNum >= pdfDoc.numPages) return;
-            pageNum++;
-            queueRenderPage(pageNum);
-        }
-
-        // --- Zoom ---
-        function onZoomIn() {
-            scale += zoomStep;
-            queueRenderPage(pageNum);
-        }
-
-        function onZoomOut() {
-            if (scale <= 0.5) return;
-            scale -= zoomStep;
-            queueRenderPage(pageNum);
-        }
-
-        // --- Event Listeners ---
-        document.getElementById('prev').addEventListener('click', onPrevPage);
-        document.getElementById('next').addEventListener('click', onNextPage);
-        document.getElementById('zoom-in').addEventListener('click', onZoomIn);
-        document.getElementById('zoom-out').addEventListener('click', onZoomOut);
         
-        // Keyboard Nav
-        document.addEventListener('keydown', (e) => {
-            if(e.key === 'ArrowLeft') onPrevPage();
-            if(e.key === 'ArrowRight') onNextPage();
+        isDrawing = false; dragTarget = null;
+        saveBoxes();
+        drawBoxes();
+        document.removeEventListener('mousemove', onPointerMove);
+        document.removeEventListener('touchmove', onPointerMove);
+        document.removeEventListener('mouseup', onPointerUp);
+        document.removeEventListener('touchend', onPointerUp);
+    }
+
+    // --- GUI & ACTIONS ---
+
+    function selectBox(i) {
+        selectedBoxIndex = i;
+        const tb = document.getElementById('box-toolbar');
+        if (i === -1) {
+            tb.style.display = 'none';
+        } else {
+            tb.style.display = 'flex';
+            updateToolbarPosition();
+            updateStitchButtonState();
+        }
+        drawBoxes();
+    }
+
+    function updateToolbarPosition() {
+        if (selectedBoxIndex === -1) return;
+        const b = boxes[selectedBoxIndex];
+        const tb = document.getElementById('box-toolbar');
+        const containerRect = imagePane.getBoundingClientRect();
+        
+        // Coordinates relative to canvas
+        const x = Math.max(b.tl.x, b.br.x) * drawCanvas.width;
+        const y = Math.min(b.tl.y, b.br.y) * drawCanvas.height;
+        
+        // Calculate preferred position (Bottom Right of box)
+        let left = x - tb.offsetWidth + 10;
+        let top = y + 10;
+        
+        // Boundary Detection (Keep toolbar on screen)
+        // Canvas width/height might differ from screen CSS pixels, so we check against offset
+        const maxLeft = drawCanvas.offsetWidth - tb.offsetWidth;
+        const maxTop = drawCanvas.offsetHeight - tb.offsetHeight;
+
+        if (left < 0) left = 0;
+        if (left > maxLeft) left = maxLeft;
+        
+        // If bottom is clipped, flip to top
+        if (top > maxTop) {
+            top = (Math.min(b.tl.y, b.tr.y) * drawCanvas.height) - tb.offsetHeight - 10;
+        }
+        if (top < 0) top = 10; // Extreme fallback
+        
+        tb.style.left = left + 'px';
+        tb.style.top = top + 'px';
+    }
+
+    function updateStitchButtonState() {
+        const btn = document.getElementById('stitch-btn');
+        const icon = btn.querySelector('i');
+        
+        const isBufferActive = stitchBuffer && stitchBuffer.session_id === sessionId;
+        // Check if current box is stitched
+        const isBoxStitched = selectedBoxIndex > -1 && boxes[selectedBoxIndex] && boxes[selectedBoxIndex].remote_stitch_source != null;
+
+        if (isBufferActive) {
+             // Mode: PASTE (Buffer Full)
+             btn.title = `Link to Box from Page ${stitchBuffer.page_index + 1}`;
+             icon.className = 'bi bi-link-45deg';
+             btn.style.color = '#0dcaf0'; // Cyan
+        } else if (isBoxStitched) {
+             // Mode: UNLINK (Buffer Empty + Box Stitched)
+             btn.title = "Remove Link";
+             icon.className = 'bi bi-x-lg';
+             btn.style.color = '#dc3545'; // Red
+        } else {
+             // Mode: COPY (Buffer Empty + Box Unstitched)
+             btn.title = "Copy to Stitch Buffer";
+             icon.className = 'bi bi-scissors';
+             btn.style.color = '#e9ecef'; // Default
+        }
+    }
+    
+    function handleStitchClick() {
+        if (selectedBoxIndex === -1) return;
+        
+        const isBufferActive = stitchBuffer && stitchBuffer.session_id === sessionId;
+        const isBoxStitched = boxes[selectedBoxIndex].remote_stitch_source != null;
+        
+        if (isBufferActive) {
+            // --- ACTION: PASTE LINK ---
+            boxes[selectedBoxIndex].remote_stitch_source = {
+                page_index: stitchBuffer.page_index,
+                box: stitchBuffer.box
+            };
+            // Auto-clear buffer to allow copying again immediately
+            stitchBuffer = null;
+            localStorage.removeItem('gemini_stitch_buffer');
+            // Visual feedback
+            alert(`Linked!`);
+        } else if (isBoxStitched) {
+            // --- ACTION: UNLINK ---
+            boxes[selectedBoxIndex].remote_stitch_source = null;
+        } else {
+            // --- ACTION: COPY SOURCE ---
+            const box = boxes[selectedBoxIndex];
+            // Normalize coordinates
+            const minX = Math.min(box.tl.x, box.bl.x);
+            const minY = Math.min(box.tl.y, box.tr.y);
+            const maxX = Math.max(box.tr.x, box.br.x);
+            const maxY = Math.max(box.bl.y, box.br.y);
+            
+            const cleanBox = { ...box, x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+            
+            stitchBuffer = {
+                session_id: sessionId,
+                page_index: imageIndex,
+                box: cleanBox
+            };
+            localStorage.setItem('gemini_stitch_buffer', JSON.stringify(stitchBuffer));
+            alert("Copied! Select the target box (on any page) and click the Link button.");
+        }
+        
+        saveBoxes();
+        updateStitchButtonState();
+        drawBoxes();
+    }
+
+    function moveBoxUp() {
+        if (selectedBoxIndex > -1 && selectedBoxIndex < boxes.length - 1) {
+            const [movedBox] = boxes.splice(selectedBoxIndex, 1);
+            boxes.splice(selectedBoxIndex + 1, 0, movedBox);
+            selectedBoxIndex++;
+            saveBoxes();
+            drawBoxes();
+            updateToolbarPosition();
+        }
+    }
+
+    function moveBoxDown() {
+        if (selectedBoxIndex > 0) {
+            const [movedBox] = boxes.splice(selectedBoxIndex, 1);
+            boxes.splice(selectedBoxIndex - 1, 0, movedBox);
+            selectedBoxIndex--;
+            saveBoxes();
+            drawBoxes();
+            updateToolbarPosition();
+        }
+    }
+
+    function setupListeners() {
+        drawCanvas.addEventListener('mousedown', onPointerDown);
+        drawCanvas.addEventListener('touchstart', onPointerDown, {passive:false});
+        
+        document.getElementById('clearBtn').addEventListener('click', () => { 
+            if(confirm("Delete all boxes?")) { boxes=[]; selectBox(-1); saveBoxes(); }
+        });
+        
+        document.getElementById('backBtn').addEventListener('click', () => {
+             window.location.href = (imageIndex > 0) ? `/cropv2/${sessionId}/${imageIndex-1}` : `/v2`;
         });
 
-        // --- Load PDF ---
-        (async function() {
-            try {
-                const loadingTask = pdfjsLib.getDocument(url);
-                pdfDoc = await loadingTask.promise;
+        document.getElementById('delete-btn').addEventListener('click', () => {
+            if (selectedBoxIndex > -1) { 
+                const deletedBox = boxes[selectedBoxIndex];
+                // Clear buffer if we are deleting the source box currently in clipboard
+                if (stitchBuffer && stitchBuffer.session_id === sessionId && stitchBuffer.box.id === deletedBox.id) {
+                    stitchBuffer = null;
+                    localStorage.removeItem('gemini_stitch_buffer');
+                }
                 
-                loader.style.display = 'none';
-                document.getElementById('page-count').textContent = pdfDoc.numPages;
-                
-                // Initial render
-                renderPage(pageNum);
-            } catch (err) {
-                console.error('Error loading PDF: ', err);
-                loader.innerHTML = `<div class="text-danger"><i class="bi bi-exclamation-triangle"></i> Error loading PDF</div>`;
+                boxes.splice(selectedBoxIndex, 1); 
+                selectBox(-1); 
+                saveBoxes(); 
             }
-        })();
-    </script>
+        });
+        
+        document.getElementById('stitch-btn').addEventListener('click', handleStitchClick);
+        
+        document.getElementById('move-up-btn').addEventListener('click', moveBoxUp);
+        document.getElementById('move-down-btn').addEventListener('click', moveBoxDown);
+
+        document.getElementById('processBtn').addEventListener('click', processPage);
+        
+        ['brightness','contrast','gamma'].forEach(id => {
+            document.getElementById(id).addEventListener('input', updateFilters);
+        });
+    }
+
+    function updateFilters() {
+        const b = document.getElementById('brightness').value;
+        const c = document.getElementById('contrast').value;
+        const g = document.getElementById('gamma').value;
+        
+        console.log(`Filters: Brightness ${b}, Contrast ${c}, Gamma ${g}`);
+        
+        // Note: Gamma is not supported in standard CSS filters, so it won't show visually here.
+        // It would require an SVG filter or Canvas manipulation to visualize.
+        image.style.filter = `brightness(${100 + parseFloat(b)}%) contrast(${c})`;
+        
+        document.getElementById('brightnessValue').innerText = b;
+        document.getElementById('contrastValue').innerText = c;
+        document.getElementById('gammaValue').innerText = g;
+        
+        localStorage.setItem('pdfFilters', JSON.stringify({b,c,g}));
+    }
+    
+    function loadSettings() {
+        try {
+            const s = JSON.parse(localStorage.getItem('pdfFilters'));
+            if(s) {
+                document.getElementById('brightness').value = s.b;
+                document.getElementById('contrast').value = s.c;
+                document.getElementById('gamma').value = s.g;
+                updateFilters();
+            }
+        } catch(e){}
+    }
+
+    async function processPage() {
+        if(boxes.length === 0) {
+            if(!confirm("No boxes drawn. Skip page?")) return;
+        }
+        
+        const btn = document.getElementById('processBtn');
+        btn.disabled = true;
+        document.getElementById('loader-overlay').style.display = 'flex';
+
+        const finalBoxes = boxes.map(b => {
+            const minX = Math.min(b.tl.x, b.bl.x);
+            const minY = Math.min(b.tl.y, b.tr.y);
+            const maxX = Math.max(b.tr.x, b.br.x);
+            const maxY = Math.max(b.bl.y, b.br.y);
+            return { ...b, x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+        });
+
+        // Capture current filter state
+        const tempCv = document.createElement('canvas');
+        tempCv.width = image.naturalWidth;
+        tempCv.height = image.naturalHeight;
+        const tCtx = tempCv.getContext('2d');
+        tCtx.filter = image.style.filter;
+        tCtx.drawImage(image, 0, 0);
+        const imgData = tempCv.toDataURL('image/jpeg', 0.85);
+
+        try {
+            const res = await fetch('/process_crop_v2', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    session_id: sessionId,
+                    image_index: imageIndex,
+                    boxes: finalBoxes,
+                    imageData: imgData
+                })
+            });
+            
+            if(!res.ok) {
+                const errText = await res.text();
+                throw new Error(`Server Error (${res.status}): ${errText}`);
+            }
+
+            window.location.href = (imageIndex + 1 < totalPages)
+                ? `/cropv2/${sessionId}/${imageIndex+1}`
+                : `/question_entry_v2/${sessionId}`;
+                
+        } catch (err) {
+            console.error(err);
+            alert("Error processing page: " + err.message);
+            btn.disabled = false;
+            document.getElementById('loader-overlay').style.display = 'none';
+        }
+    }
+
+    function saveBoxes() { localStorage.setItem(storageKey, JSON.stringify(boxes)); }
+    function loadBoxes() {
+        try {
+            const s = localStorage.getItem(storageKey);
+            if(s) {
+                boxes = JSON.parse(s);
+                boxes.forEach((b,i) => { 
+                    if(!b.id) b.id = Date.now()+i;
+                    // Sanitize: Ensure remote_stitch_source is null if undefined to prevent UI bugs
+                    if (b.remote_stitch_source === undefined) b.remote_stitch_source = null;
+                });
+                drawBoxes();
+            }
+        } catch(e){}
+    }
+
+    init();
+</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
