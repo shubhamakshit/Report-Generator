@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}Connect Google Drive{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card bg-dark text-white border-warning">
+                <div class="card-header border-warning">
+                    <h4 class="mb-0"><i class="bi bi-google me-2"></i>Connect Google Drive (Manual Mode)</h4>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle-fill me-2"></i>
+                        Since this app is running on a server without a public domain, we use a manual copy-paste method for authentication.
+                    </div>
+
+                    <h5 class="mt-4">Step 1: Authorize</h5>
+                    <p>Click the button below to open Google Login in a new tab. You will be asked to allow access.</p>
+                    <a href="{{ auth_url }}" target="_blank" class="btn btn-warning w-100 mb-3">
+                        <i class="bi bi-box-arrow-up-right me-2"></i> Authorize on Google
+                    </a>
+
+                    <h5 class="mt-4">Step 2: Copy the Result</h5>
+                    <p class="text-muted small">
+                        After authorizing, you might be redirected to a page that says <strong>"This site can't be reached"</strong> or <strong>"localhost refused to connect"</strong>. 
+                        <br>
+                        <strong>This is expected!</strong> Copy the entire URL from your browser's address bar (it should look like <code>http://localhost/?code=...</code>).
+                    </p>
+
+                    <h5 class="mt-4">Step 3: Paste & Verify</h5>
+                    <form action="{{ url_for('drive.manual_callback') }}" method="POST">
+                        <div class="mb-3">
+                            <label for="full_url" class="form-label">Paste the full URL here:</label>
+                            <textarea class="form-control bg-dark text-white border-secondary" id="full_url" name="full_url" rows="3" required placeholder="http://localhost/?code=4/0A..."></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-success w-100">
+                            <i class="bi bi-check-lg me-2"></i> Complete Connection
+                        </button>
+                    </form>
+                </div>
+            </div>
+            
+            <div class="mt-3 text-center">
+                <a href="{{ url_for('drive.drive_manager') }}" class="text-secondary">Cancel</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

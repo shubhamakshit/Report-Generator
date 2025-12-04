@@ -5,7 +5,7 @@ from utils import get_db_connection
 
 class User(UserMixin):
     """User model for Flask-Login."""
-    def __init__(self, id, username, email, password_hash, neetprep_enabled, dpi, color_rm_dpi, v2_default=0, magnifier_enabled=1):
+    def __init__(self, id, username, email, password_hash, neetprep_enabled, dpi, color_rm_dpi, v2_default=0, magnifier_enabled=1, google_token=None):
         self.id = id
         self.username = username
         self.email = email
@@ -15,6 +15,7 @@ class User(UserMixin):
         self.color_rm_dpi = color_rm_dpi
         self.v2_default = v2_default
         self.magnifier_enabled = magnifier_enabled
+        self.google_token = google_token
 
     @staticmethod
     def get(user_id):
@@ -32,7 +33,8 @@ class User(UserMixin):
                 user_data['dpi'], 
                 user_data.get('color_rm_dpi', 200),
                 user_data.get('v2_default', 0),
-                user_data.get('magnifier_enabled', 1)
+                user_data.get('magnifier_enabled', 1),
+                user_data.get('google_token')
             )
         return None
 
@@ -52,7 +54,8 @@ class User(UserMixin):
                 user_data['dpi'], 
                 user_data.get('color_rm_dpi', 200),
                 user_data.get('v2_default', 0),
-                user_data.get('magnifier_enabled', 1)
+                user_data.get('magnifier_enabled', 1),
+                user_data.get('google_token')
             )
         return None
     

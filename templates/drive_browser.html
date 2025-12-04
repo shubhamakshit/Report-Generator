@@ -18,14 +18,14 @@
         {% for item in items %}
         <div class="col">
             {% if item.type == 'folder' %}
-            <div class="card h-100 bg-dark text-white border-secondary" onclick="location.href='/drive/browse/{{ source.id }}/{{ item.path }}'" style="cursor: pointer;">
+            <div class="card h-100 bg-dark text-white border-secondary" onclick="showLoader(); location.href='{{ '/drive/api/browse/' + item.path if is_api else '/drive/browse/' + source.id|string + '/' + item.path }}'" style="cursor: pointer;">
                 <div class="card-body text-center">
                     <i class="bi bi-folder-fill fs-1 text-warning"></i>
                     <h6 class="card-title mt-2 text-truncate">{{ item.name }}</h6>
                 </div>
             </div>
             {% else %}
-            <div class="card h-100 bg-dark text-white border-secondary" onclick="location.href='/drive/file/{{ source.id }}/{{ item.path }}'" style="cursor: pointer;">
+            <div class="card h-100 bg-dark text-white border-secondary" onclick="showLoader(); location.href='{{ '/drive/api/open/' + item.path if is_api else '/drive/file/' + source.id|string + '/' + item.path }}'" style="cursor: pointer;">
                 <div class="card-body text-center">
                     {% if item.type == 'pdf' %}
                         <i class="bi bi-file-earmark-pdf-fill fs-1 text-danger"></i>
@@ -44,4 +44,15 @@
         {% endfor %}
     </div>
 </div>
+
+<div id="loader-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:9999; align-items:center; justify-content:center; color:white; flex-direction:column;">
+    <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;"></div>
+    <div class="mt-3 fs-5">Downloading & Opening...</div>
+</div>
+
+<script>
+    function showLoader() {
+        document.getElementById('loader-overlay').style.display = 'flex';
+    }
+</script>
 {% endblock %}

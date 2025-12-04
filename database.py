@@ -272,6 +272,16 @@ def setup_database():
     except sqlite3.OperationalError:
         cursor.execute("ALTER TABLE users ADD COLUMN magnifier_enabled INTEGER DEFAULT 1")
 
+    try:
+        cursor.execute("SELECT source_type FROM drive_sources LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE drive_sources ADD COLUMN source_type TEXT DEFAULT 'folder'")
+
+    try:
+        cursor.execute("SELECT google_token FROM users LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE users ADD COLUMN google_token TEXT")
+
     conn.commit()
     conn.close()
 

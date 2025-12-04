@@ -1,6 +1,7 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash
+from flask import Blueprint, render_template, request, redirect, url_for, flash, current_app
 from flask_login import login_required, current_user
 from utils import get_db_connection
+import os
 
 settings_bp = Blueprint('settings', __name__)
 
@@ -8,6 +9,20 @@ settings_bp = Blueprint('settings', __name__)
 @login_required
 def settings():
     if request.method == 'POST':
+        # --- Handle Client Secret Upload ---
+        if 'client_secret' in request.files:
+            file = request.files['client_secret']
+            if file and file.filename:
+                if file.filename.endswith('.json'):
+                    try:
+                        save_path = os.path.join(current_app.root_path, 'client_secret.json')
+                        file.save(save_path)
+                        flash('Client Secret uploaded successfully!', 'success')
+                    except Exception as e:
+                        flash(f'Error saving file: {e}', 'danger')
+                else:
+                    flash('Invalid file type. Please upload a JSON file.', 'danger')
+
         # --- Handle NeetPrep Toggle ---
         neetprep_enabled = 1 if request.form.get('neetprep_enabled') else 0
         
@@ -61,4 +76,6 @@ def settings():
         flash('Settings saved successfully!', 'success')
         return redirect(url_for('settings.settings'))
 
-    return render_template('settings.html')
+    client_secret_exists = os.path.exists(os.path.join(current_app.root_path, 'client_secret.json'))
+    drive_redirect_uri = url_for('drive.oauth2callback', _external=True)
+    return render_template('settings.html', client_secret_exists=client_secret_exists, drive_redirect_uri=drive_redirect_uri)

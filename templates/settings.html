@@ -22,7 +22,34 @@
                         {% endif %}
                     {% endwith %}
 
-                    <form method="POST">
+                    <form method="POST" enctype="multipart/form-data">
+                        <fieldset>
+                            <legend class="h5 mb-3">Google Drive Integration</legend>
+                            <div class="mb-3">
+                                <label for="client_secret" class="form-label">Client Secret JSON</label>
+                                <div class="input-group">
+                                    <input type="file" class="form-control" id="client_secret" name="client_secret" accept=".json">
+                                    <button class="btn btn-outline-secondary" type="submit">Upload</button>
+                                </div>
+                                <div class="form-text">
+                                    Status: 
+                                    {% if client_secret_exists %}
+                                        <span class="text-success"><i class="bi bi-check-circle-fill"></i> Configured</span>
+                                    {% else %}
+                                        <span class="text-danger"><i class="bi bi-x-circle-fill"></i> Not Found</span>
+                                    {% endif %}
+                                    <br>
+                                    Upload the <code>client_secret.json</code> file from Google Cloud Console to enable Drive integration.
+                                    <br>
+                                    <div class="mt-2 p-2 bg-dark border rounded">
+                                        <strong>Required Redirect URI:</strong><br>
+                                        <code class="user-select-all">{{ drive_redirect_uri }}</code>
+                                    </div>
+                                    <span class="text-muted small">Ensure this URI is exactly listed in your Google Cloud Console "Authorized redirect URIs".</span>
+                                </div>
+                            </div>
+                        </fieldset>
+                        <hr>
                         <fieldset>
                             <legend class="h5 mb-3">Feature Toggles</legend>
                             <div class="form-check form-switch mb-3">
