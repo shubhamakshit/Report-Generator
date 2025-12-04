@@ -51,7 +51,7 @@
                         <div class="question-container">
                             <div class="d-flex">
                                 <div class="question-number">Q{{ q.question_number_within_topic }}.</div>
-                                <div class="flex-grow-1">
+                                <div class="flex-grow-1" {% if q.question_json %}data-json="{{ q.question_json | escape }}"{% endif %}>
                                     {{ q.question_html | safe }}
                                 </div>
                             </div>
@@ -65,8 +65,71 @@
     </div>
     
     <script>
-        // Auto-print when loaded
+        // Helper function to convert EditorJS list items to HTML (handles nested lists)
+        function listItemsToHtml(items) {
+            let html = '';
+            items.forEach(item => {
+                if (typeof item === 'string') {
+                    html += `<li>${item}</li>`;
+                } else if (typeof item === 'object' && item !== null) {
+                    if (item.content) {
+                        html += `<li>${item.content}`;
+                        if (item.items && item.items.length > 0) {
+                            html += '<ul>';
+                            html += listItemsToHtml(item.items);
+                            html += '</ul>';
+                        }
+                        html += '</li>';
+                    }
+                }
+            });
+            return html;
+        }
+
+        // Helper function to convert EditorJS blocks to HTML
+        function editorJsToHtml(blocks) {
+            let html = "";
+            blocks.forEach(block => {
+                if (block.type === 'header') {
+                    html += `<h${block.data.level}>${block.data.text}</h${block.data.level}>`;
+                }
+                else if (block.type === 'paragraph') {
+                    html += `<p>${block.data.text}</p>`;
+                }
+                else if (block.type === 'list') {
+                    html += block.data.style === 'ordered' ? '<ol>' : '<ul>';
+                    html += listItemsToHtml(block.data.items);
+                    html += block.data.style === 'ordered' ? '</ol>' : '</ul>';
+                }
+                else if (block.type === 'image' || block.type === 'simple-image') {
+                    const url = block.data.url;
+                    const caption = block.data.caption || '';
+                    html += `<div class="text-center my-2"><img src="${url}" class="img-fluid rounded" style="max-height: 300px;" alt="${caption}"><br><small class="text-muted">${caption}</small></div>`;
+                }
+                else if (block.type === 'raw') {
+                    html += block.data.html;
+                }
+            });
+            return html;
+        }
+
+        // Process any questions that have JSON data and convert to HTML
         window.onload = function() {
+            // Check each question for JSON data and render if needed
+            document.querySelectorAll('.question-container').forEach(container => {
+                const questionDiv = container.querySelector('.flex-grow-1');
+                if (questionDiv && questionDiv.dataset.json) {
+                    try {
+                        const jsonData = JSON.parse(questionDiv.dataset.json);
+                        if (jsonData.blocks) {
+                            questionDiv.innerHTML = editorJsToHtml(jsonData.blocks);
+                        }
+                    } catch (e) {
+                        console.error('Error parsing question JSON:', e);
+                    }
+                }
+            });
+            
             // setTimeout to ensure images render
             setTimeout(() => {
                 window.print();
