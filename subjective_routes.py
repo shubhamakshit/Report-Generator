@@ -191,12 +191,64 @@ def list_questions(folder_path=''):
         folder_tree=folder_tree
     )
 
+@subjective_bp.route('/subjective/print/<folder_id>')
+@login_required
+def print_folder(folder_id):
+    conn = get_db_connection()
+    
+    try:
+        target_folder_id = None
+        if folder_id and folder_id != 'root':
+            target_folder_id = folder_id
+
+        # Fetch questions for the specific folder
+        if target_folder_id:
+            questions_rows = conn.execute('SELECT * FROM subjective_questions WHERE folder_id = ? AND user_id = ? ORDER BY created_at DESC', (target_folder_id, current_user.id)).fetchall()
+        else:
+            questions_rows = conn.execute('SELECT * FROM subjective_questions WHERE folder_id IS NULL AND user_id = ? ORDER BY created_at DESC', (current_user.id,)).fetchall()
+
+        # Convert to dicts
+        questions_rows = [dict(row) for row in questions_rows]
+        
+        # Group questions by topic and find representative topic_order
+        temp_grouped = {}
+        topic_orders = {}
+
+        for q in questions_rows:
+            topic = q['question_topic']
+            if topic not in temp_grouped:
+                temp_grouped[topic] = []
+                # Default order 0 if None
+                topic_orders[topic] = q.get('topic_order') or 0
+            temp_grouped[topic].append(q)
+                
+        # Sort topics based on topic_order
+        sorted_topics = sorted(topic_orders.keys(), key=lambda t: topic_orders[t])
+        
+        grouped_questions = {}
+        for topic in sorted_topics:
+            # Sort questions within topic
+            questions = sorted(
+                temp_grouped[topic],
+                key=lambda q: natural_sort_key(q.get('question_number_within_topic'))
+            )
+            grouped_questions[topic] = questions
+
+        return render_template('subjective_print.html', grouped_questions=grouped_questions)
+        
+    except Exception as e:
+        flash(f'Error preparing print view: {str(e)}', 'danger')
+        return redirect(url_for('subjective.list_questions'))
+    finally:
+        conn.close()
+
 @subjective_bp.route('/subjective/question/add', methods=['POST'])
 @login_required
 def add_subjective_question():
     data = request.json
     topic = data.get('topic')
     html = data.get('html')
+    json_data = data.get('json')
     number = data.get('number')
     folder_id = data.get('folder_id')
 
@@ -206,8 +258,8 @@ def add_subjective_question():
     conn = get_db_connection()
     try:
         conn.execute(
-            'INSERT INTO subjective_questions (user_id, question_topic, question_html, question_number_within_topic, folder_id) VALUES (?, ?, ?, ?, ?)',
-            (current_user.id, topic, html, number, folder_id)
+            'INSERT INTO subjective_questions (user_id, question_topic, question_html, question_json, question_number_within_topic, folder_id) VALUES (?, ?, ?, ?, ?, ?)',
+            (current_user.id, topic, html, json_data, number, folder_id)
         )
         conn.commit()
         return jsonify({'success': True})
@@ -223,6 +275,7 @@ def update_subjective_question(question_id):
     data = request.json
     topic = data.get('topic')
     html = data.get('html')
+    json_data = data.get('json')
     number = data.get('number')
 
     if not topic or not html:
@@ -237,8 +290,8 @@ def update_subjective_question(question_id):
             return jsonify({'error': 'Unauthorized'}), 403
 
         conn.execute(
-            'UPDATE subjective_questions SET question_topic = ?, question_html = ?, question_number_within_topic = ? WHERE id = ?',
-            (topic, html, number, question_id)
+            'UPDATE subjective_questions SET question_topic = ?, question_html = ?, question_json = ?, question_number_within_topic = ? WHERE id = ?',
+            (topic, html, json_data, number, question_id)
         )
         conn.commit()
         return jsonify({'success': True})

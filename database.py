@@ -282,6 +282,11 @@ def setup_database():
     except sqlite3.OperationalError:
         cursor.execute("ALTER TABLE users ADD COLUMN google_token TEXT")
 
+    try:
+        cursor.execute("SELECT question_json FROM subjective_questions LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE subjective_questions ADD COLUMN question_json TEXT")
+
     conn.commit()
     conn.close()
 

@@ -2,6 +2,119 @@
 
 {% block title %}Subjective Questions Manager{% endblock %}
 
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/@editorjs/editorjs@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/@editorjs/header@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/@editorjs/list@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/@editorjs/raw@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/@editorjs/simple-image@latest"></script>
+<style>
+    /* EditorJS Dark Mode Improvements */
+    #editorjs {
+        color: #e0e0e0;
+        background-color: #212529;
+        border-color: #495057;
+    }
+    
+    #editorjs ::selection {
+        background-color: #0d6efd;
+        color: white;
+    }
+    
+    /* Toolbar and UI elements */
+    .ce-toolbar__content, 
+    .ce-block__content, 
+    .ce-inline-toolbar,
+    .ce-settings,
+    .ce-toolbox {
+        background-color: #212529 !important;
+        color: #e0e0e0 !important;
+        border-color: #495057 !important;
+    }
+    
+    /* Buttons and icons */
+    .ce-inline-toolbar__toggler,
+    .ce-settings__button,
+    .ce-toolbox__button {
+        color: #e0e0e0 !important;
+        background-color: #212529 !important;
+    }
+    
+    .ce-inline-toolbar__toggler:hover,
+    .ce-settings__button:hover,
+    .ce-toolbox__button:hover {
+        background-color: #343a40 !important;
+    }
+    
+    /* Input fields in settings */
+    .ce-settings__input {
+        background-color: #343a40 !important;
+        color: #e0e0e0 !important;
+        border-color: #495057 !important;
+    }
+    
+    /* Block content */
+    .ce-block__content {
+        color: #e0e0e0 !important;
+    }
+    
+    /* Header blocks */
+    .ce-header {
+        color: #e0e0e0 !important;
+    }
+    
+    /* List items */
+    .cdx-list__item {
+        color: #e0e0e0 !important;
+    }
+    
+    /* Image captions */
+    .cdx-simple-image__caption {
+        color: #adb5bd !important;
+    }
+    
+    /* Placeholder text */
+    .ce-block--empty .ce-block__content::before {
+        color: #6c757d !important;
+    }
+    
+    /* Selection fix for the dark container */
+    .codex-editor ::selection {
+        background-color: rgba(13, 110, 253, 0.5);
+        color: #ffffff;
+    }
+    
+    /* Improve focus states */
+    .ce-block--focused {
+        background-color: rgba(13, 110, 253, 0.1) !important;
+    }
+    
+    /* Better contrast for active elements */
+    .ce-toolbox__button--active {
+        background-color: #0d6efd !important;
+        color: white !important;
+    }
+    
+    /* Scrollbar styling for dark mode */
+    .codex-editor__redactor::-webkit-scrollbar {
+        width: 8px;
+    }
+    
+    .codex-editor__redactor::-webkit-scrollbar-track {
+        background: #212529;
+    }
+    
+    .codex-editor__redactor::-webkit-scrollbar-thumb {
+        background: #495057;
+        border-radius: 4px;
+    }
+    
+    .codex-editor__redactor::-webkit-scrollbar-thumb:hover {
+        background: #6c757d;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container mt-4">
     
@@ -31,6 +144,9 @@
             <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#reorderTopicsModal">
                 <i class="bi bi-sort-down"></i> Reorder
             </button>
+            <a href="{{ url_for('subjective.print_folder', folder_id=current_folder_id if current_folder_id else 'root') }}" target="_blank" class="btn btn-secondary">
+                <i class="bi bi-printer"></i> Print PDF
+            </a>
             <a href="{{ url_for('subjective.generator') }}" class="btn btn-info">
                 <i class="bi bi-magic"></i> Generator
             </a>
@@ -112,7 +228,7 @@
                                 <td><span class="badge number-badge">{{ q.question_number_within_topic }}</span></td>
                                 <td><div class="text-break" style="max-width: 600px;">{{ q.question_html | safe }}</div></td>
                                 <td class="text-end">
-                                    <button class="btn btn-sm btn-outline-primary border-0" onclick="editQuestion('{{ q.id }}', '{{ q.question_topic }}', '{{ q.question_number_within_topic }}', `{{ q.question_html|e }}`)">
+                                    <button class="btn btn-sm btn-outline-primary border-0" onclick='editQuestion("{{ q.id }}", "{{ q.question_topic }}", "{{ q.question_number_within_topic }}", `{{ q.question_html|safe }}`, `{{ q.question_json if q.question_json else "null" }}`)'>
                                         <i class="bi bi-pencil-square"></i>
                                     </button>
                                     <button class="btn btn-sm btn-outline-danger border-0" onclick="deleteQuestion('{{ q.id }}')">
@@ -211,8 +327,8 @@
                     <input type="text" class="form-control" id="q_number">
                 </div>
                 <div class="mb-3">
-                    <label class="form-label">Question Text/HTML</label>
-                    <textarea class="form-control" id="q_html" rows="4"></textarea>
+                    <label class="form-label">Question Content</label>
+                    <div id="editorjs" class="border rounded p-3 bg-dark text-white" style="min-height: 300px;"></div>
                 </div>
             </div>
             <div class="modal-footer">
@@ -247,6 +363,34 @@
 </div>
 
 <script>
+let editor;
+
+function initEditor(data = {}) {
+    if (editor) {
+        try {
+            editor.destroy();
+        } catch (e) {}
+        editor = null;
+    }
+    
+    // Ensure data is an object
+    if (typeof data === 'string') {
+        try { data = JSON.parse(data); } catch(e) { data = {}; }
+    }
+
+    editor = new EditorJS({
+        holder: 'editorjs',
+        data: data,
+        tools: {
+            header: window.Header,
+            list: window.NestedList || window.List || window.EditorjsList, 
+            raw: window.RawTool,
+            image: window.SimpleImage
+        },
+        placeholder: 'Type your question here...'
+    });
+}
+
 // Color generation for topics
 function stringToHslColor(str, s, l) {
     let hash = 0;
@@ -510,30 +654,66 @@ function openAddQuestionModal(prefillTopic = "", prefillNumber = "") {
     // Prefill or clear
     document.getElementById('q_topic').value = prefillTopic;
     document.getElementById('q_number').value = prefillNumber;
-    document.getElementById('q_html').value = "";
+    
+    initEditor();
     
     questionModal.show();
 }
 
-function editQuestion(id, topic, number, html) {
+function editQuestion(id, topic, number, html, jsonStr) {
     if (!questionModal) questionModal = new bootstrap.Modal(document.getElementById('questionModal'));
     document.getElementById('questionModalTitle').innerText = "Edit Question";
     document.getElementById('q_id').value = id;
     document.getElementById('q_topic').value = topic;
     document.getElementById('q_number').value = number;
-    document.getElementById('q_html').value = html;
+    
+    let data = {};
+    if (jsonStr && jsonStr !== 'None' && jsonStr !== 'null') {
+        try { data = JSON.parse(jsonStr); } catch(e) { console.error(e); }
+    } else if (html) {
+        // Migration: Convert legacy HTML to a Paragraph block
+        data = {
+            time: Date.now(),
+            blocks: [{
+                type: "paragraph",
+                data: { text: html }
+            }]
+        };
+    }
+    
+    initEditor(data);
     questionModal.show();
 }
 
-function saveQuestion() {
+async function saveQuestion() {
     const id = document.getElementById('q_id').value;
     const topic = document.getElementById('q_topic').value;
     const number = document.getElementById('q_number').value;
-    const html = document.getElementById('q_html').value;
     const folderId = {{ current_folder_id if current_folder_id else 'null' }};
+    
+    const outputData = await editor.save();
+    const jsonStr = JSON.stringify(outputData);
+    
+    // Generate HTML for legacy/display support (simple conversion)
+    let html = "";
+    outputData.blocks.forEach(block => {
+        if (block.type === 'header') html += `<h${block.data.level}>${block.data.text}</h${block.data.level}>`;
+        else if (block.type === 'paragraph') html += `<p>${block.data.text}</p>`;
+        else if (block.type === 'list') {
+             html += block.data.style === 'ordered' ? '<ol>' : '<ul>';
+             block.data.items.forEach(i => html += `<li>${i}</li>`);
+             html += block.data.style === 'ordered' ? '</ol>' : '</ul>';
+        }
+        else if (block.type === 'image' || block.type === 'simple-image') {
+             const url = block.data.url;
+             const caption = block.data.caption || '';
+             html += `<div class="text-center my-2"><img src="${url}" class="img-fluid rounded" style="max-height: 300px;" alt="${caption}"><br><small class="text-muted">${caption}</small></div>`;
+        }
+        else if (block.type === 'raw') html += block.data.html;
+    });
 
     const url = id ? `/subjective/question/update/${id}` : '/subjective/question/add';
-    const payload = id ? { topic, number, html } : { topic, number, html, folder_id: folderId };
+    const payload = id ? { topic, number, html, json: jsonStr } : { topic, number, html, json: jsonStr, folder_id: folderId };
 
     fetch(url, {
         method: 'POST',
