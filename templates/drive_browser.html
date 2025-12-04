@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}Browse Drive{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4" style="width: 90%; margin: auto;">
+    <nav aria-label="breadcrumb" class="mb-4">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="/drive_manager">Drives</a></li>
+            <li class="breadcrumb-item"><a href="/drive/browse/{{ source.id }}">{{ source.name }}</a></li>
+            {% for crumb in breadcrumbs %}
+                <li class="breadcrumb-item active">{{ crumb.name }}</li>
+            {% endfor %}
+        </ol>
+    </nav>
+
+    <div class="row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-4 g-4">
+        {% for item in items %}
+        <div class="col">
+            {% if item.type == 'folder' %}
+            <div class="card h-100 bg-dark text-white border-secondary" onclick="location.href='/drive/browse/{{ source.id }}/{{ item.path }}'" style="cursor: pointer;">
+                <div class="card-body text-center">
+                    <i class="bi bi-folder-fill fs-1 text-warning"></i>
+                    <h6 class="card-title mt-2 text-truncate">{{ item.name }}</h6>
+                </div>
+            </div>
+            {% else %}
+            <div class="card h-100 bg-dark text-white border-secondary" onclick="location.href='/drive/file/{{ source.id }}/{{ item.path }}'" style="cursor: pointer;">
+                <div class="card-body text-center">
+                    {% if item.type == 'pdf' %}
+                        <i class="bi bi-file-earmark-pdf-fill fs-1 text-danger"></i>
+                    {% else %}
+                        <i class="bi bi-file-earmark-image-fill fs-1 text-info"></i>
+                    {% endif %}
+                    <h6 class="card-title mt-2 text-truncate">{{ item.name }}</h6>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        {% else %}
+        <div class="col-12 text-center text-muted">
+            <p>Empty folder or not synced yet.</p>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

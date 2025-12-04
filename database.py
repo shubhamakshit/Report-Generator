@@ -146,6 +146,20 @@ def setup_database():
     );
     """)
 
+    # Create drive_sources table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS drive_sources (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        url TEXT NOT NULL,
+        local_path TEXT,
+        last_synced TIMESTAMP,
+        user_id INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users (id)
+    );
+    """)
+
     # --- Migrations ---
     try:
         cursor.execute("SELECT topic_order FROM subjective_questions LIMIT 1")

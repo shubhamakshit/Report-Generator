@@ -68,6 +68,7 @@ def create_app():
     from settings_routes import settings_bp
     from subjective_routes import subjective_bp
     from camera_routes import camera_bp
+    from drive_routes import drive_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(json_bp)
@@ -79,6 +80,7 @@ def create_app():
     app.register_blueprint(settings_bp)
     app.register_blueprint(subjective_bp)
     app.register_blueprint(camera_bp)
+    app.register_blueprint(drive_bp)
 
     return app
 
