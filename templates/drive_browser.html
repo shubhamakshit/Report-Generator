@@ -2,40 +2,87 @@
 
 {% block title %}Browse Drive{% endblock %}
 
+{% block styles %}
+<style>
+    .view-hidden { display: none !important; }
+    .card-checkbox { 
+        position: absolute; 
+        top: 10px; 
+        right: 10px; 
+        z-index: 10; 
+        width: 18px; 
+        height: 18px; 
+        cursor: pointer;
+    }
+    .list-view-row { cursor: pointer; }
+    .list-view-row:hover { background-color: rgba(255,255,255,0.05); }
+    .breadcrumb { margin-bottom: 0; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid mt-4" style="width: 90%; margin: auto;">
-    <nav aria-label="breadcrumb" class="mb-4">
-        <ol class="breadcrumb">
-            <li class="breadcrumb-item"><a href="/drive_manager">Drives</a></li>
-            <li class="breadcrumb-item"><a href="/drive/browse/{{ source.id }}">{{ source.name }}</a></li>
-            {% for crumb in breadcrumbs %}
-                <li class="breadcrumb-item active">{{ crumb.name }}</li>
-            {% endfor %}
-        </ol>
-    </nav>
+    
+    <!-- Toolbar -->
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="/drive_manager">Drives</a></li>
+                <li class="breadcrumb-item"><a href="/drive/browse/{{ source.id }}">{{ source.name }}</a></li>
+                {% for crumb in breadcrumbs %}
+                    <li class="breadcrumb-item active">{{ crumb.name }}</li>
+                {% endfor %}
+            </ol>
+        </nav>
 
-    <div class="row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-4 g-4">
+        <div class="d-flex gap-2">
+            <div class="btn-group" role="group">
+                <button type="button" class="btn btn-outline-secondary active" id="btn-view-grid" onclick="switchView('grid')" title="Grid View">
+                    <i class="bi bi-grid-fill"></i>
+                </button>
+                <button type="button" class="btn btn-outline-secondary" id="btn-view-list" onclick="switchView('list')" title="List View">
+                    <i class="bi bi-list-ul"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bulk Actions Bar -->
+    <div class="d-flex align-items-center mb-3 p-2 bg-dark border border-secondary rounded">
+        <div class="form-check ms-2">
+            <input class="form-check-input" type="checkbox" id="select-all">
+            <label class="form-check-label user-select-none" for="select-all">Select All</label>
+        </div>
+        <div class="ms-auto" id="bulk-actions" style="visibility: hidden;">
+            <span class="text-muted me-2 small"><span id="selected-count">0</span> selected</span>
+            <!-- Add bulk actions here later if needed, e.g. Download -->
+            <button class="btn btn-sm btn-outline-light" disabled>Bulk Actions (Coming Soon)</button>
+        </div>
+    </div>
+
+    <!-- Grid View -->
+    <div id="view-grid" class="row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-4 g-4">
         {% for item in items %}
-        <div class="col">
+        <div class="col item-entry" data-id="{{ item.path }}">
             {% if item.type == 'folder' %}
-            <div class="card h-100 bg-dark text-white border-secondary" onclick="showLoader(); location.href='{{ '/drive/api/browse/' + item.path if is_api else '/drive/browse/' + source.id|string + '/' + item.path }}'" style="cursor: pointer;">
-                <div class="card-body text-center">
-                    <i class="bi bi-folder-fill fs-1 text-warning"></i>
-                    <h6 class="card-title mt-2 text-truncate">{{ item.name }}</h6>
-                </div>
-            </div>
+                {% set link = '/drive/api/browse/' + item.path if is_api else '/drive/browse/' + source.id|string + '/' + item.path %}
+                {% set icon = 'bi-folder-fill text-warning' %}
             {% else %}
-            <div class="card h-100 bg-dark text-white border-secondary" onclick="showLoader(); location.href='{{ '/drive/api/open/' + item.path if is_api else '/drive/file/' + source.id|string + '/' + item.path }}'" style="cursor: pointer;">
-                <div class="card-body text-center">
-                    {% if item.type == 'pdf' %}
-                        <i class="bi bi-file-earmark-pdf-fill fs-1 text-danger"></i>
-                    {% else %}
-                        <i class="bi bi-file-earmark-image-fill fs-1 text-info"></i>
-                    {% endif %}
-                    <h6 class="card-title mt-2 text-truncate">{{ item.name }}</h6>
+                {% set link = '/drive/api/open/' + item.path if is_api else '/drive/file/' + source.id|string + '/' + item.path %}
+                {% if item.type == 'pdf' %}
+                    {% set icon = 'bi-file-earmark-pdf-fill text-danger' %}
+                {% else %}
+                    {% set icon = 'bi-file-earmark-image-fill text-info' %}
+                {% endif %}
+            {% endif %}
+
+            <div class="card h-100 bg-dark text-white border-secondary position-relative">
+                <input type="checkbox" class="form-check-input card-checkbox item-check" value="{{ item.path }}">
+                <div class="card-body text-center" onclick="navigate('{{ link }}')" style="cursor: pointer;">
+                    <i class="bi {{ icon }} fs-1"></i>
+                    <h6 class="card-title mt-2 text-truncate" title="{{ item.name }}">{{ item.name }}</h6>
                 </div>
             </div>
-            {% endif %}
         </div>
         {% else %}
         <div class="col-12 text-center text-muted">
@@ -43,16 +90,130 @@
         </div>
         {% endfor %}
     </div>
+
+    <!-- List View -->
+    <div id="view-list" class="table-responsive view-hidden">
+        <table class="table table-dark table-hover align-middle border-secondary">
+            <thead>
+                <tr>
+                    <th style="width: 40px;"></th>
+                    <th style="width: 50px;">Type</th>
+                    <th>Name</th>
+                    <th style="width: 100px;">Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in items %}
+                {% if item.type == 'folder' %}
+                    {% set link = '/drive/api/browse/' + item.path if is_api else '/drive/browse/' + source.id|string + '/' + item.path %}
+                    {% set icon = 'bi-folder-fill text-warning' %}
+                {% else %}
+                    {% set link = '/drive/api/open/' + item.path if is_api else '/drive/file/' + source.id|string + '/' + item.path %}
+                    {% if item.type == 'pdf' %}
+                        {% set icon = 'bi-file-earmark-pdf-fill text-danger' %}
+                    {% else %}
+                        {% set icon = 'bi-file-earmark-image-fill text-info' %}
+                    {% endif %}
+                {% endif %}
+                
+                <tr class="item-entry">
+                    <td><input type="checkbox" class="form-check-input item-check" value="{{ item.path }}"></td>
+                    <td class="text-center"><i class="bi {{ icon }} fs-5"></i></td>
+                    <td onclick="navigate('{{ link }}')" style="cursor: pointer;">
+                        {{ item.name }}
+                    </td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="navigate('{{ link }}')">
+                            Open
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </div>
 
+<!-- Loader -->
 <div id="loader-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:9999; align-items:center; justify-content:center; color:white; flex-direction:column;">
     <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;"></div>
     <div class="mt-3 fs-5">Downloading & Opening...</div>
 </div>
 
 <script>
+    // Navigation & Loader
     function showLoader() {
         document.getElementById('loader-overlay').style.display = 'flex';
     }
+
+    function navigate(url) {
+        showLoader();
+        window.location.href = url;
+    }
+
+    // Fix Back Button Loader Issue
+    window.addEventListener('pageshow', function(event) {
+        document.getElementById('loader-overlay').style.display = 'none';
+    });
+
+    // View Switching
+    function switchView(view) {
+        const grid = document.getElementById('view-grid');
+        const list = document.getElementById('view-list');
+        const btnGrid = document.getElementById('btn-view-grid');
+        const btnList = document.getElementById('btn-view-list');
+
+        if (view === 'list') {
+            grid.classList.add('view-hidden');
+            list.classList.remove('view-hidden');
+            btnList.classList.add('active');
+            btnGrid.classList.remove('active');
+            localStorage.setItem('driveViewMode', 'list');
+        } else {
+            list.classList.add('view-hidden');
+            grid.classList.remove('view-hidden');
+            btnGrid.classList.add('active');
+            btnList.classList.remove('active');
+            localStorage.setItem('driveViewMode', 'grid');
+        }
+    }
+
+    // Checkbox Logic
+    const selectAll = document.getElementById('select-all');
+    const checkboxes = document.querySelectorAll('.item-check');
+    const bulkActions = document.getElementById('bulk-actions');
+    const selectedCount = document.getElementById('selected-count');
+
+    function updateSelection() {
+        const checked = document.querySelectorAll('.item-check:checked');
+        const count = checked.length;
+        selectedCount.textContent = count;
+        bulkActions.style.visibility = count > 0 ? 'visible' : 'hidden';
+        
+        // Sync select all checkbox state
+        if (count === 0) selectAll.checked = false;
+        else if (count === checkboxes.length) selectAll.checked = true;
+        else selectAll.indeterminate = true;
+    }
+
+    selectAll.addEventListener('change', (e) => {
+        const isChecked = e.target.checked;
+        checkboxes.forEach(cb => {
+            // Only toggle visible items if we had filtering, but here we toggle all
+            cb.checked = isChecked;
+        });
+        updateSelection();
+    });
+
+    checkboxes.forEach(cb => {
+        cb.addEventListener('change', updateSelection);
+        cb.addEventListener('click', (e) => e.stopPropagation()); // Prevent card click
+    });
+
+    // Init
+    document.addEventListener('DOMContentLoaded', () => {
+        const savedView = localStorage.getItem('driveViewMode') || 'grid';
+        switchView(savedView);
+    });
 </script>
 {% endblock %}
