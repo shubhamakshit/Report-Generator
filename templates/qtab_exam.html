@@ -1,0 +1,1443 @@
+{% extends "base.html" %}
+
+{% block title %}Exam Mode - Question Table{% endblock %}
+
+{% block head %}
+<style>
+    :root {
+        --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        --success-gradient: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        --danger-gradient: linear-gradient(135deg, #eb3349 0%, #f45c43 100%);
+        --dark-bg: #0d1117;
+        --card-bg: #161b22;
+        --border-color: #30363d;
+        --text-muted: #8b949e;
+    }
+
+    * {
+        transition: all 0.3s ease;
+    }
+
+    body {
+        overflow-y: auto;
+        background: var(--dark-bg);
+    }
+
+    /* Progress Bar */
+    .progress-bar-container {
+        height: 4px;
+        background: var(--border-color);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .progress-bar-fill {
+        height: 100%;
+        background: var(--primary-gradient);
+        transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        position: relative;
+    }
+
+    .progress-bar-fill::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+        animation: shimmer 2s infinite;
+    }
+
+    @keyframes shimmer {
+        0% { transform: translateX(-100%); }
+        100% { transform: translateX(100%); }
+    }
+
+    /* Navigation Buttons */
+    .nav-btn {
+        background: transparent;
+        border: none;
+        color: #8b949e;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .nav-btn:hover:not(:disabled) {
+        background: rgba(255, 255, 255, 0.1);
+        color: #fff;
+    }
+
+    .nav-btn:disabled {
+        opacity: 0.3;
+        cursor: not-allowed;
+    }
+
+    .nav-btn::before {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 0;
+        height: 0;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 50%;
+        transform: translate(-50%, -50%);
+        transition: width 0.6s, height 0.6s;
+    }
+
+    .nav-btn:active::before {
+        width: 300px;
+        height: 300px;
+    }
+
+    /* Question Container */
+    .question-container {
+        perspective: 1000px;
+    }
+
+    /* Question Card */
+    .question-card {
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 24px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        transform-style: preserve-3d;
+        transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s;
+    }
+
+    .question-card.slide-left {
+        animation: slideLeft 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .question-card.slide-right {
+        animation: slideRight 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    @keyframes slideLeft {
+        0% { transform: translateX(100%) scale(0.8); opacity: 0; }
+        100% { transform: translateX(0) scale(1); opacity: 1; }
+    }
+
+    @keyframes slideRight {
+        0% { transform: translateX(-100%) scale(0.8); opacity: 0; }
+        100% { transform: translateX(0) scale(1); opacity: 1; }
+    }
+
+    /* Answer Display */
+    .answer-display {
+        font-size: clamp(3rem, 10vw, 8rem);
+        font-weight: 800;
+        background: var(--success-gradient);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        line-height: 1.2;
+        position: relative;
+    }
+
+    .answer-hidden {
+        filter: blur(20px);
+        user-select: none;
+        cursor: pointer;
+    }
+
+    .answer-reveal-btn {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 10;
+    }
+
+    /* Section Badge */
+    .section-badge {
+        background: var(--primary-gradient);
+        padding: 0.5rem 1.5rem;
+        border-radius: 50px;
+        font-weight: 600;
+        display: inline-block;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+    }
+
+    /* Question Number */
+    .question-number {
+        font-size: clamp(1.5rem, 5vw, 3rem);
+        font-weight: 700;
+        color: #fff;
+        text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+    }
+
+    /* Footer Controls */
+    .footer-controls {
+        background: var(--card-bg);
+        border-top: 1px solid var(--border-color);
+        backdrop-filter: blur(10px);
+    }
+
+    /* Control Buttons */
+    .control-btn {
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        color: #fff;
+        border-radius: 12px;
+        padding: 0.5rem 1rem;
+        transition: all 0.3s;
+    }
+
+    .control-btn:hover {
+        background: rgba(255, 255, 255, 0.1);
+        border-color: #667eea;
+        color: #fff;
+        transform: translateY(-2px);
+    }
+
+    .control-btn.active {
+        background: var(--primary-gradient);
+        border-color: transparent;
+    }
+
+    /* Timer Display */
+    .timer-display {
+        font-family: 'SF Mono', 'Consolas', monospace;
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: #fff;
+        background: rgba(0, 0, 0, 0.3);
+        padding: 0.5rem 1rem;
+        border-radius: 8px;
+    }
+
+    .timer-display.warning {
+        color: #f0ad4e;
+        animation: pulse 1s infinite;
+    }
+
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+
+    /* Keyboard Hints */
+    .kbd-hint {
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        padding: 0.25rem 0.5rem;
+        border-radius: 6px;
+        font-family: 'SF Mono', monospace;
+        font-size: 0.75rem;
+    }
+
+    /* Modal Styling */
+    .modal-content.dark-modal {
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 16px;
+    }
+
+    /* Question Grid */
+    .question-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
+        gap: 8px;
+        max-height: 400px;
+        overflow-y: auto;
+        padding: 1rem;
+    }
+
+    .question-grid-item {
+        aspect-ratio: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--dark-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.2s;
+    }
+
+    .question-grid-item:hover {
+        background: rgba(102, 126, 234, 0.2);
+        border-color: #667eea;
+        transform: scale(1.1);
+    }
+
+    .question-grid-item.current {
+        background: var(--primary-gradient);
+        border-color: transparent;
+    }
+
+    .question-grid-item.marked {
+        border-color: #f0ad4e;
+        box-shadow: 0 0 10px rgba(240, 173, 78, 0.3);
+    }
+
+    /* Settings Panel */
+    .settings-panel {
+        position: fixed;
+        top: 0;
+        right: -400px;
+        width: 400px;
+        max-width: 100%;
+        height: 100vh;
+        background: var(--card-bg);
+        border-left: 1px solid var(--border-color);
+        z-index: 1050;
+        transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        overflow-y: auto;
+    }
+
+    .settings-panel.open {
+        right: 0;
+    }
+
+    .settings-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 1040;
+        opacity: 0;
+        visibility: hidden;
+        transition: all 0.3s;
+    }
+
+    .settings-overlay.open {
+        opacity: 1;
+        visibility: visible;
+    }
+
+    /* Swipe Indicator */
+    .swipe-indicator {
+        position: fixed;
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: 4rem;
+        color: rgba(255, 255, 255, 0.3);
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.3s;
+    }
+
+    .swipe-indicator.left {
+        left: 20px;
+    }
+
+    .swipe-indicator.right {
+        right: 20px;
+    }
+
+    .swipe-indicator.show {
+        opacity: 1;
+    }
+
+    /* Bookmark Icon */
+    .bookmark-btn {
+        font-size: 1.5rem;
+        color: var(--text-muted);
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+
+    .bookmark-btn:hover {
+        color: #f0ad4e;
+        transform: scale(1.2);
+    }
+
+    .bookmark-btn.active {
+        color: #f0ad4e;
+        animation: bookmarkPop 0.3s ease;
+    }
+
+    @keyframes bookmarkPop {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.3); }
+    }
+
+    /* Fullscreen Mode */
+    .fullscreen-mode .navbar,
+    .fullscreen-mode .footer-controls {
+        display: none !important;
+    }
+
+    .fullscreen-mode .question-container {
+        height: 100vh !important;
+    }
+
+    /* Mini Progress Dots */
+    .progress-dots {
+        display: flex;
+        gap: 4px;
+        justify-content: center;
+        flex-wrap: wrap;
+        max-width: 400px;
+        margin: 0 auto;
+    }
+
+    .progress-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--border-color);
+        transition: all 0.3s;
+    }
+
+    .progress-dot.active {
+        background: #667eea;
+        transform: scale(1.5);
+    }
+
+    .progress-dot.visited {
+        background: #38ef7d;
+    }
+
+    /* Touch Feedback */
+    .touch-ripple {
+        position: fixed;
+        border-radius: 50%;
+        background: rgba(102, 126, 234, 0.3);
+        transform: scale(0);
+        animation: ripple 0.6s linear;
+        pointer-events: none;
+    }
+
+    @keyframes ripple {
+        to {
+            transform: scale(4);
+            opacity: 0;
+        }
+    }
+
+    /* Completion Celebration */
+    .celebration {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        pointer-events: none;
+        z-index: 9999;
+    }
+
+    /* Scrollbar Styling */
+    ::-webkit-scrollbar {
+        width: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+        background: var(--dark-bg);
+    }
+
+    ::-webkit-scrollbar-thumb {
+        background: var(--border-color);
+        border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+        background: #667eea;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+        .nav-btn {
+            min-width: 50px !important;
+            font-size: 1.5rem !important;
+        }
+
+        .question-card {
+            border-radius: 16px;
+            margin: 0.5rem;
+        }
+
+        .footer-controls {
+            padding: 0.5rem !important;
+        }
+
+        .control-btn span {
+            display: none;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="vh-100 d-flex flex-column text-light" id="examContainer">
+    <!-- Progress Bar -->
+    <div class="progress-bar-container">
+        <div class="progress-bar-fill" id="progressBar" style="width: 0%"></div>
+    </div>
+
+    <!-- Header -->
+    <nav class="navbar navbar-dark border-bottom border-secondary py-2" style="background: var(--card-bg);">
+        <div class="container-fluid">
+            <span class="navbar-brand mb-0 h5 fw-bold d-flex align-items-center gap-2">
+                <i class="fas fa-graduation-cap"></i>
+                <span class="d-none d-sm-inline">Exam Mode</span>
+            </span>
+            
+            <div class="d-flex gap-2 align-items-center">
+                <!-- Timer -->
+                <div class="timer-display d-none" id="timerDisplay">
+                    <i class="fas fa-clock me-1"></i>
+                    <span id="timerValue">00:00</span>
+                </div>
+                
+                <!-- Control Buttons -->
+                <button class="control-btn" onclick="toggleTimer()" title="Toggle Timer" id="timerBtn">
+                    <i class="fas fa-stopwatch"></i>
+                </button>
+                
+                <button class="control-btn" onclick="openQuestionGrid()" title="Question Grid">
+                    <i class="fas fa-th"></i>
+                </button>
+                
+                <button class="control-btn" onclick="toggleSettings()" title="Settings">
+                    <i class="fas fa-cog"></i>
+                </button>
+                
+                <button class="control-btn" onclick="toggleFullscreen()" title="Fullscreen" id="fullscreenBtn">
+                    <i class="fas fa-expand"></i>
+                </button>
+                
+                <a href="{{ url_for('qtab.qtab_list') }}" class="control-btn text-danger" title="Exit">
+                    <i class="fas fa-times"></i>
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="flex-grow-1 position-relative overflow-hidden d-flex align-items-center question-container" 
+         id="questionContainer" 
+         tabindex="0">
+        
+        <!-- Previous Button -->
+        <button class="nav-btn h-100 d-flex align-items-center justify-content-center" 
+                style="min-width: 80px; font-size: 2.5rem;" 
+                id="btnPrevLarge" 
+                onclick="navigatePrev()">
+            <i class="fas fa-chevron-left"></i>
+        </button>
+        
+        <!-- Question Display -->
+        <div class="flex-grow-1 h-100 d-flex align-items-center justify-content-center p-3 overflow-auto" style="overflow-y: auto;">
+            <div class="text-center w-100" style="max-width: 900px;" id="questionDisplay">
+                <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Next Button -->
+        <button class="nav-btn h-100 d-flex align-items-center justify-content-center" 
+                style="min-width: 80px; font-size: 2.5rem;" 
+                id="btnNextLarge" 
+                onclick="navigateNext()">
+            <i class="fas fa-chevron-right"></i>
+        </button>
+        
+        <!-- Swipe Indicators -->
+        <div class="swipe-indicator left" id="swipeLeft">
+            <i class="fas fa-chevron-left"></i>
+        </div>
+        <div class="swipe-indicator right" id="swipeRight">
+            <i class="fas fa-chevron-right"></i>
+        </div>
+    </div>
+
+    <!-- Footer Controls -->
+    <div class="footer-controls py-2">
+        <div class="container-fluid">
+            <div class="row g-2 align-items-center">
+                <!-- Quick Navigation -->
+                <div class="col-12 col-md-4 order-md-1 text-center text-md-start">
+                    <div class="d-flex gap-2 justify-content-center justify-content-md-start flex-wrap">
+                        <button class="control-btn" onclick="navigateFirst()" title="First">
+                            <i class="fas fa-step-backward"></i>
+                        </button>
+                        <button class="control-btn" id="shuffleBtn" onclick="toggleShuffle()" title="Shuffle">
+                            <i class="fas fa-random"></i>
+                        </button>
+                        <button class="control-btn" id="hideAnswerBtn" onclick="toggleHideAnswer()" title="Hide/Show Answers">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                        <button class="control-btn" onclick="navigateLast()" title="Last">
+                            <i class="fas fa-step-forward"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Position & Jump -->
+                <div class="col-12 col-md-4 order-md-2 text-center">
+                    <div class="d-flex align-items-center justify-content-center gap-2">
+                        <div class="input-group input-group-sm" style="max-width: 150px;">
+                            <input type="number" class="form-control bg-dark text-light border-secondary" 
+                                   id="jumpInput" placeholder="Q#" min="1">
+                            <button class="btn btn-primary" onclick="jumpToQuestionNumber()">
+                                <i class="fas fa-arrow-right"></i>
+                            </button>
+                        </div>
+                        <span class="text-muted small" id="positionIndicator">1 / 1</span>
+                    </div>
+                </div>
+                
+                <!-- Keyboard Hints -->
+                <div class="col-12 col-md-4 order-md-3 text-center text-md-end">
+                    <div class="d-none d-lg-block">
+                        <span class="text-muted small">
+                            <span class="kbd-hint">←</span> <span class="kbd-hint">→</span> Navigate
+                            <span class="ms-2"><span class="kbd-hint">Space</span> Reveal</span>
+                            <span class="ms-2"><span class="kbd-hint">S</span> Sections</span>
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Settings Panel -->
+<div class="settings-overlay" id="settingsOverlay" onclick="toggleSettings()"></div>
+<div class="settings-panel" id="settingsPanel">
+    <div class="p-4">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h5 class="mb-0"><i class="fas fa-cog me-2"></i>Settings</h5>
+            <button class="btn btn-sm btn-outline-secondary" onclick="toggleSettings()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        
+        <div class="mb-4">
+            <h6 class="text-muted mb-3">Display</h6>
+            <div class="form-check form-switch mb-2">
+                <input class="form-check-input" type="checkbox" id="settingHideAnswer">
+                <label class="form-check-label" for="settingHideAnswer">Hide answers by default</label>
+            </div>
+            <div class="form-check form-switch mb-2">
+                <input class="form-check-input" type="checkbox" id="settingShowProgress" checked>
+                <label class="form-check-label" for="settingShowProgress">Show progress bar</label>
+            </div>
+            <div class="form-check form-switch mb-2">
+                <input class="form-check-input" type="checkbox" id="settingAnimations" checked>
+                <label class="form-check-label" for="settingAnimations">Enable animations</label>
+            </div>
+        </div>
+        
+        <div class="mb-4">
+            <h6 class="text-muted mb-3">Timer</h6>
+            <div class="form-check form-switch mb-2">
+                <input class="form-check-input" type="checkbox" id="settingCountdown">
+                <label class="form-check-label" for="settingCountdown">Countdown mode</label>
+            </div>
+            <div class="mb-2">
+                <label class="form-label small">Countdown time (minutes)</label>
+                <input type="number" class="form-control form-control-sm bg-dark text-light border-secondary" 
+                       id="settingCountdownTime" value="30" min="1" max="180">
+            </div>
+        </div>
+        
+        <div class="mb-4">
+            <h6 class="text-muted mb-3">Navigation</h6>
+            <div class="form-check form-switch mb-2">
+                <input class="form-check-input" type="checkbox" id="settingSwipeEnabled" checked>
+                <label class="form-check-label" for="settingSwipeEnabled">Enable swipe gestures</label>
+            </div>
+            <div class="form-check form-switch mb-2">
+                <input class="form-check-input" type="checkbox" id="settingLoopNavigation">
+                <label class="form-check-label" for="settingLoopNavigation">Loop navigation</label>
+            </div>
+        </div>
+        
+        <div class="mb-4">
+            <h6 class="text-muted mb-3">Quick Actions</h6>
+            <button class="btn btn-outline-primary w-100 mb-2" onclick="resetProgress()">
+                <i class="fas fa-redo me-2"></i>Reset Progress
+            </button>
+            <button class="btn btn-outline-warning w-100 mb-2" onclick="clearBookmarks()">
+                <i class="fas fa-bookmark me-2"></i>Clear Bookmarks
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Question Grid Modal -->
+<div class="modal fade" id="questionGridModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content dark-modal text-light">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title">
+                    <i class="fas fa-th me-2"></i>Question Navigator
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Section Filter -->
+                <div class="mb-3" id="sectionFilterContainer">
+                    <select class="form-select form-select-sm bg-dark text-light border-secondary" 
+                            id="sectionFilter" onchange="filterQuestionGrid()">
+                        <option value="">All Sections</option>
+                    </select>
+                </div>
+                
+                <div class="question-grid" id="questionGrid">
+                    <!-- Populated dynamically -->
+                </div>
+                
+                <div class="mt-3 d-flex gap-3 justify-content-center text-muted small">
+                    <span><span class="badge" style="background: var(--primary-gradient);">&nbsp;</span> Current</span>
+                    <span><span class="badge bg-success">&nbsp;</span> Visited</span>
+                    <span><span class="badge" style="border: 2px solid #f0ad4e;">&nbsp;</span> Bookmarked</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Section Jump Modal -->
+<div class="modal fade" id="sectionJumpModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content dark-modal text-light">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title">
+                    <i class="fas fa-list me-2"></i>Jump to Section
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div class="list-group list-group-flush" id="sectionList">
+                    <!-- Populated dynamically -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Celebration Canvas -->
+<canvas class="celebration" id="celebrationCanvas"></canvas>
+
+<script>
+// Data
+const resultData = {{ result_json | tojson }};
+const allImages = {{ all_images | tojson }};
+
+// State
+let allQuestions = [];
+let originalQuestions = [];
+let currentQuestionIndex = 0;
+let visitedQuestions = new Set();
+let bookmarkedQuestions = new Set();
+let isShuffled = false;
+let hideAnswers = false;
+let animationsEnabled = true;
+let lastDirection = 'right';
+
+// Timer State
+let timerInterval = null;
+let timerSeconds = 0;
+let timerRunning = false;
+let countdownMode = false;
+let countdownSeconds = 1800; // 30 minutes
+
+// Settings
+let settings = {
+    hideAnswer: false,
+    showProgress: true,
+    animations: true,
+    swipeEnabled: true,
+    loopNavigation: false,
+    countdownMode: false,
+    countdownTime: 30
+};
+
+// Load settings from localStorage
+function loadSettings() {
+    const saved = localStorage.getItem('examModeSettings');
+    if (saved) {
+        settings = { ...settings, ...JSON.parse(saved) };
+    }
+    applySettings();
+}
+
+function saveSettings() {
+    localStorage.setItem('examModeSettings', JSON.stringify(settings));
+}
+
+function applySettings() {
+    document.getElementById('settingHideAnswer').checked = settings.hideAnswer;
+    document.getElementById('settingShowProgress').checked = settings.showProgress;
+    document.getElementById('settingAnimations').checked = settings.animations;
+    document.getElementById('settingSwipeEnabled').checked = settings.swipeEnabled;
+    document.getElementById('settingLoopNavigation').checked = settings.loopNavigation;
+    document.getElementById('settingCountdown').checked = settings.countdownMode;
+    document.getElementById('settingCountdownTime').value = settings.countdownTime;
+    
+    hideAnswers = settings.hideAnswer;
+    animationsEnabled = settings.animations;
+    countdownMode = settings.countdownMode;
+    countdownSeconds = settings.countdownTime * 60;
+    
+    document.querySelector('.progress-bar-container').style.display = settings.showProgress ? 'block' : 'none';
+    updateHideAnswerBtn();
+}
+
+// Parse questions
+function parseQuestions() {
+    allQuestions = [];
+    
+    if (!resultData || resultData.status !== 'success') return;
+    
+    if (Array.isArray(resultData.data)) {
+        resultData.data.forEach((qa, idx) => {
+            allQuestions.push({
+                id: idx,
+                section: null,
+                questionNumber: qa.question_number,
+                answer: qa.answer
+            });
+        });
+    } else {
+        let idx = 0;
+        Object.entries(resultData.data).forEach(([section, questions]) => {
+            questions.forEach(qa => {
+                allQuestions.push({
+                    id: idx++,
+                    section: section,
+                    questionNumber: qa.question_number,
+                    answer: qa.answer
+                });
+            });
+        });
+    }
+    
+    originalQuestions = [...allQuestions];
+}
+
+// Display question
+function displayQuestion(direction = null) {
+    const container = document.getElementById('questionDisplay');
+    const dir = direction || lastDirection;
+    
+    if (allQuestions.length === 0) {
+        container.innerHTML = `
+            <div class="question-card p-5">
+                <i class="fas fa-exclamation-triangle text-warning fa-3x mb-3"></i>
+                <h4>No Questions Available</h4>
+                <p class="text-muted">There are no questions to display.</p>
+            </div>
+        `;
+        return;
+    }
+    
+    const q = allQuestions[currentQuestionIndex];
+    visitedQuestions.add(q.id);
+    
+    const isBookmarked = bookmarkedQuestions.has(q.id);
+    const answerClass = hideAnswers ? 'answer-hidden' : '';
+    
+    const cardHtml = `
+        <div class="question-card p-4 p-md-5 ${animationsEnabled ? (dir === 'right' ? 'slide-left' : 'slide-right') : ''}">
+            <!-- Top Bar -->
+            <div class="d-flex justify-content-between align-items-start mb-4">
+                ${q.section ? `<span class="section-badge">${q.section}</span>` : '<span></span>'}
+                <i class="fas fa-bookmark bookmark-btn ${isBookmarked ? 'active' : ''}" 
+                   onclick="toggleBookmark(${q.id})" title="Bookmark"></i>
+            </div>
+            
+            <!-- Question Number -->
+            <div class="question-number mb-4">Question ${q.questionNumber}</div>
+            
+            <!-- Answer -->
+            <div class="position-relative my-5" onclick="revealAnswer(event)">
+                <div class="answer-display ${answerClass}" id="answerText">
+                    ${q.answer}
+                </div>
+                ${hideAnswers ? `
+                    <div class="answer-reveal-btn">
+                        <button class="btn btn-lg btn-outline-light" onclick="revealAnswer(event)">
+                            <i class="fas fa-eye me-2"></i>Tap to Reveal
+                        </button>
+                    </div>
+                ` : ''}
+            </div>
+            
+            <!-- Progress Indicator -->
+            <div class="mt-4">
+                <span class="badge bg-secondary px-3 py-2">
+                    ${currentQuestionIndex + 1} of ${allQuestions.length}
+                </span>
+            </div>
+        </div>
+    `;
+    
+    container.innerHTML = cardHtml;
+    updateUI();
+    
+    // Check if completed
+    if (currentQuestionIndex === allQuestions.length - 1 && visitedQuestions.size === allQuestions.length) {
+        setTimeout(() => celebrate(), 500);
+    }
+}
+
+// Update UI elements
+function updateUI() {
+    // Progress bar
+    const progress = ((currentQuestionIndex + 1) / allQuestions.length) * 100;
+    document.getElementById('progressBar').style.width = `${progress}%`;
+    
+    // Position indicator
+    document.getElementById('positionIndicator').textContent = 
+        `${currentQuestionIndex + 1} / ${allQuestions.length}`;
+    
+    // Nav buttons
+    const isFirst = currentQuestionIndex === 0;
+    const isLast = currentQuestionIndex === allQuestions.length - 1;
+    
+    document.getElementById('btnPrevLarge').disabled = isFirst && !settings.loopNavigation;
+    document.getElementById('btnNextLarge').disabled = isLast && !settings.loopNavigation;
+    
+    // Jump input
+    const jumpInput = document.getElementById('jumpInput');
+    if (jumpInput) {
+        jumpInput.max = allQuestions.length;
+    }
+}
+
+// Navigation
+function navigatePrev() {
+    if (currentQuestionIndex > 0) {
+        currentQuestionIndex--;
+        lastDirection = 'left';
+        displayQuestion('left');
+    } else if (settings.loopNavigation) {
+        currentQuestionIndex = allQuestions.length - 1;
+        lastDirection = 'left';
+        displayQuestion('left');
+    }
+    focusContainer();
+}
+
+function navigateNext() {
+    if (currentQuestionIndex < allQuestions.length - 1) {
+        currentQuestionIndex++;
+        lastDirection = 'right';
+        displayQuestion('right');
+    } else if (settings.loopNavigation) {
+        currentQuestionIndex = 0;
+        lastDirection = 'right';
+        displayQuestion('right');
+    }
+    focusContainer();
+}
+
+function navigateFirst() {
+    currentQuestionIndex = 0;
+    lastDirection = 'left';
+    displayQuestion('left');
+    focusContainer();
+}
+
+function navigateLast() {
+    currentQuestionIndex = allQuestions.length - 1;
+    lastDirection = 'right';
+    displayQuestion('right');
+    focusContainer();
+}
+
+function jumpToQuestionNumber() {
+    const input = document.getElementById('jumpInput');
+    const qNum = parseInt(input.value);
+    
+    if (isNaN(qNum) || qNum < 1 || qNum > allQuestions.length) {
+        input.classList.add('is-invalid');
+        input.classList.add('shake');
+        setTimeout(() => {
+            input.classList.remove('is-invalid', 'shake');
+        }, 500);
+        return;
+    }
+    
+    const dir = qNum - 1 > currentQuestionIndex ? 'right' : 'left';
+    currentQuestionIndex = qNum - 1;
+    lastDirection = dir;
+    displayQuestion(dir);
+    input.value = '';
+    focusContainer();
+    
+    // Close modal if open
+    const modal = bootstrap.Modal.getInstance(document.getElementById('questionGridModal'));
+    if (modal) modal.hide();
+}
+
+function jumpToSection(sectionName) {
+    const idx = allQuestions.findIndex(q => q.section === sectionName);
+    if (idx !== -1) {
+        const dir = idx > currentQuestionIndex ? 'right' : 'left';
+        currentQuestionIndex = idx;
+        lastDirection = dir;
+        displayQuestion(dir);
+        bootstrap.Modal.getInstance(document.getElementById('sectionJumpModal')).hide();
+        focusContainer();
+    }
+}
+
+function focusContainer() {
+    document.getElementById('questionContainer').focus();
+}
+
+// Answer reveal
+function revealAnswer(e) {
+    if (e) e.stopPropagation();
+    const answerText = document.getElementById('answerText');
+    if (answerText && answerText.classList.contains('answer-hidden')) {
+        answerText.classList.remove('answer-hidden');
+        const revealBtn = document.querySelector('.answer-reveal-btn');
+        if (revealBtn) revealBtn.remove();
+    }
+}
+
+// Toggle hide answer mode
+function toggleHideAnswer() {
+    hideAnswers = !hideAnswers;
+    settings.hideAnswer = hideAnswers;
+    saveSettings();
+    updateHideAnswerBtn();
+    displayQuestion();
+}
+
+function updateHideAnswerBtn() {
+    const btn = document.getElementById('hideAnswerBtn');
+    const icon = btn.querySelector('i');
+    if (hideAnswers) {
+        btn.classList.add('active');
+        icon.classList.remove('fa-eye');
+        icon.classList.add('fa-eye-slash');
+    } else {
+        btn.classList.remove('active');
+        icon.classList.remove('fa-eye-slash');
+        icon.classList.add('fa-eye');
+    }
+}
+
+// Shuffle
+function toggleShuffle() {
+    isShuffled = !isShuffled;
+    const btn = document.getElementById('shuffleBtn');
+    
+    if (isShuffled) {
+        btn.classList.add('active');
+        allQuestions = [...allQuestions].sort(() => Math.random() - 0.5);
+    } else {
+        btn.classList.remove('active');
+        allQuestions = [...originalQuestions];
+    }
+    
+    currentQuestionIndex = 0;
+    displayQuestion();
+}
+
+// Bookmarks
+function toggleBookmark(id) {
+    if (bookmarkedQuestions.has(id)) {
+        bookmarkedQuestions.delete(id);
+    } else {
+        bookmarkedQuestions.add(id);
+    }
+    
+    // Update bookmark icon
+    const icon = document.querySelector('.bookmark-btn');
+    if (icon) {
+        icon.classList.toggle('active');
+    }
+    
+    saveBookmarks();
+}
+
+function saveBookmarks() {
+    localStorage.setItem('examBookmarks', JSON.stringify([...bookmarkedQuestions]));
+}
+
+function loadBookmarks() {
+    const saved = localStorage.getItem('examBookmarks');
+    if (saved) {
+        bookmarkedQuestions = new Set(JSON.parse(saved));
+    }
+}
+
+function clearBookmarks() {
+    bookmarkedQuestions.clear();
+    saveBookmarks();
+    displayQuestion();
+}
+
+// Timer
+function toggleTimer() {
+    const timerDisplay = document.getElementById('timerDisplay');
+    const timerBtn = document.getElementById('timerBtn');
+    
+    if (timerRunning) {
+        stopTimer();
+        timerBtn.classList.remove('active');
+        timerDisplay.classList.add('d-none');
+    } else {
+        startTimer();
+        timerBtn.classList.add('active');
+        timerDisplay.classList.remove('d-none');
+    }
+}
+
+function startTimer() {
+    timerRunning = true;
+    if (countdownMode) {
+        timerSeconds = countdownSeconds;
+    }
+    
+    timerInterval = setInterval(() => {
+        if (countdownMode) {
+            timerSeconds--;
+            if (timerSeconds <= 0) {
+                stopTimer();
+                alert('Time is up!');
+                return;
+            }
+            if (timerSeconds <= 60) {
+                document.getElementById('timerDisplay').classList.add('warning');
+            }
+        } else {
+            timerSeconds++;
+        }
+        updateTimerDisplay();
+    }, 1000);
+}
+
+function stopTimer() {
+    timerRunning = false;
+    clearInterval(timerInterval);
+}
+
+function updateTimerDisplay() {
+    const mins = Math.floor(timerSeconds / 60);
+    const secs = timerSeconds % 60;
+    document.getElementById('timerValue').textContent = 
+        `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+}
+
+// Fullscreen
+function toggleFullscreen() {
+    const container = document.getElementById('examContainer');
+    const btn = document.getElementById('fullscreenBtn');
+    
+    if (!document.fullscreenElement) {
+        container.requestFullscreen().then(() => {
+            container.classList.add('fullscreen-mode');
+            btn.querySelector('i').classList.replace('fa-expand', 'fa-compress');
+        });
+    } else {
+        document.exitFullscreen().then(() => {
+            container.classList.remove('fullscreen-mode');
+            btn.querySelector('i').classList.replace('fa-compress', 'fa-expand');
+        });
+    }
+}
+
+// Settings Panel
+function toggleSettings() {
+    const panel = document.getElementById('settingsPanel');
+    const overlay = document.getElementById('settingsOverlay');
+    
+    panel.classList.toggle('open');
+    overlay.classList.toggle('open');
+}
+
+// Question Grid
+function openQuestionGrid() {
+    populateQuestionGrid();
+    populateSectionFilter();
+    new bootstrap.Modal(document.getElementById('questionGridModal')).show();
+}
+
+function populateQuestionGrid(sectionFilter = '') {
+    const grid = document.getElementById('questionGrid');
+    const filtered = sectionFilter 
+        ? allQuestions.filter(q => q.section === sectionFilter)
+        : allQuestions;
+    
+    grid.innerHTML = filtered.map((q, idx) => {
+        const originalIdx = allQuestions.indexOf(q);
+        const classes = [
+            'question-grid-item',
+            originalIdx === currentQuestionIndex ? 'current' : '',
+            visitedQuestions.has(q.id) ? 'visited' : '',
+            bookmarkedQuestions.has(q.id) ? 'marked' : ''
+        ].filter(Boolean).join(' ');
+        
+        return `
+            <div class="${classes}" 
+                 onclick="jumpFromGrid(${originalIdx})" 
+                 title="Question ${q.questionNumber}${q.section ? ' - ' + q.section : ''}">
+                ${q.questionNumber}
+            </div>
+        `;
+    }).join('');
+}
+
+function populateSectionFilter() {
+    const sections = [...new Set(allQuestions.filter(q => q.section).map(q => q.section))];
+    const container = document.getElementById('sectionFilterContainer');
+    const select = document.getElementById('sectionFilter');
+    
+    if (sections.length === 0) {
+        container.style.display = 'none';
+        return;
+    }
+    
+    container.style.display = 'block';
+    select.innerHTML = `<option value="">All Sections</option>` + 
+        sections.map(s => `<option value="${s}">${s}</option>`).join('');
+}
+
+function filterQuestionGrid() {
+    const filter = document.getElementById('sectionFilter').value;
+    populateQuestionGrid(filter);
+}
+
+function jumpFromGrid(idx) {
+    const dir = idx > currentQuestionIndex ? 'right' : 'left';
+    currentQuestionIndex = idx;
+    lastDirection = dir;
+    displayQuestion(dir);
+    bootstrap.Modal.getInstance(document.getElementById('questionGridModal')).hide();
+    focusContainer();
+}
+
+// Section Menu
+function showSectionMenu() {
+    const sections = [...new Set(allQuestions.filter(q => q.section).map(q => q.section))];
+    
+    if (sections.length === 0) {
+        return;
+    }
+    
+    const sectionList = document.getElementById('sectionList');
+    sectionList.innerHTML = sections.map(section => {
+        const count = allQuestions.filter(q => q.section === section).length;
+        const current = allQuestions[currentQuestionIndex]?.section === section;
+        
+        return `
+            <button type="button" class="list-group-item list-group-item-action text-light border-secondary py-3 ${current ? 'active' : ''}" 
+                    style="background: ${current ? 'var(--primary-gradient)' : 'var(--card-bg)'};"
+                    onclick="jumpToSection('${section.replace(/'/g, "\\'")}')">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="mb-1 fw-bold">${section}</h6>
+                        <small class="opacity-75">${count} question${count !== 1 ? 's' : ''}</small>
+                    </div>
+                    <i class="fas fa-chevron-right opacity-50"></i>
+                </div>
+            </button>
+        `;
+    }).join('');
+    
+    new bootstrap.Modal(document.getElementById('sectionJumpModal')).show();
+}
+
+// Reset Progress
+function resetProgress() {
+    visitedQuestions.clear();
+    currentQuestionIndex = 0;
+    timerSeconds = 0;
+    updateTimerDisplay();
+    displayQuestion();
+    toggleSettings();
+}
+
+// Celebration
+function celebrate() {
+    const canvas = document.getElementById('celebrationCanvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    
+    const particles = [];
+    const colors = ['#667eea', '#764ba2', '#38ef7d', '#11998e', '#f0ad4e', '#eb3349'];
+    
+    for (let i = 0; i < 150; i++) {
+        particles.push({
+            x: Math.random() * canvas.width,
+            y: canvas.height + 10,
+            vx: (Math.random() - 0.5) * 10,
+            vy: -(Math.random() * 15 + 5),
+            size: Math.random() * 10 + 5,
+            color: colors[Math.floor(Math.random() * colors.length)],
+            gravity: 0.3,
+            life: 1
+        });
+    }
+    
+    function animate() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        let alive = false;
+        particles.forEach(p => {
+            if (p.life > 0) {
+                alive = true;
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vy += p.gravity;
+                p.life -= 0.01;
+                
+                ctx.globalAlpha = p.life;
+                ctx.fillStyle = p.color;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        });
+        
+        if (alive) {
+            requestAnimationFrame(animate);
+        } else {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+    }
+    
+    animate();
+}
+
+// Touch/Swipe Gestures
+let touchStartX = 0;
+let touchEndX = 0;
+
+function initSwipeGestures() {
+    const container = document.getElementById('questionContainer');
+    
+    container.addEventListener('touchstart', (e) => {
+        if (!settings.swipeEnabled) return;
+        touchStartX = e.changedTouches[0].screenX;
+    }, { passive: true });
+    
+    container.addEventListener('touchmove', (e) => {
+        if (!settings.swipeEnabled) return;
+        const currentX = e.changedTouches[0].screenX;
+        const diff = currentX - touchStartX;
+        
+        if (Math.abs(diff) > 50) {
+            document.getElementById(diff > 0 ? 'swipeRight' : 'swipeLeft').classList.add('show');
+            document.getElementById(diff > 0 ? 'swipeLeft' : 'swipeRight').classList.remove('show');
+        }
+    }, { passive: true });
+    
+    container.addEventListener('touchend', (e) => {
+        if (!settings.swipeEnabled) return;
+        
+        document.getElementById('swipeLeft').classList.remove('show');
+        document.getElementById('swipeRight').classList.remove('show');
+        
+        touchEndX = e.changedTouches[0].screenX;
+        const diff = touchEndX - touchStartX;
+        
+        if (Math.abs(diff) > 100) {
+            if (diff > 0) {
+                navigatePrev();
+            } else {
+                navigateNext();
+            }
+        }
+    }, { passive: true });
+}
+
+// Keyboard navigation
+document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+    
+    switch(e.key) {
+        case 'ArrowLeft':
+            e.preventDefault();
+            navigatePrev();
+            break;
+        case 'ArrowRight':
+            e.preventDefault();
+            navigateNext();
+            break;
+        case ' ':
+            e.preventDefault();
+            revealAnswer();
+            break;
+        case 'Escape':
+            if (document.getElementById('settingsPanel').classList.contains('open')) {
+                toggleSettings();
+            } else {
+                window.location.href = '{{ url_for("qtab.qtab_list") }}';
+            }
+            break;
+        case 's':
+        case 'S':
+            e.preventDefault();
+            showSectionMenu();
+            break;
+        case 'g':
+        case 'G':
+            e.preventDefault();
+            openQuestionGrid();
+            break;
+        case 'Home':
+            e.preventDefault();
+            navigateFirst();
+            break;
+        case 'End':
+            e.preventDefault();
+            navigateLast();
+            break;
+        case 'b':
+        case 'B':
+            e.preventDefault();
+            const q = allQuestions[currentQuestionIndex];
+            if (q) toggleBookmark(q.id);
+            break;
+        case 'f':
+        case 'F':
+            e.preventDefault();
+            toggleFullscreen();
+            break;
+    }
+});
+
+// Settings change listeners
+document.querySelectorAll('#settingsPanel input').forEach(input => {
+    input.addEventListener('change', () => {
+        settings.hideAnswer = document.getElementById('settingHideAnswer').checked;
+        settings.showProgress = document.getElementById('settingShowProgress').checked;
+        settings.animations = document.getElementById('settingAnimations').checked;
+        settings.swipeEnabled = document.getElementById('settingSwipeEnabled').checked;
+        settings.loopNavigation = document.getElementById('settingLoopNavigation').checked;
+        settings.countdownMode = document.getElementById('settingCountdown').checked;
+        settings.countdownTime = parseInt(document.getElementById('settingCountdownTime').value) || 30;
+        
+        saveSettings();
+        applySettings();
+        displayQuestion();
+    });
+});
+
+// Jump input enter key
+document.getElementById('jumpInput').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        jumpToQuestionNumber();
+    }
+});
+
+// Initialize
+parseQuestions();
+loadSettings();
+loadBookmarks();
+initSwipeGestures();
+displayQuestion();
+focusContainer();
+</script>
+{% endblock %}
+

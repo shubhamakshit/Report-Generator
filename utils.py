@@ -131,22 +131,51 @@ def create_a4_pdf_from_images(image_info, base_folder, output_filename, images_p
                     if os.path.exists(img_path):
                         img = Image.open(img_path).convert("RGB")
 
+                # --- Text and Image Placement ---
+                text_x = cell_x + 20
+                if is_practice_mode and practice_mode != 'portrait_2_spacious':
+                    text_x = 200 # Align to the left for practice modes
+
+                # 1. Calculate text sizes
+                q_num_text = f"Q: {info['question_number']}"
+                info_text = f"Status: {info['status']} | Marked: {info['marked_solution']} | Correct: {info['actual_solution']}"
+                
+                q_num_bbox = draw.textbbox((0, 0), q_num_text, font=font_large)
+                info_text_bbox = draw.textbbox((0, 0), info_text, font=font_small)
+                
+                q_num_height = q_num_bbox[3] - q_num_bbox[1]
+                info_text_height = info_text_bbox[3] - info_text_bbox[1]
+                
+                text_padding = 20
+                total_text_height = q_num_height + info_text_height + text_padding
+
+                # 2. Draw text
+                text_y_start = cell_y + 20
+                draw.text((text_x, text_y_start), q_num_text, fill="black", font=font_large)
+                draw.text((text_x, text_y_start + q_num_height + text_padding), info_text, fill="black", font=font_small)
+                
+                # 3. Position and paste image below text
                 if img:
-                    # Define target dimensions based on mode
+                    image_y_start = text_y_start + total_text_height + 20
+                    
+                    # Define target dimensions for the image
                     if practice_mode == 'portrait_2_spacious':
-                        target_w = (page_width // 2) - 250  # Half page width with padding
-                        target_h = (page_height // 2) - 250 # Half page height with padding
+                        target_w = (page_width // 2) - 250
+                        available_h = cell_height - (total_text_height + 40)
+                        target_h = available_h
                     elif is_practice_mode:
                         target_w = cell_width - 40
-                        target_h = cell_height - 170
+                        available_h = cell_height - (total_text_height + 40)
+                        target_h = available_h
                     else:
                         target_w = cell_width - 40
-                        target_h = cell_height - 170
-
+                        available_h = cell_height - (total_text_height + 40)
+                        target_h = available_h
+                    
                     # Calculate new dimensions while maintaining aspect ratio
                     img_ratio = img.width / img.height
                     target_ratio = target_w / target_h
-                    
+
                     if img_ratio > target_ratio:
                         new_w = int(target_w)
                         new_h = int(new_w / img_ratio)
@@ -154,14 +183,13 @@ def create_a4_pdf_from_images(image_info, base_folder, output_filename, images_p
                         new_h = int(target_h)
                         new_w = int(new_h * img_ratio)
 
-                    # For spacious mode, scale up if smaller than 1/12 of page area
+                    # For spacious mode, scale up if smaller than a certain area
                     if practice_mode == 'portrait_2_spacious':
                         page_area = page_width * page_height
                         if new_w * new_h < page_area / 12:
                             scale_factor = math.sqrt((page_area / 12) / (new_w * new_h))
                             scaled_w = int(new_w * scale_factor)
                             scaled_h = int(new_h * scale_factor)
-                            # Only apply if it doesn't exceed the target dimensions
                             if scaled_w <= target_w and scaled_h <= target_h:
                                 new_w, new_h = scaled_w, scaled_h
 
@@ -169,9 +197,9 @@ def create_a4_pdf_from_images(image_info, base_folder, output_filename, images_p
                     
                     paste_x = cell_x + 20
                     if is_practice_mode and practice_mode != 'portrait_2_spacious':
-                        paste_x = 200 # Align to the left for practice modes
+                        paste_x = 200
 
-                    paste_position = (paste_x, cell_y + 150)
+                    paste_position = (paste_x, image_y_start)
                     page.paste(img, paste_position)
 
                     # Draw a dashed bounding box for cutting only if not in practice mode
@@ -179,14 +207,6 @@ def create_a4_pdf_from_images(image_info, base_folder, output_filename, images_p
                         x0, y0 = paste_position
                         x1, y1 = x0 + new_w, y0 + new_h
                         draw_dashed_rectangle(draw, [x0, y0, x1, y1], fill="gray", width=3, dash_length=20, gap_length=15)
-
-                text_x = cell_x + 20
-                if is_practice_mode and practice_mode != 'portrait_2_spacious':
-                    text_x = 200 # Align to the left for practice modes
-
-                draw.text((text_x, cell_y + 20), f"Q: {info['question_number']}", fill="black", font=font_large)
-                info_text = f"Status: {info['status']} | Marked: {info['marked_solution']} | Correct: {info['actual_solution']}"
-                draw.text((text_x, cell_y + 90), info_text, fill="darkgray", font=font_small)
 
             except Exception as e:
                 print(f"Error processing image for PDF: {e}")

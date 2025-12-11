@@ -2,13 +2,13 @@ from flask import Blueprint, jsonify, current_app, render_template, request
 from flask_login import login_required, current_user
 from utils import get_db_connection
 import os
+import time
+import json
 from processing import resize_image_if_needed, call_nim_ocr_api
 from gemini_classifier import classify_questions_with_gemini
+from nova_classifier import classify_questions_with_nova
 
 classifier_bp = Blueprint('classifier_bp', __name__)
-
-NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
-NVIDIA_NIM_AVAILABLE = bool(NVIDIA_API_KEY)
 
 @classifier_bp.route('/classified/edit')
 @login_required
@@ -143,9 +143,6 @@ from rich.console import Console
 @classifier_bp.route('/extract_and_classify_all/<session_id>', methods=['POST'])
 @login_required
 def extract_and_classify_all(session_id):
-    if not NVIDIA_NIM_AVAILABLE:
-        return jsonify({'error': 'NVIDIA NIM feature is not available. Please set the NVIDIA_API_KEY environment variable.'}), 400
-
     try:
         conn = get_db_connection()
         # Security: Check ownership of the session
@@ -196,42 +193,81 @@ def extract_and_classify_all(session_id):
 
         conn.commit()
 
-        console = Console()
-        current_app.logger.info(f"Extracted text for {len(question_texts)} questions. Now classifying with Gemini.")
-        classification_result = classify_questions_with_gemini(question_texts)
-        current_app.logger.info(f"Gemini classification result: {classification_result}")
+        # --- Batch Processing and Classification ---
+        batch_size = 7 # Default batch size
+        total_questions = len(question_texts)
+        num_batches = (total_questions + batch_size - 1) // batch_size
+        total_update_count = 0
 
+        for i in range(num_batches):
+            start_index = i * batch_size
+            end_index = start_index + batch_size
+            
+            batch_texts = question_texts[start_index:end_index]
+            batch_image_ids = image_ids[start_index:end_index]
 
-        if not classification_result or not classification_result.get('data'):
-            conn.close()
-            return jsonify({'error': 'Gemini API did not return valid data.'}), 500
+            if not batch_texts:
+                continue
 
-        update_count = 0
-        for item in classification_result.get('data', []):
-            item_index = item.get('index')
-            if item_index is not None and 1 <= item_index <= len(image_ids):
-                matched_id = image_ids[item_index - 1]
-                new_subject = item.get('subject') # Extract the subject
-                new_chapter = item.get('chapter_title')
-                
-                # Only update if a valid subject AND chapter are returned
-                if new_subject and new_subject != 'Unclassified' and new_chapter and new_chapter != 'Unclassified':
-                    conn.execute('UPDATE questions SET subject = ?, chapter = ? WHERE image_id = ?', (new_subject, new_chapter, matched_id))
-                    current_app.logger.info(f"Updated subject to '{new_subject}' and chapter to '{new_chapter}' for image_id: {matched_id}")
-                    update_count += 1
-                elif new_subject and new_subject != 'Unclassified' and (not new_chapter or new_chapter == 'Unclassified'):
-                    # Handle cases where subject is found but chapter is not (e.g., Gemini couldn't find a specific chapter)
-                    conn.execute('UPDATE questions SET subject = ?, chapter = ? WHERE image_id = ?', (new_subject, 'Unclassified', matched_id))
-                    current_app.logger.info(f"Updated subject to '{new_subject}' and chapter to 'Unclassified' for image_id: {matched_id}")
-                    update_count += 1
-                else:
-                    current_app.logger.info(f"Skipping update for image_id {matched_id}: No valid subject or chapter found by Gemini.")
+            current_app.logger.info(f"Processing Batch {i+1}/{num_batches}...")
 
-        conn.commit()
-        current_app.logger.info(f"Updated {update_count} questions in the database.")
+            # Choose classifier based on user preference
+            classifier_model = getattr(current_user, 'classifier_model', 'gemini')
+            
+            if classifier_model == 'nova':
+                current_app.logger.info(f"Using Nova classifier for user {current_user.id}")
+                classification_result = classify_questions_with_nova(batch_texts, start_index=start_index)
+                model_name = "Nova"
+            else:
+                current_app.logger.info(f"Using Gemini classifier for user {current_user.id}")
+                classification_result = classify_questions_with_gemini(batch_texts, start_index=start_index)
+                model_name = "Gemini"
+            
+            # Log the result to the terminal
+            current_app.logger.info(f"--- Classification Result ({model_name}) for Batch {i+1} ---")
+            current_app.logger.info(json.dumps(classification_result, indent=2))
+            current_app.logger.info("---------------------------------------------")
+
+            if not classification_result or not classification_result.get('data'):
+                current_app.logger.error(f'{model_name} classifier did not return valid data for batch {i+1}.')
+                continue # Move to the next batch
+
+            # --- Immediate DB Update for the Batch ---
+            batch_update_count = 0
+            for item in classification_result.get('data', []):
+                item_index_global = item.get('index') # This is the global index (e.g., 1 to 14)
+                if item_index_global is not None:
+                    # Find the corresponding local index in our full list
+                    try:
+                        # The item_index_global is 1-based, our list is 0-based
+                        local_list_index = item_index_global - 1
+                        # Find the image_id for that question
+                        matched_id = image_ids[local_list_index]
+                    except IndexError:
+                        current_app.logger.error(f"Classifier returned an out-of-bounds index: {item_index_global}")
+                        continue
+
+                    new_subject = item.get('subject')
+                    new_chapter = item.get('chapter_title')
+                    
+                    if new_subject and new_subject != 'Unclassified' and new_chapter and new_chapter != 'Unclassified':
+                        conn.execute('UPDATE questions SET subject = ?, chapter = ? WHERE image_id = ?', (new_subject, new_chapter, matched_id))
+                        batch_update_count += 1
+                    elif new_subject and new_subject != 'Unclassified':
+                        conn.execute('UPDATE questions SET subject = ?, chapter = ? WHERE image_id = ?', (new_subject, 'Unclassified', matched_id))
+                        batch_update_count += 1
+
+            conn.commit()
+            total_update_count += batch_update_count
+            current_app.logger.info(f"Batch {i+1} processed. Updated {batch_update_count} questions in the database.")
+
+            if i < num_batches - 1:
+                current_app.logger.info("Waiting 5 seconds before next batch...")
+                time.sleep(5)
+
         conn.close()
 
-        return jsonify({'success': True, 'message': f'Successfully extracted and classified {len(image_ids)} questions.'})
+        return jsonify({'success': True, 'message': f'Successfully extracted and classified {total_questions} questions. Updated {total_update_count} entries in the database.'})
 
     except Exception as e:
         current_app.logger.error(f'Failed to extract and classify questions: {str(e)}', exc_info=True)

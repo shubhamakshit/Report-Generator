@@ -1612,9 +1612,10 @@ def view_pdf_legacy(pdf_id):
 
     return render_template('simple_viewer.html', image_urls=image_paths, pdf_title=pdf_subject or pdf_filename)
 
-@main_bp.route('/image/<folder>/<filename>')
+@main_bp.route('/image/<folder>/<path:filename>')
 def serve_image(folder, filename):
-    # Map common URL folder names to config keys
+    current_app.logger.info(f"Attempting to serve image from folder '{folder}' with filename '{filename}'")
+    
     folder_map = {
         'uploads': 'UPLOAD_FOLDER',
         'processed': 'PROCESSED_FOLDER',
@@ -1623,20 +1624,50 @@ def serve_image(folder, filename):
     
     config_key = folder_map.get(folder)
     if not config_key:
-        # Fallback to direct uppercase match (legacy behavior)
         config_key = f'{folder.upper()}_FOLDER'
         
-    folder_path = current_app.config.get(config_key)
+    base_folder_path = current_app.config.get(config_key)
     
-    if not folder_path or not os.path.exists(os.path.join(folder_path, filename)):
+    if not base_folder_path:
+        current_app.logger.error(f"Configuration key '{config_key}' not found.")
         return "Not found", 404
-    return send_file(os.path.join(folder_path, filename))
+
+    # The filename can now be either 'session_id/image.jpg' (new) or just 'image.jpg' (old)
+    # Let's construct the full path and check for its existence
+    full_path = os.path.abspath(os.path.join(base_folder_path, filename))
+    current_app.logger.info(f"Checking for file at primary path: {full_path}")
+
+    # Security check: ensure the path is within the intended directory
+    if not full_path.startswith(os.path.abspath(base_folder_path)):
+        current_app.logger.warning(f"Potential directory traversal attempt: {filename}")
+        return "Forbidden", 403
+
+    if os.path.exists(full_path):
+        current_app.logger.info(f"File found at primary path. Serving {filename} from {base_folder_path}")
+        return send_from_directory(base_folder_path, filename)
+    else:
+        # Fallback for old structure: check if the filename itself exists in the root of the processed folder
+        # This handles cases where filename might be 'session_id/q_1.png' but the file is actually at 'processed/q_1.png'
+        # or other legacy paths.
+        parts = filename.split('/')
+        if len(parts) > 1:
+            fallback_filename = parts[-1]
+            fallback_full_path = os.path.abspath(os.path.join(base_folder_path, fallback_filename))
+            current_app.logger.info(f"Primary path not found. Checking fallback path: {fallback_full_path}")
+            if os.path.exists(fallback_full_path):
+                 current_app.logger.info(f"File found at fallback path. Serving {fallback_filename} from {base_folder_path}")
+                 return send_from_directory(base_folder_path, fallback_filename)
+
+    current_app.logger.error(f"File not found at primary or fallback paths for filename: {filename}")
+    return "Not found", 404
 
 @main_bp.route(ROUTE_INDEX)
 def index():
     if current_user.is_authenticated:
+        """
         if getattr(current_user, 'v2_default', 0):
             return redirect(url_for('main.upload_final_pdf'))
+        """
         return redirect(url_for('dashboard.dashboard'))
     return redirect(url_for('auth.login'))
 

@@ -5,18 +5,18 @@ import sys
 from typing import List, Optional, Dict, Any
 from api_key_manager import get_api_key_manager
 
-def classify_questions_with_gemini(questions: List[str], start_index: int = 0) -> Optional[Dict[Any, Any]]:
+def classify_questions_with_nova(questions: List[str], start_index: int = 0) -> Optional[Dict[Any, Any]]:
     """
-    Classifies a single batch of questions using the Gemini API.
+    Classifies a single batch of questions using Amazon Nova via OpenRouter API.
     `questions` should be a list of strings representing one batch.
     `start_index` is the overall starting index for this batch (e.g., 0, 7, 14...).
     """
     # Get API key from the manager
     manager = get_api_key_manager()
-    api_key, key_index = manager.get_key('gemini')
+    api_key, key_index = manager.get_key('openrouter')
     
     if not api_key:
-        raise ValueError("No available Gemini API keys. Please set GEMINI_API_KEY or GOOGLE_API_KEY environment variable.")
+        raise ValueError("No available OpenRouter API keys. Please set OPENROUTER_API_KEY environment variable.")
 
     # Construct the input text with the current batch of questions
     # The model expects 1-based indexing in the prompt.
@@ -225,54 +225,72 @@ Now classify the following question(s):
 ```
 {input_text}
 ```
+
+Output ONLY the JSON response, nothing else.
 """
-    with open('gemini_classification_prompt.txt', 'w') as f:
-        f.write(prompt)
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key={api_key}"
-    headers = {'Content-Type': 'application/json'}
-
-    request_body = {
-        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "responseMimeType": "application/json",
-        }
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
     }
 
-    print(f"Sending batch to Gemini API with {len(questions)} questions.")
-    print(f"Sending request to Gemini API. Body: {json.dumps(request_body, indent=2)[:500]}...")  # Truncate for logging
+    request_body = {
+        "model": "amazon/nova-2-lite-v1:free",
+        "messages": [
+            {"role": "user", "content": prompt}
+        ],
+    }
+
+    print(f"Sending batch to Nova API with {len(questions)} questions.")
+    print(f"Sending request to Nova API. Body: {json.dumps(request_body, indent=2)[:500]}...")  # Truncate for logging
 
     try:
         response = requests.post(url, headers=headers, json=request_body, timeout=300)
         response.raise_for_status()
 
-        print(f"Received raw response from Gemini: {response.text[:500]}...")  # Truncate for logging
+        print(f"Received raw response from Nova: {response.text[:500]}...")  # Truncate for logging
 
         # Parse the response JSON
         response_json = response.json()
 
-        # Check if the response has valid content and parts
-        candidate = response_json.get('candidates', [{}])[0]
-        content = candidate.get('content', {})
-        parts = content.get('parts', [])
-
-        if not parts:
-            print("Error: Model generated thoughts but no output text.")
-            manager.mark_failure('gemini', key_index)
+        # Extract the content from Nova's response
+        choices = response_json.get('choices', [])
+        if not choices:
+            print("Error: Nova API returned no choices.")
             return None
-        else:
-            text = parts[0]['text']
-            batch_result = json.loads(text)
-            manager.mark_success('gemini', key_index)
-            return batch_result
+        
+        content = choices[0].get('message', {}).get('content', '')
+        if not content:
+            print("Error: Nova API returned empty content.")
+            return None
+
+        # Nova often wraps JSON in markdown code blocks, so we need to extract it
+        content = content.strip()
+        
+        # Remove markdown code block markers if present
+        if content.startswith('```json'):
+            content = content[7:]  # Remove ```json
+        elif content.startswith('```'):
+            content = content[3:]  # Remove ```
+            
+        if content.endswith('```'):
+            content = content[:-3]  # Remove closing ```
+            
+        content = content.strip()
+
+        # Parse the JSON from the content
+        batch_result = json.loads(content)
+        manager.mark_success('openrouter', key_index)
+        return batch_result
 
     except requests.exceptions.RequestException as e:
-        print(f"Error during Gemini API call: {repr(e)}", file=sys.stderr)
+        print(f"Error during Nova API call: {repr(e)}", file=sys.stderr)
         print(f"Response body: {e.response.text if e.response else 'N/A'}", file=sys.stderr)
-        manager.mark_failure('gemini', key_index)
+        manager.mark_failure('openrouter', key_index)
         return None
     except (json.JSONDecodeError, KeyError, IndexError) as e:
-        print(f"Error parsing Gemini response: {repr(e)}", file=sys.stderr)
+        print(f"Error parsing Nova response: {repr(e)}", file=sys.stderr)
         print(f"Raw response text: {response.text if 'response' in locals() else 'N/A'}", file=sys.stderr)
-        manager.mark_failure('gemini', key_index)
+        manager.mark_failure('openrouter', key_index)
         return None

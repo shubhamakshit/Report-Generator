@@ -13,6 +13,7 @@ import base64
 import html
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from json_processor_v3 import JSONProcessorV3
 
 json_bp = Blueprint('json_bp', __name__)
 
@@ -463,3 +464,20 @@ def save_processed_json():
         return jsonify({'error': str(e)}), 500
     finally:
         conn.close()
+
+@json_bp.route('/json_upload_v3', methods=['POST'])
+def json_upload_v3():
+    if not request.json:
+        return jsonify({'error': 'No JSON payload received.'}), 400
+
+    processor_v3 = JSONProcessorV3(request.json)
+    try:
+        # Pass a user_id, for now a default. In a real app, this might come from an API key.
+        result = processor_v3.process(user_id=45)
+        return jsonify(result), 200
+    except ValueError as e:
+        current_app.logger.error(f"JSON v3.0 processing error: {e}")
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        current_app.logger.error(f"Unhandled error during JSON v3.0 processing: {e}")
+        return jsonify({'error': 'An internal server error occurred.'}), 500

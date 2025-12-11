@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 from PIL import Image
 from flask import current_app
+from api_key_manager import get_api_key_manager
 
 # --- NVIDIA NIM Configuration ---
 NIM_API_URL = "https://ai.api.nvidia.com/v1/cv/nvidia/nemoretriever-ocr-v1"
@@ -53,12 +54,15 @@ def resize_image_if_needed(image_path: str) -> bytes:
 
 def call_nim_ocr_api(image_bytes: bytes):
     """Calls the NVIDIA NIM API to perform OCR on an image."""
-    NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
-    if not NVIDIA_API_KEY:
-        raise Exception("NVIDIA_API_KEY environment variable not set.")
+    # Get API key from the manager
+    manager = get_api_key_manager()
+    api_key, key_index = manager.get_key('nvidia')
+    
+    if not api_key:
+        raise Exception("No available NVIDIA API keys. Please set NVIDIA_API_KEY environment variable.")
 
     NIM_HEADERS = {
-        "Authorization": f"Bearer {NVIDIA_API_KEY}",
+        "Authorization": f"Bearer {api_key}",
         "Accept": "application/json",
         "Content-Type": "application/json",
     }
@@ -83,8 +87,11 @@ def call_nim_ocr_api(image_bytes: bytes):
     try:
         response = requests.post(NIM_API_URL, headers=NIM_HEADERS, json=payload, timeout=300)
         response.raise_for_status()
-        return response.json()
+        result = response.json()
+        manager.mark_success('nvidia', key_index)
+        return result
     except requests.exceptions.RequestException as e:
+        manager.mark_failure('nvidia', key_index)
         error_detail = str(e)
         if e.response is not None:
             try:

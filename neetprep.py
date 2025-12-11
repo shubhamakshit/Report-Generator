@@ -12,6 +12,7 @@ import math
 import imgkit
 
 from gemini_classifier import classify_questions_with_gemini
+from nova_classifier import classify_questions_with_nova
 from json_processor import _process_json_and_generate_pdf
 from json_processor import _process_json_and_generate_pdf
 
@@ -243,6 +244,7 @@ def classify_unclassified_questions():
         batch_start_time = time.time()
         start_index = i * batch_size
         end_index = start_index + batch_size
+        
         batch = unclassified_questions[start_index:end_index]
         
         question_texts = [q['question_text'] for q in batch]
@@ -251,10 +253,20 @@ def classify_unclassified_questions():
         print(f"\nProcessing Batch {i+1}/{num_batches}...")
 
         try:
-            classification_result = classify_questions_with_gemini(question_texts)
+            # Choose classifier based on user preference
+            classifier_model = getattr(current_user, 'classifier_model', 'gemini')
             
+            if classifier_model == 'nova':
+                print("Classifying with Nova API...")
+                classification_result = classify_questions_with_nova(question_texts, start_index=0)
+                model_name = "Nova"
+            else:
+                print("Classifying with Gemini API...")
+                classification_result = classify_questions_with_gemini(question_texts, start_index=0)
+                model_name = "Gemini"
+        
             if not classification_result or not classification_result.get('data'):
-                print(f"Batch {i+1} failed: Gemini API did not return valid data.")
+                print(f"Batch {i+1} failed: {model_name} API did not return valid data.")
                 continue
 
             update_count_in_batch = 0

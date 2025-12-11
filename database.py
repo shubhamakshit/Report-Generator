@@ -160,6 +160,35 @@ def setup_database():
     );
     """)
 
+    # Create qtab_folders table for question table organization
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS qtab_folders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        parent_id INTEGER,
+        user_id INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (parent_id) REFERENCES qtab_folders (id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users (id)
+    );
+    """)
+
+    # Create qtab_images table for question-answer extraction
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS qtab_images (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        folder_id INTEGER,
+        filename TEXT NOT NULL,
+        original_name TEXT NOT NULL,
+        result_json TEXT,
+        status TEXT DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users (id),
+        FOREIGN KEY (folder_id) REFERENCES qtab_folders (id) ON DELETE SET NULL
+    );
+    """)
+
     # --- Migrations ---
     try:
         cursor.execute("SELECT topic_order FROM subjective_questions LIMIT 1")
@@ -287,6 +316,11 @@ def setup_database():
     except sqlite3.OperationalError:
         cursor.execute("ALTER TABLE subjective_questions ADD COLUMN question_json TEXT")
 
+    try:
+        cursor.execute("SELECT classifier_model FROM users LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE users ADD COLUMN classifier_model TEXT DEFAULT 'gemini'")
+
     conn.commit()
     conn.close()
 
@@ -369,6 +403,26 @@ def get_folder_tree(user_id=None):
 def get_subjective_folder_tree(user_id):
     conn = get_db_connection()
     folders = conn.execute('SELECT id, name, parent_id FROM subjective_folders WHERE user_id = ? ORDER BY name', (user_id,)).fetchall()
+    conn.close()
+    
+    folder_map = {f['id']: dict(f) for f in folders}
+    tree = []
+    
+    for folder_id, folder in folder_map.items():
+        if folder['parent_id']:
+            parent = folder_map.get(folder['parent_id'])
+            if parent:
+                if 'children' not in parent:
+                    parent['children'] = []
+                parent['children'].append(folder)
+        else:
+            tree.append(folder)
+            
+    return tree
+
+def get_qtab_folder_tree(user_id):
+    conn = get_db_connection()
+    folders = conn.execute('SELECT id, name, parent_id FROM qtab_folders WHERE user_id = ? ORDER BY name', (user_id,)).fetchall()
     conn.close()
     
     folder_map = {f['id']: dict(f) for f in folders}

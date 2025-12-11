@@ -31,7 +31,12 @@ def settings():
         
         # --- Handle Magnifier Toggle ---
         magnifier_enabled = 1 if request.form.get('magnifier_enabled') else 0
-        
+
+        # --- Handle Classifier Model Setting ---
+        classifier_model = request.form.get('classifier_model', 'gemini')
+        if classifier_model not in ['gemini', 'nova']:
+            classifier_model = 'gemini'
+
         # --- Handle DPI Setting ---
         dpi_input = request.form.get('dpi')
         if not dpi_input:
@@ -62,7 +67,8 @@ def settings():
 
         # --- Update Database ---
         conn = get_db_connection()
-        conn.execute('UPDATE users SET neetprep_enabled = ?, v2_default = ?, magnifier_enabled = ?, dpi = ?, color_rm_dpi = ? WHERE id = ?', (neetprep_enabled, v2_default, magnifier_enabled, dpi, color_rm_dpi, current_user.id))
+        conn.execute('UPDATE users SET neetprep_enabled = ?, v2_default = ?, magnifier_enabled = ?, dpi = ?, color_rm_dpi = ?, classifier_model = ? WHERE id = ?', 
+                     (neetprep_enabled, v2_default, magnifier_enabled, dpi, color_rm_dpi, classifier_model, current_user.id))
         conn.commit()
         conn.close()
         
@@ -72,6 +78,7 @@ def settings():
         current_user.magnifier_enabled = magnifier_enabled
         current_user.dpi = dpi
         current_user.color_rm_dpi = color_rm_dpi
+        current_user.classifier_model = classifier_model
         
         flash('Settings saved successfully!', 'success')
         return redirect(url_for('settings.settings'))

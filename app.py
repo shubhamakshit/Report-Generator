@@ -4,6 +4,10 @@ from flask import Flask
 from flask_cors import CORS
 from flask_socketio import SocketIO
 from datetime import datetime, date
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Ensure the current directory is in the Python path
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
@@ -69,6 +73,7 @@ def create_app():
     from subjective_routes import subjective_bp
     from camera_routes import camera_bp
     from drive_routes import drive_bp
+    from qtab_routes import qtab_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(json_bp)
@@ -81,6 +86,7 @@ def create_app():
     app.register_blueprint(subjective_bp)
     app.register_blueprint(camera_bp)
     app.register_blueprint(drive_bp)
+    app.register_blueprint(qtab_bp)
 
     return app
 
