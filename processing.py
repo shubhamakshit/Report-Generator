@@ -142,33 +142,40 @@ def crop_image_perspective(image_path, points):
     matrix = cv2.getPerspectiveTransform(src_points, dst_points)
     return cv2.warpPerspective(img, matrix, (max_width, max_height))
 
-def create_pdf_from_full_images(image_paths, output_filename, resolution=100.0):
-    """Creates a PDF from a list of full-page images."""
+def create_pdf_from_full_images(image_paths, output_filename, resolution=300.0):
+    """
+    Creates a PDF from a list of full-page images, preserving image quality
+    by creating pages of the same size as the images.
+    """
     if not image_paths:
         return False
 
     try:
-        # Open first image to start the PDF
-        first_image = Image.open(image_paths[0]).convert('RGB')
-    except Exception as e:
-        print(f"Error opening first image to get dimensions: {e}")
-        return False
-    
-    pages_to_append = []
-    for image_path in image_paths[1:]:
-        try:
-            page = Image.open(image_path).convert('RGB')
-            pages_to_append.append(page)
-        except Exception as e:
-            print(f"Error opening image {image_path}: {e}")
+        pdf_pages = []
+        for image_path in image_paths:
+            try:
+                with Image.open(image_path) as img:
+                    # Ensure image is in a format that can be saved to PDF
+                    img = img.convert('RGB')
+                    
+                    # Create a new image with a white background of the same size.
+                    # This avoids issues with alpha channels and ensures consistency.
+                    page = Image.new('RGB', img.size, 'white')
+                    page.paste(img, (0, 0))
+                    pdf_pages.append(page)
+            except Exception as e:
+                print(f"Error opening or processing image {image_path}: {e}")
+        
+        if not pdf_pages:
+            return False
 
-    try:
-        first_image.save(
+        # Save the first page and append the rest
+        pdf_pages[0].save(
             output_filename,
             "PDF",
-            resolution=resolution,
             save_all=True,
-            append_images=pages_to_append
+            append_images=pdf_pages[1:],
+            resolution=resolution
         )
         return True
     except Exception as e:

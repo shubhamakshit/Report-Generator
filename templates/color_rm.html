@@ -980,6 +980,55 @@
         }
     });
 
+    // --- KEYBOARD SHORTCUTS ---
+    document.addEventListener('keydown', (e) => {
+        // 1. Ignore shortcuts if user is typing in an input field (like page number)
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+        switch (e.key) {
+            case 'ArrowRight':
+                // Go to next page
+                if (imageIndex + 1 < totalPages) {
+                    window.location.href = `/color_rm_interface/${sessionId}/${imageIndex + 1}`;
+                }
+                break;
+            
+            case 'ArrowLeft':
+                // Go to previous page
+                if (imageIndex > 0) {
+                    window.location.href = `/color_rm_interface/${sessionId}/${imageIndex - 1}`;
+                }
+                break;
+
+            case 'Enter':
+                e.preventDefault();
+                // Trigger Save
+                document.getElementById('saveBtn').click();
+                break;
+
+            case 'p':
+            case 'P':
+                // Toggle Preview
+                document.getElementById('previewBtn').click();
+                break;
+
+            case 'r':
+            case 'R':
+                // Reset Image
+                if(confirm('Reset all changes?')) {
+                    document.getElementById('resetBtn').click();
+                }
+                break;
+            
+            case 'Delete':
+            case 'Backspace':
+                // Remove the last selected color
+                if (selectedColors.length > 0) {
+                    removeColor(selectedColors.length - 1);
+                }
+                break;
+        }
+    });
 </script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>

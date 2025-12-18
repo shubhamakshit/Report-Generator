@@ -50,7 +50,7 @@ def process_image_for_questions(image_path, username):
             }
             
         client = genai.Client(api_key=api_key)
-        model = "gemini-2.0-flash-lite"
+        model = "gemini-flash-latest"
 
         prompt = f"""Current Date and Time (UTC): {current_time}
 Current User's Login: {username}
@@ -319,6 +319,42 @@ def qtab_delete_image(image_id):
     conn.close()
     
     return jsonify({'success': True})
+
+
+@qtab_bp.route('/qtab/image/<int:image_id>/rename', methods=['PUT'])
+@login_required
+def qtab_rename_image(image_id):
+    """Rename a qtab image."""
+    data = request.json
+    new_name = data.get('name', '').strip()
+    
+    if not new_name:
+        return jsonify({'error': 'Name is required'}), 400
+    
+    conn = get_db_connection()
+    
+    # Check ownership
+    image = conn.execute(
+        'SELECT id FROM qtab_images WHERE id = ? AND user_id = ?',
+        (image_id, current_user.id)
+    ).fetchone()
+    
+    if not image:
+        conn.close()
+        return jsonify({'error': 'Image not found or unauthorized'}), 404
+    
+    try:
+        conn.execute(
+            'UPDATE qtab_images SET original_name = ? WHERE id = ?',
+            (new_name, image_id)
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return jsonify({'error': str(e)}), 500
 
 
 @qtab_bp.route('/qtab/create_folder', methods=['POST'])

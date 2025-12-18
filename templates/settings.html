@@ -51,6 +51,19 @@
                         </fieldset>
                         <hr>
                         <fieldset>
+                            <legend class="h5 mb-3">NeetPrep Settings</legend>
+                            <div class="mb-3 form-check">
+                                <input type="checkbox" class="form-check-input" id="neetprep_enabled" name="neetprep_enabled" {% if current_user.neetprep_enabled %}checked{% endif %}>
+                                <label class="form-check-label" for="neetprep_enabled">
+                                    Enable NeetPrep Sync
+                                </label>
+                                <div class="form-text">
+                                    Enable synchronization with NeetPrep for question data.
+                                </div>
+                            </div>
+                        </fieldset>
+                        <hr>
+                        <fieldset>
                             <legend class="h5 mb-3">Classifier Settings</legend>
                             <div class="mb-3">
                                 <label for="classifier_model" class="form-label">Question Classifier Model</label>

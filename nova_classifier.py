@@ -201,7 +201,7 @@ Your task is to analyze each question, first classify it into the most relevant 
 -   Use ONLY the chapter titles exactly as listed above, or 'Unclassified'.
 -   Preserve the original question text completely.
 -   Output ONLY valid JSON.
--   Each question gets an index starting from 1.
+-   The "index" field MUST match the question number shown in the input (e.g., if the question is numbered "8.", then "index": 8).
 
 **Output JSON Schema:**
 
@@ -243,13 +243,13 @@ Output ONLY the JSON response, nothing else.
     }
 
     print(f"Sending batch to Nova API with {len(questions)} questions.")
-    print(f"Sending request to Nova API. Body: {json.dumps(request_body, indent=2)[:500]}...")  # Truncate for logging
+    print(f"Sending request to Nova API. Body: {json.dumps(request_body, indent=2)}")  # Full logging enabled
 
     try:
         response = requests.post(url, headers=headers, json=request_body, timeout=300)
         response.raise_for_status()
 
-        print(f"Received raw response from Nova: {response.text[:500]}...")  # Truncate for logging
+        print(f"Received raw response from Nova: {response.text}")  # Full logging enabled
 
         # Parse the response JSON
         response_json = response.json()

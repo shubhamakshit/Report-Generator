@@ -4,17 +4,15 @@
 
 {% block head %}
 <style>
+    body {
+        padding-bottom: 100px; /* Extra space at bottom for device chrome */
+    }
+
     .qtab-container {
         max-width: 1400px;
         margin: 0 auto;
         padding: 20px;
-    }
-
-    .breadcrumb-nav {
-        margin-bottom: 20px;
-        padding: 10px;
-        background: #343a40;
-        border-radius: 8px;
+        min-height: calc(100vh - 150px); /* Dynamic height with bottom space */
     }
 
     .upload-section {
@@ -24,6 +22,7 @@
         margin-bottom: 30px;
         border: 2px dashed #495057;
         text-align: center;
+        transition: all 0.3s;
     }
 
     .upload-section.dragover {
@@ -31,9 +30,14 @@
         background: #1a1d20;
     }
 
+    .upload-section.paste-active {
+        border-color: #28a745;
+        background: #1a2520;
+    }
+
     .folder-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
         gap: 15px;
         margin-bottom: 30px;
     }
@@ -46,6 +50,7 @@
         cursor: pointer;
         transition: all 0.3s;
         border: 1px solid #495057;
+        position: relative;
     }
 
     .folder-card:hover {
@@ -72,11 +77,27 @@
         overflow: hidden;
         border: 1px solid #495057;
         transition: all 0.3s;
+        position: relative;
+    }
+
+    .image-card.selected {
+        border-color: #0d6efd;
+        box-shadow: 0 0 10px rgba(13, 110, 253, 0.5);
     }
 
     .image-card:hover {
         border-color: #0d6efd;
         transform: translateY(-2px);
+    }
+
+    .image-card .selection-checkbox {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        z-index: 10;
+        width: 20px;
+        height: 20px;
+        cursor: pointer;
     }
 
     .image-preview {
@@ -126,10 +147,6 @@
         border-radius: 4px;
     }
 
-    .btn-delete {
-        margin-top: 10px;
-    }
-
     .upload-btn {
         display: inline-block;
         padding: 12px 30px;
@@ -158,38 +175,61 @@
         display: block;
     }
 
-    .toolbar {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 20px;
-        padding: 15px;
-        background: #212529;
-        border-radius: 8px;
+    /* Paste indicator */
+    .paste-hint {
+        font-size: 0.9em;
+        color: #6c757d;
+        margin-top: 10px;
+    }
+
+    .paste-hint .kbd {
+        background: #343a40;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-family: monospace;
     }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="qtab-container">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1><i class="fas fa-table"></i> Question Table Generator</h1>
-        <button class="btn btn-primary" onclick="showCreateFolderModal()">
-            <i class="fas fa-folder-plus"></i> New Folder
-        </button>
+    <!-- Toolbar -->
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h2 class="mb-0"><i class="bi bi-table"></i> Question Table Generator</h2>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb mb-0">
+                    <li class="breadcrumb-item"><a href="{{ url_for('qtab.qtab_list') }}">Home</a></li>
+                    {% for crumb in breadcrumbs %}
+                        <li class="breadcrumb-item"><a href="{{ url_for('qtab.qtab_list', folder_path=crumb.path) }}">{{ crumb.name }}</a></li>
+                    {% endfor %}
+                </ol>
+            </nav>
+        </div>
+        <div class="btn-group">
+            <button type="button" class="btn btn-primary" onclick="showCreateFolderModal()">
+                <i class="bi bi-folder-plus"></i> New Folder
+            </button>
+            <button type="button" class="btn btn-warning text-dark" id="moveBtn" disabled data-bs-toggle="modal" data-bs-target="#moveModal">
+                <i class="bi bi-arrow-right-square"></i> Move Selected
+            </button>
+            <button type="button" class="btn btn-danger" id="deleteBtn" disabled onclick="deleteSelectedImages()">
+                <i class="bi bi-trash"></i> Delete Selected
+            </button>
+        </div>
     </div>
 
-    <!-- Breadcrumb Navigation -->
-    {% if breadcrumbs %}
-    <nav class="breadcrumb-nav">
-        <ol class="breadcrumb mb-0">
-            <li class="breadcrumb-item"><a href="{{ url_for('qtab.qtab_list') }}">Root</a></li>
-            {% for crumb in breadcrumbs %}
-            <li class="breadcrumb-item"><a href="{{ url_for('qtab.qtab_list', folder_path=crumb.path) }}">{{ crumb.name }}</a></li>
+    <!-- Flash Messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
             {% endfor %}
-        </ol>
-    </nav>
-    {% endif %}
+        {% endif %}
+    {% endwith %}
 
     <!-- Upload Section -->
     <div class="upload-section" id="uploadSection">
@@ -200,6 +240,9 @@
             <i class="fas fa-upload"></i> Choose Image
         </label>
         <input type="file" id="imageInput" accept="image/*">
+        <div class="paste-hint">
+            <span class="kbd">Ctrl+V</span> to paste image from clipboard
+        </div>
         <div class="spinner-border loading-spinner" role="status">
             <span class="visually-hidden">Processing...</span>
         </div>
@@ -224,12 +267,18 @@
     <div class="images-grid" id="imagesGrid">
         {% for image in images %}
         <div class="image-card" data-image-id="{{ image.id }}">
+            <input type="checkbox" class="form-check-input selection-checkbox image-checkbox" value="{{ image.id }}">
             <img src="{{ url_for('qtab.serve_qtab_image', filename=image.filename) }}" 
                  class="image-preview" 
                  alt="{{ image.original_name }}"
                  onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22%3E%3Crect fill=%22%23343a40%22 width=%22100%22 height=%22100%22/%3E%3Ctext fill=%22%236c757d%22 x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dy=%22.3em%22%3ENo Preview%3C/text%3E%3C/svg%3E'">
             <div class="image-content">
-                <h6>{{ image.original_name }}</h6>
+                <div class="d-flex justify-content-between align-items-start">
+                    <h6 class="mb-1">{{ image.original_name }}</h6>
+                    <button class="btn btn-sm btn-link p-0" onclick="renameImage({{ image.id }}, '{{ image.original_name }}')" title="Rename">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                </div>
                 <small class="text-muted">{{ image.created_at }}</small>
                 
                 {% if image.result_json %}
@@ -310,6 +359,58 @@
     </div>
 </div>
 
+<!-- Move Modal -->
+<div class="modal fade" id="moveModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark">
+            <div class="modal-header">
+                <h5 class="modal-title">Move Images</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label for="targetFolder" class="form-label">Select Destination Folder</label>
+                    <select class="form-select" id="targetFolder">
+                        <option value="">Root</option>
+                        {% if folder_tree %}
+                            {% for folder in folder_tree %}
+                                <option value="{{ folder.id }}">{{ folder.path }}</option>
+                            {% endfor %}
+                        {% endif %}
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-warning text-dark" onclick="moveSelectedImages()">Move</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Rename Image Modal -->
+<div class="modal fade" id="renameModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark">
+            <div class="modal-header">
+                <h5 class="modal-title">Rename Image</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label for="newImageName" class="form-label">New Name</label>
+                    <input type="text" class="form-control" id="newImageName" placeholder="Enter new name">
+                    <input type="hidden" id="renameImageId">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="submitRename()">Rename</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 const currentFolderId = {{ current_folder_id | tojson }};
 const currentFolderPath = '{{ breadcrumbs[-1].path if breadcrumbs else "" }}';
@@ -336,6 +437,24 @@ uploadSection.addEventListener('drop', (e) => {
     const files = e.dataTransfer.files;
     if (files.length > 0) {
         handleFile(files[0]);
+    }
+});
+
+// Ctrl+V paste image support
+document.addEventListener('paste', async (e) => {
+    const items = e.clipboardData.items;
+    for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image') !== -1) {
+            e.preventDefault();
+            const blob = items[i].getAsFile();
+            
+            // Visual feedback
+            uploadSection.classList.add('paste-active');
+            setTimeout(() => uploadSection.classList.remove('paste-active'), 300);
+            
+            handleFile(blob);
+            break;
+        }
     }
 });
 
@@ -381,6 +500,31 @@ async function handleFile(file) {
     }
 }
 
+// Selection handling
+const imageCheckboxes = document.querySelectorAll('.image-checkbox');
+const moveBtn = document.getElementById('moveBtn');
+const deleteBtn = document.getElementById('deleteBtn');
+
+imageCheckboxes.forEach(checkbox => {
+    checkbox.addEventListener('change', updateSelectionButtons);
+});
+
+function updateSelectionButtons() {
+    const selectedCount = document.querySelectorAll('.image-checkbox:checked').length;
+    moveBtn.disabled = selectedCount === 0;
+    deleteBtn.disabled = selectedCount === 0;
+    
+    // Update card styling
+    document.querySelectorAll('.image-card').forEach(card => {
+        const checkbox = card.querySelector('.image-checkbox');
+        if (checkbox && checkbox.checked) {
+            card.classList.add('selected');
+        } else {
+            card.classList.remove('selected');
+        }
+    });
+}
+
 function navigateToFolder(folderName) {
     const newPath = currentFolderPath ? `${currentFolderPath}/${folderName}` : folderName;
     window.location.href = `{{ url_for('qtab.qtab_list') }}/${newPath}`;
@@ -420,6 +564,110 @@ async function createFolder() {
         }
     } catch (error) {
         console.error('Error creating folder:', error);
+        alert('Error: ' + error.message);
+    }
+}
+
+// Rename image
+function renameImage(imageId, currentName) {
+    document.getElementById('renameImageId').value = imageId;
+    document.getElementById('newImageName').value = currentName;
+    const modal = new bootstrap.Modal(document.getElementById('renameModal'));
+    modal.show();
+}
+
+async function submitRename() {
+    const imageId = document.getElementById('renameImageId').value;
+    const newName = document.getElementById('newImageName').value.trim();
+    
+    if (!newName) {
+        alert('Please enter a name');
+        return;
+    }
+
+    try {
+        const response = await fetch('{{ url_for("qtab.qtab_rename_image", image_id=0) }}'.replace('0', imageId), {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ name: newName })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            window.location.reload();
+        } else {
+            alert('Error: ' + (result.error || 'Failed to rename image'));
+        }
+    } catch (error) {
+        console.error('Error renaming image:', error);
+        alert('Error: ' + error.message);
+    }
+}
+
+// Move selected images
+async function moveSelectedImages() {
+    const selectedIds = Array.from(document.querySelectorAll('.image-checkbox:checked'))
+        .map(cb => parseInt(cb.value));
+    
+    if (selectedIds.length === 0) {
+        alert('No images selected');
+        return;
+    }
+
+    const targetFolderId = document.getElementById('targetFolder').value || null;
+
+    try {
+        const response = await fetch('{{ url_for("qtab.qtab_move_images") }}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                image_ids: selectedIds,
+                target_folder_id: targetFolderId
+            })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            window.location.reload();
+        } else {
+            alert('Error: ' + (result.error || 'Failed to move images'));
+        }
+    } catch (error) {
+        console.error('Error moving images:', error);
+        alert('Error: ' + error.message);
+    }
+}
+
+// Delete selected images
+async function deleteSelectedImages() {
+    const selectedIds = Array.from(document.querySelectorAll('.image-checkbox:checked'))
+        .map(cb => parseInt(cb.value));
+    
+    if (selectedIds.length === 0) {
+        alert('No images selected');
+        return;
+    }
+
+    if (!confirm(`Are you sure you want to delete ${selectedIds.length} image(s)?`)) {
+        return;
+    }
+
+    try {
+        // Delete each image
+        for (const imageId of selectedIds) {
+            await fetch(`{{ url_for('qtab.qtab_delete_image', image_id=0) }}`.replace('0', imageId), {
+                method: 'DELETE'
+            });
+        }
+        window.location.reload();
+    } catch (error) {
+        console.error('Error deleting images:', error);
         alert('Error: ' + error.message);
     }
 }
